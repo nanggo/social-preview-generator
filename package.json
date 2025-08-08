@@ -1,0 +1,48 @@
+{
+  "name": "@nanggo/social-preview",
+  "version": "0.1.0",
+  "description": "Generate beautiful social media preview images from any URL",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write 'src/**/*.ts'",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "og-image",
+    "open-graph",
+    "social-preview",
+    "link-preview",
+    "thumbnail-generator",
+    "meta-tags",
+    "social-media"
+  ],
+  "author": "nanggo",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "open-graph-scraper": "^6.10.0",
+    "sharp": "^0.34.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.2.0",
+    "@types/sharp": "^0.31.1",
+    "@typescript-eslint/parser": "^8.39.0",
+    "eslint": "^9.32.0",
+    "jest": "^30.0.5",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
+  }
+}

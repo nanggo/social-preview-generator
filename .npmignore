@@ -1,0 +1,46 @@
+# Source files (only distribute built files)
+src/
+tsconfig.json
+*.ts
+!*.d.ts
+
+# Development files
+.eslintrc.json
+.prettierrc
+.gitignore
+
+# Examples and tests
+examples/
+test/
+*.test.js
+*.test.ts
+
+# Documentation
+social-preview-prd.md
+
+# Test outputs
+test-output.jpg
+*.tgz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Git
+.git/
+.github/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+temp/

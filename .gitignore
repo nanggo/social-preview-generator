@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+temp/
+
+# Test outputs
+test-output.jpg
+examples/output/
+
+# Project documentation
+social-preview-prd.md
+
+# npm pack files
+*.tgz
