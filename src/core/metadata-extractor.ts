@@ -16,13 +16,13 @@ export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
   try {
     // Validate URL
     const validatedUrl = validateUrl(url);
-    
+
     // Extract Open Graph data
     const ogData = await fetchOpenGraphData(validatedUrl);
-    
+
     // Parse and normalize metadata
     const metadata = parseMetadata(ogData, validatedUrl);
-    
+
     return metadata;
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
@@ -42,19 +42,15 @@ export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
 function validateUrl(url: string): string {
   try {
     const urlObj = new URL(url);
-    
+
     // Ensure protocol is http or https
     if (!['http:', 'https:'].includes(urlObj.protocol)) {
       throw new Error('Invalid protocol. Only HTTP and HTTPS are supported.');
     }
-    
+
     return urlObj.toString();
   } catch (error) {
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      `Invalid URL: ${url}`,
-      error
-    );
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `Invalid URL: ${url}`, error);
   }
 }
 
@@ -67,29 +63,29 @@ async function fetchOpenGraphData(url: string): Promise<any> {
     const response = await axios.get(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
-        'Accept': 'text/html,application/xhtml+xml',
+        Accept: 'text/html,application/xhtml+xml',
       },
       timeout: 10000,
       maxRedirects: 5,
     });
-    
+
     // Extract OG data from HTML
     const { error, result } = await ogs({ html: response.data, url });
-    
+
     if (error) {
       throw new Error('Failed to parse Open Graph data');
     }
-    
+
     return result;
-  } catch (error) {
+  } catch {
     // Fallback: Try direct OG scraping
     try {
       const { error: ogError, result } = await ogs({ url });
-      
+
       if (ogError) {
         throw new Error('Failed to fetch Open Graph data');
       }
-      
+
       return result;
     } catch (fallbackError) {
       throw new PreviewGeneratorError(
@@ -106,23 +102,19 @@ async function fetchOpenGraphData(url: string): Promise<any> {
  */
 function parseMetadata(ogData: any, url: string): ExtractedMetadata {
   const urlObj = new URL(url);
-  
+
   // Extract title (prioritize OG title, then Twitter, then HTML title)
-  const title = 
-    ogData.ogTitle || 
-    ogData.twitterTitle || 
-    ogData.dcTitle ||
-    ogData.title ||
-    urlObj.hostname;
-  
+  const title =
+    ogData.ogTitle || ogData.twitterTitle || ogData.dcTitle || ogData.title || urlObj.hostname;
+
   // Extract description
-  const description = 
-    ogData.ogDescription || 
-    ogData.twitterDescription || 
+  const description =
+    ogData.ogDescription ||
+    ogData.twitterDescription ||
     ogData.dcDescription ||
     ogData.description ||
     '';
-  
+
   // Extract image URL (prioritize OG image, then Twitter image)
   let image: string | undefined;
   if (ogData.ogImage) {
@@ -142,7 +134,7 @@ function parseMetadata(ogData: any, url: string): ExtractedMetadata {
       image = ogData.twitterImage;
     }
   }
-  
+
   // Ensure image URL is absolute
   if (image && !image.startsWith('http')) {
     try {
@@ -152,14 +144,14 @@ function parseMetadata(ogData: any, url: string): ExtractedMetadata {
       image = undefined;
     }
   }
-  
+
   // Extract site name
-  const siteName = 
-    ogData.ogSiteName || 
+  const siteName =
+    ogData.ogSiteName ||
     ogData.twitterSite ||
     ogData.applicationName ||
     urlObj.hostname.replace('www.', '');
-  
+
   // Extract favicon
   let favicon: string | undefined;
   if (ogData.favicon) {
@@ -177,27 +169,20 @@ function parseMetadata(ogData: any, url: string): ExtractedMetadata {
     // Default favicon path
     favicon = `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
   }
-  
+
   // Extract author
-  const author = 
-    ogData.author || 
-    ogData.dcCreator ||
-    ogData.twitterCreator ||
-    ogData.articleAuthor;
-  
+  const author = ogData.author || ogData.dcCreator || ogData.twitterCreator || ogData.articleAuthor;
+
   // Extract published date
-  const publishedDate = 
+  const publishedDate =
     ogData.ogArticlePublishedTime ||
     ogData.articlePublishedTime ||
     ogData.dcDate ||
     ogData.publishedTime;
-  
+
   // Extract locale
-  const locale = 
-    ogData.ogLocale || 
-    ogData.inLanguage ||
-    'en_US';
-  
+  const locale = ogData.ogLocale || ogData.inLanguage || 'en_US';
+
   return {
     title: cleanText(title),
     description: description ? cleanText(description) : undefined,
@@ -237,7 +222,7 @@ export async function fetchImage(imageUrl: string): Promise<Buffer> {
       timeout: 15000,
       maxRedirects: 5,
     });
-    
+
     return Buffer.from(response.data);
   } catch (error) {
     throw new PreviewGeneratorError(
@@ -263,7 +248,7 @@ export function applyFallbacks(
   url: string
 ): ExtractedMetadata {
   const urlObj = new URL(url);
-  
+
   return {
     title: metadata.title || urlObj.hostname,
     description: metadata.description,
