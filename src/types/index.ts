@@ -80,7 +80,18 @@ export interface FontConfig {
   /** Path to font file */
   path?: string;
   /** Font weight */
-  weight?: 'normal' | 'bold' | '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900';
+  weight?:
+    | 'normal'
+    | 'bold'
+    | '100'
+    | '200'
+    | '300'
+    | '400'
+    | '500'
+    | '600'
+    | '700'
+    | '800'
+    | '900';
   /** Font style */
   style?: 'normal' | 'italic';
 }

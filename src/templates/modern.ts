@@ -66,31 +66,41 @@ export function generateModernOverlay(
   const padding = modernTemplate.layout.padding;
   const textColor = options.colors?.text || '#ffffff';
   const accentColor = options.colors?.accent || '#4a9eff';
-  
+
   // Typography settings
   const titleFontSize = modernTemplate.typography.title.fontSize;
   const titleLineHeight = modernTemplate.typography.title.lineHeight || 1.2;
   const descFontSize = modernTemplate.typography.description?.fontSize || 28;
   const descLineHeight = modernTemplate.typography.description?.lineHeight || 1.4;
   const siteNameFontSize = modernTemplate.typography.siteName?.fontSize || 22;
-  
+
   // Calculate text wrapping
-  const maxTitleWidth = width - (padding * 2);
-  const titleLines = wrapText(metadata.title, maxTitleWidth, titleFontSize, modernTemplate.typography.title.maxLines || 2);
-  const descLines = metadata.description 
-    ? wrapText(metadata.description, maxTitleWidth, descFontSize, modernTemplate.typography.description?.maxLines || 2)
+  const maxTitleWidth = width - padding * 2;
+  const titleLines = wrapText(
+    metadata.title,
+    maxTitleWidth,
+    titleFontSize,
+    modernTemplate.typography.title.maxLines || 2
+  );
+  const descLines = metadata.description
+    ? wrapText(
+        metadata.description,
+        maxTitleWidth,
+        descFontSize,
+        modernTemplate.typography.description?.maxLines || 2
+      )
     : [];
-  
+
   // Calculate vertical centering
-  const totalContentHeight = 
-    (titleLines.length * titleFontSize * titleLineHeight) +
+  const totalContentHeight =
+    titleLines.length * titleFontSize * titleLineHeight +
     (descLines.length > 0 ? 30 : 0) + // Gap between title and description
-    (descLines.length * descFontSize * descLineHeight);
-  
+    descLines.length * descFontSize * descLineHeight;
+
   const contentStartY = (height - totalContentHeight) / 2;
   const titleY = contentStartY + titleFontSize;
-  const descY = titleY + (titleLines.length * titleFontSize * titleLineHeight) + 30;
-  
+  const descY = titleY + titleLines.length * titleFontSize * titleLineHeight + 30;
+
   return `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -151,9 +161,13 @@ export function generateModernOverlay(
       </defs>
       
       <!-- Background overlay -->
-      ${metadata.image ? `
+      ${
+        metadata.image
+          ? `
         <rect width="${width}" height="${height}" fill="url(#bgOverlay)"/>
-      ` : ''}
+      `
+          : ''
+      }
       
       <!-- Top accent bar -->
       <rect x="0" y="0" width="${width}" height="4" fill="url(#accentGradient)"/>
@@ -162,7 +176,7 @@ export function generateModernOverlay(
       <rect 
         x="${padding - 20}" 
         y="${contentStartY - 20}" 
-        width="${width - (padding * 2) + 40}" 
+        width="${width - padding * 2 + 40}" 
         height="${totalContentHeight + 40}" 
         fill="rgba(0,0,0,0.2)" 
         rx="8"
@@ -170,44 +184,64 @@ export function generateModernOverlay(
       />
       
       <!-- Title -->
-      ${titleLines.map((line, index) => `
+      ${titleLines
+        .map(
+          (line, index) => `
         <text 
           x="${width / 2}" 
-          y="${titleY + (index * titleFontSize * titleLineHeight)}" 
+          y="${titleY + index * titleFontSize * titleLineHeight}" 
           class="title"
           text-anchor="middle"
         >
           ${escapeXml(line)}
         </text>
-      `).join('')}
+      `
+        )
+        .join('')}
       
       <!-- Description -->
-      ${descLines.length > 0 ? descLines.map((line, index) => `
+      ${
+        descLines.length > 0
+          ? descLines
+              .map(
+                (line, index) => `
         <text 
           x="${width / 2}" 
-          y="${descY + (index * descFontSize * descLineHeight)}" 
+          y="${descY + index * descFontSize * descLineHeight}" 
           class="description"
           text-anchor="middle"
         >
           ${escapeXml(line)}
         </text>
-      `).join('') : ''}
+      `
+              )
+              .join('')
+          : ''
+      }
       
       <!-- Bottom section -->
       <g transform="translate(${padding}, ${height - padding})">
         <!-- Site name -->
-        ${metadata.siteName ? `
+        ${
+          metadata.siteName
+            ? `
           <text x="0" y="-30" class="siteName">
             ${escapeXml(metadata.siteName.toUpperCase())}
           </text>
-        ` : ''}
+        `
+            : ''
+        }
         
         <!-- Domain -->
-        ${metadata.domain ? `
+        ${
+          metadata.domain
+            ? `
           <text x="0" y="-8" class="domain">
             ${escapeXml(metadata.domain)}
           </text>
-        ` : ''}
+        `
+            : ''
+        }
         
         <!-- Decorative accent line -->
         <rect x="0" y="-50" width="60" height="3" fill="${accentColor}" rx="1.5"/>
@@ -230,15 +264,15 @@ function wrapText(text: string, maxWidth: number, fontSize: number, maxLines: nu
   // Approximate character width (adjusted for Inter font)
   const avgCharWidth = fontSize * 0.55;
   const maxCharsPerLine = Math.floor(maxWidth / avgCharWidth);
-  
+
   const words = text.split(' ');
   const lines: string[] = [];
   let currentLine = '';
-  
+
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
     const testLine = currentLine ? `${currentLine} ${word}` : word;
-    
+
     if (testLine.length <= maxCharsPerLine) {
       currentLine = testLine;
     } else {
@@ -251,7 +285,7 @@ function wrapText(text: string, maxWidth: number, fontSize: number, maxLines: nu
         currentLine = '';
       }
     }
-    
+
     // Check if we've reached max lines
     if (lines.length >= maxLines - 1 && currentLine) {
       const remainingWords = words.slice(i + 1);
@@ -265,11 +299,11 @@ function wrapText(text: string, maxWidth: number, fontSize: number, maxLines: nu
       break;
     }
   }
-  
+
   if (currentLine && lines.length < maxLines) {
     lines.push(currentLine);
   }
-  
+
   return lines;
 }
 
@@ -294,14 +328,20 @@ function adjustBrightness(color: string, percent: number): string {
     const num = parseInt(color.replace('#', ''), 16);
     const amt = Math.round(2.55 * percent);
     const R = (num >> 16) + amt;
-    const G = (num >> 8 & 0x00FF) + amt;
-    const B = (num & 0x0000FF) + amt;
-    
-    return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
-      (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
-      (B < 255 ? B < 1 ? 0 : B : 255))
-      .toString(16)
-      .slice(1);
+    const G = ((num >> 8) & 0x00ff) + amt;
+    const B = (num & 0x0000ff) + amt;
+
+    return (
+      '#' +
+      (
+        0x1000000 +
+        (R < 255 ? (R < 1 ? 0 : R) : 255) * 0x10000 +
+        (G < 255 ? (G < 1 ? 0 : G) : 255) * 0x100 +
+        (B < 255 ? (B < 1 ? 0 : B) : 255)
+      )
+        .toString(16)
+        .slice(1)
+    );
   }
   return color;
 }
