@@ -66,6 +66,7 @@ export function generateModernOverlay(
   const padding = modernTemplate.layout.padding;
   const textColor = options.colors?.text || '#ffffff';
   const accentColor = options.colors?.accent || '#4a9eff';
+  const overlayColor = options.colors?.overlay || 'rgba(0,0,0,0.5)';
 
   // Typography settings
   const titleFontSize = modernTemplate.typography.title.fontSize;
@@ -144,9 +145,9 @@ export function generateModernOverlay(
         
         <!-- Gradient overlays -->
         <linearGradient id="bgOverlay" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" style="stop-color:rgba(0,0,0,0.7);stop-opacity:1" />
-          <stop offset="50%" style="stop-color:rgba(0,0,0,0.5);stop-opacity:1" />
-          <stop offset="100%" style="stop-color:rgba(0,0,0,0.3);stop-opacity:1" />
+          <stop offset="0%" style="stop-color:${overlayColor};stop-opacity:1" />
+          <stop offset="50%" style="stop-color:${overlayColor};stop-opacity:0.7" />
+          <stop offset="100%" style="stop-color:${overlayColor};stop-opacity:0.3" />
         </linearGradient>
         
         <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="0%">

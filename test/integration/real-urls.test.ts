@@ -58,8 +58,8 @@ describe('Real URLs Integration Tests', () => {
     }, testTimeout);
 
     it('should handle redirect URLs', async () => {
-      // Use a URL that commonly redirects
-      const url = 'https://t.co/example'; // Note: This is a placeholder
+      // Use httpbin.org redirect service
+      const url = 'https://httpbin.org/redirect/1';
       const options: PreviewOptions = {
         fallback: {
           strategy: 'generate',

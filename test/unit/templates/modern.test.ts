@@ -91,6 +91,18 @@ describe('Modern Template', () => {
       expect(svg).toContain('#00ff00');
     });
 
+    it('should apply custom overlay color to gradient', () => {
+      const options: PreviewOptions = {
+        colors: {
+          overlay: 'rgba(255,0,0,0.5)',
+        },
+      };
+
+      const svg = generateModernOverlay(mockMetadata, 1200, 630, options);
+
+      expect(svg).toContain('rgba(255,0,0,0.5)');
+    });
+
     it('should escape XML special characters', () => {
       const xmlMetadata: ExtractedMetadata = {
         title: 'Title with <tags> & "quotes"',
