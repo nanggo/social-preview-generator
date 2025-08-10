@@ -213,8 +213,8 @@ describe('End-to-End Integration Tests', () => {
     it('should handle long content across all templates', async () => {
       const url = 'https://example.com';
       
-      // Mock long content metadata
-      mockedOgs.mockResolvedValueOnce({
+      // Mock long content metadata for all template iterations
+      mockedOgs.mockResolvedValue({
         error: false,
         result: {
           ogTitle: 'This is an extremely long title that should be properly handled by all template types with appropriate wrapping and truncation',

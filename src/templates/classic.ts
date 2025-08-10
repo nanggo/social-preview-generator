@@ -3,7 +3,7 @@
  * A traditional, business-friendly design with serif typography and conservative layout
  */
 
-import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
+import { TemplateConfig, PreviewOptions, ExtractedMetadata, PreviewGeneratorError, ErrorType } from '../types';
 import { escapeXml, wrapText, adjustBrightness } from '../utils';
 
 /**
@@ -66,10 +66,10 @@ export function generateClassicOverlay(
 ): string {
   // Validate dimensions
   if (width < 100 || height < 100) {
-    throw new Error('Minimum dimensions: 100x100');
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Minimum dimensions: 100x100');
   }
   if (width > 10000 || height > 10000) {
-    throw new Error('Maximum dimensions: 10000x10000');
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Maximum dimensions: 10000x10000');
   }
   const padding = classicTemplate.layout.padding;
   const textColor = options.colors?.text || '#1a1a1a';
