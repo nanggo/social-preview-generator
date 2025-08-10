@@ -1,0 +1,34 @@
+# Gemini Code Assist Configuration
+# Configure behavior for critical issues only to avoid excessive minor feedback
+
+code_review:
+  # Only show comments with HIGH or CRITICAL severity 
+  # This filters out minor style suggestions and low-priority improvements
+  comment_severity_threshold: HIGH
+  
+  # Limit maximum review comments to avoid overwhelming feedback
+  # Focuses on the most important issues per PR
+  max_review_comments: 5
+  
+  # Configure pull request opened behavior
+  pull_request_opened:
+    # Enable summary for overview
+    summary: true
+    # Keep code review enabled but limited by severity threshold
+    code_review: true
+
+# Additional settings to reduce noise
+review_scope:
+  # Focus on critical areas
+  focus_on:
+    - security_vulnerabilities
+    - performance_critical_paths
+    - logic_errors
+    - type_safety_issues
+  
+  # Exclude minor improvements
+  exclude:
+    - code_style_preferences
+    - minor_refactoring_suggestions
+    - documentation_formatting
+    - variable_naming_conventions

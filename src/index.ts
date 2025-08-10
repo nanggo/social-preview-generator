@@ -3,27 +3,28 @@
  * Generate beautiful social media preview images from any URL
  */
 
-import { 
-  PreviewOptions, 
-  ExtractedMetadata, 
+import {
+  PreviewOptions,
+  ExtractedMetadata,
   GeneratedPreview,
   TemplateConfig,
   ErrorType,
-  PreviewGeneratorError 
+  PreviewGeneratorError,
 } from './types';
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
-import { generateImage, createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
+import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { modernTemplate, generateModernOverlay } from './templates/modern';
+import { escapeXml, logImageFetchError } from './utils';
 import sharp from 'sharp';
 
 // Re-export types
-export { 
-  PreviewOptions, 
-  ExtractedMetadata, 
+export {
+  PreviewOptions,
+  ExtractedMetadata,
   GeneratedPreview,
   TemplateConfig,
   ErrorType,
-  PreviewGeneratorError 
+  PreviewGeneratorError,
 };
 
 /**
@@ -40,10 +41,7 @@ const templates: Record<string, TemplateConfig> = {
  * @param options - Configuration options
  * @returns Buffer containing the generated image
  */
-export async function generatePreview(
-  url: string,
-  options: PreviewOptions = {}
-): Promise<Buffer> {
+export async function generatePreview(url: string, options: PreviewOptions = {}): Promise<Buffer> {
   try {
     // Set default options
     const finalOptions: PreviewOptions = {
@@ -54,12 +52,12 @@ export async function generatePreview(
       cache: true,
       ...options,
     };
-    
+
     // Extract metadata from URL
     let metadata: ExtractedMetadata;
     try {
       metadata = await extractMetadata(url);
-      
+
       // Validate metadata
       if (!validateMetadata(metadata)) {
         // Apply fallbacks if metadata is incomplete
@@ -67,26 +65,33 @@ export async function generatePreview(
       }
     } catch (error) {
       // If metadata extraction fails completely, use fallback
-      if (finalOptions.fallback?.strategy === 'generate' || finalOptions.fallback?.strategy === 'auto') {
+      if (
+        finalOptions.fallback?.strategy === 'generate' ||
+        finalOptions.fallback?.strategy === 'auto'
+      ) {
         return await createFallbackImage(url, finalOptions);
       }
       throw error;
     }
-    
+
     // Get template configuration
     const templateName = finalOptions.template || 'modern';
     const template = templates[templateName];
-    
+
     if (!template && templateName !== 'custom') {
       throw new PreviewGeneratorError(
         ErrorType.TEMPLATE_ERROR,
         `Template "${templateName}" not found`
       );
     }
-    
+
     // Generate image based on template
-    const imageBuffer = await generateImageWithTemplate(metadata, template || modernTemplate, finalOptions);
-    
+    const imageBuffer = await generateImageWithTemplate(
+      metadata,
+      template || modernTemplate,
+      finalOptions
+    );
+
     return imageBuffer;
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
@@ -111,11 +116,11 @@ async function generateImageWithTemplate(
   const width = options.width || DEFAULT_DIMENSIONS.width;
   const height = options.height || DEFAULT_DIMENSIONS.height;
   const quality = options.quality || 90;
-  
+
   try {
     // Create base image
     let baseImage: sharp.Sharp;
-    
+
     if (metadata.image) {
       // Use existing image as background
       const { fetchImage } = await import('./core/metadata-extractor');
@@ -132,16 +137,20 @@ async function generateImageWithTemplate(
           });
       } catch (error) {
         // If image fetch fails, create blank canvas
+        logImageFetchError(
+          metadata.image, 
+          error instanceof Error ? error : new Error(String(error))
+        );
         baseImage = await createBlankCanvas(width, height, options);
       }
     } else {
       // Create blank canvas with gradient
       baseImage = await createBlankCanvas(width, height, options);
     }
-    
+
     // Generate overlay based on template
     let overlayBuffer: Buffer;
-    
+
     if (template.name === 'modern') {
       const overlaySvg = generateModernOverlay(metadata, width, height, options);
       overlayBuffer = Buffer.from(overlaySvg);
@@ -149,17 +158,19 @@ async function generateImageWithTemplate(
       // Default overlay generation
       overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
     }
-    
+
     // Composite overlay on base image
     const finalImage = await baseImage
-      .composite([{
-        input: overlayBuffer,
-        top: 0,
-        left: 0,
-      }])
+      .composite([
+        {
+          input: overlayBuffer,
+          top: 0,
+          left: 0,
+        },
+      ])
       .jpeg({ quality })
       .toBuffer();
-    
+
     return finalImage;
   } catch (error) {
     throw new PreviewGeneratorError(
@@ -180,7 +191,7 @@ async function createBlankCanvas(
 ): Promise<sharp.Sharp> {
   const backgroundColor = options.colors?.background || '#1a1a2e';
   const accentColor = options.colors?.accent || '#16213e';
-  
+
   const gradientSvg = `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -196,7 +207,7 @@ async function createBlankCanvas(
       <rect width="${width}" height="${height}" fill="url(#pattern)"/>
     </svg>
   `;
-  
+
   return sharp(Buffer.from(gradientSvg));
 }
 
@@ -212,7 +223,7 @@ async function generateDefaultOverlay(
 ): Promise<Buffer> {
   const padding = template.layout.padding || 60;
   const textColor = options.colors?.text || '#ffffff';
-  
+
   // Simple default overlay
   const overlaySvg = `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
@@ -238,28 +249,21 @@ async function generateDefaultOverlay(
         ${escapeXml(metadata.title)}
       </text>
       
-      ${metadata.description ? `
+      ${
+        metadata.description
+          ? `
         <text x="${padding}" y="${height / 2 + 40}" class="description">
           ${escapeXml(metadata.description.substring(0, 100))}
         </text>
-      ` : ''}
+      `
+          : ''
+      }
     </svg>
   `;
-  
+
   return Buffer.from(overlaySvg);
 }
 
-/**
- * Escape XML special characters
- */
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
 
 /**
  * Generate preview with full result details
@@ -270,7 +274,7 @@ export async function generatePreviewWithDetails(
 ): Promise<GeneratedPreview> {
   const buffer = await generatePreview(url, options);
   const metadata = await extractMetadata(url);
-  
+
   return {
     buffer,
     format: 'jpeg',
