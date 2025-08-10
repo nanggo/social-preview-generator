@@ -3,8 +3,8 @@
  * A clean, modern minimalist design focusing on simplicity and readability
  */
 
-import { TemplateConfig, PreviewOptions, ExtractedMetadata, PreviewGeneratorError, ErrorType } from '../types';
-import { escapeXml, wrapText } from '../utils';
+import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
+import { escapeXml, wrapText, validateDimensions } from '../utils';
 
 /**
  * Minimal template configuration
@@ -65,12 +65,7 @@ export function generateMinimalOverlay(
   options: PreviewOptions = {}
 ): string {
   // Validate dimensions
-  if (width < 100 || height < 100) {
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Minimum dimensions: 100x100');
-  }
-  if (width > 10000 || height > 10000) {
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Maximum dimensions: 10000x10000');
-  }
+  validateDimensions(width, height);
   const padding = minimalTemplate.layout.padding;
   const textColor = options.colors?.text || '#000000';
   const accentColor = options.colors?.accent || '#000000';

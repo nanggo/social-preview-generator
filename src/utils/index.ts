@@ -5,6 +5,9 @@
 // Re-export logger utilities
 export * from './logger';
 
+// Re-export validation utilities
+export * from './validation';
+
 /**
  * Escape XML special characters for safe SVG text rendering
  */

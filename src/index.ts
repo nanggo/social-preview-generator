@@ -121,35 +121,8 @@ async function generateImageWithTemplate(
   const quality = options.quality || 90;
 
   try {
-    // Create base image
-    let baseImage: sharp.Sharp;
-
-    if (metadata.image) {
-      // Use existing image as background
-      const { fetchImage } = await import('./core/metadata-extractor');
-      try {
-        const imageBuffer = await fetchImage(metadata.image);
-        baseImage = sharp(imageBuffer)
-          .resize(width, height, {
-            fit: 'cover',
-            position: 'center',
-          })
-          .blur(3)
-          .modulate({
-            brightness: 0.7,
-          });
-      } catch (error) {
-        // If image fetch fails, create blank canvas
-        logImageFetchError(
-          metadata.image,
-          error instanceof Error ? error : new Error(String(error))
-        );
-        baseImage = await createBlankCanvas(width, height, options);
-      }
-    } else {
-      // Create blank canvas with gradient
-      baseImage = await createBlankCanvas(width, height, options);
-    }
+    // Create base image with template-specific processing
+    const baseImage = await processImageForTemplate(metadata, template, width, height, options);
 
     // Generate overlay based on template
     let overlayBuffer: Buffer;
@@ -278,6 +251,77 @@ async function generateDefaultOverlay(
   `;
 
   return Buffer.from(overlaySvg);
+}
+
+/**
+ * Process image for template with template-specific configuration
+ */
+async function processImageForTemplate(
+  metadata: ExtractedMetadata,
+  template: TemplateConfig,
+  width: number,
+  height: number,
+  options: PreviewOptions
+): Promise<sharp.Sharp> {
+  // Check if template wants no background image
+  if (template.layout.imagePosition === 'none') {
+    return await createBlankCanvas(width, height, options);
+  }
+
+  // If no image available, create blank canvas
+  if (!metadata.image) {
+    return await createBlankCanvas(width, height, options);
+  }
+
+  // Process background image with template-specific effects
+  const { fetchImage } = await import('./core/metadata-extractor');
+  try {
+    const imageBuffer = await fetchImage(metadata.image);
+    let processedImage = sharp(imageBuffer).resize(width, height, {
+      fit: 'cover',
+      position: 'center',
+    });
+
+    // Apply template-specific blur
+    const blurRadius = template.effects?.blur?.radius ?? 0;
+    if (blurRadius > 0) {
+      processedImage = processedImage.blur(blurRadius);
+    }
+
+    // Apply template-specific brightness/modulation
+    const brightnessEffect = getBrightnessForTemplate(template);
+    if (brightnessEffect !== 1.0) {
+      processedImage = processedImage.modulate({
+        brightness: brightnessEffect,
+      });
+    }
+
+    return processedImage;
+  } catch (error) {
+    // If image fetch fails, create blank canvas
+    logImageFetchError(
+      metadata.image,
+      error instanceof Error ? error : new Error(String(error))
+    );
+    return await createBlankCanvas(width, height, options);
+  }
+}
+
+/**
+ * Get brightness effect for template based on its design
+ */
+function getBrightnessForTemplate(template: TemplateConfig): number {
+  // Template-specific brightness adjustments for better text readability
+  switch (template.name) {
+    case 'modern':
+      return 0.7; // Darker for better white text contrast
+    case 'classic':
+      return 0.9; // Slightly darker for business look
+    case 'minimal':
+      return 1.0; // No adjustment for clean look
+    default:
+      return 0.8; // Default moderate darkening
+  }
 }
 
 /**
