@@ -135,13 +135,19 @@ export interface LayoutConfig {
   /** Padding around content */
   padding: number;
   /** Title position */
-  titlePosition?: 'top' | 'center' | 'bottom';
+  titlePosition?: 'top' | 'center' | 'bottom' | 'left' | 'right';
   /** Description position */
   descriptionPosition?: 'below-title' | 'bottom' | 'none';
   /** Image position */
   imagePosition?: 'background' | 'left' | 'right' | 'top' | 'none';
   /** Logo/favicon position */
-  logoPosition?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'none';
+  logoPosition?:
+    | 'top-left'
+    | 'top-right'
+    | 'bottom-left'
+    | 'bottom-right'
+    | 'bottom-center'
+    | 'none';
 }
 
 /**
@@ -175,7 +181,7 @@ export interface TypographyConfig {
 export interface EffectsConfig {
   /** Gradient overlay */
   gradient?: {
-    type: 'linear' | 'radial';
+    type: 'linear' | 'radial' | 'none';
     colors: string[];
     direction?: string;
     opacity?: number;
@@ -183,7 +189,7 @@ export interface EffectsConfig {
   /** Blur effect */
   blur?: {
     radius: number;
-    areas?: 'background' | 'overlay' | 'all';
+    areas?: 'background' | 'overlay' | 'all' | 'none';
   };
   /** Shadow effects */
   shadow?: {

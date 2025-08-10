@@ -35,10 +35,7 @@ export function adjustBrightness(color: string, percent: number): string {
   const G = Math.max(0, Math.min(255, ((num >> 8) & 0x00ff) + amt));
   const B = Math.max(0, Math.min(255, (num & 0x0000ff) + amt));
 
-  return (
-    '#' +
-    (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1)
-  );
+  return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
 /**
@@ -131,8 +128,11 @@ export function generateSvgGradient(
   direction: string | number = '0deg'
 ): string {
   // Convert direction to SVG coordinates
-  let x1 = '0%', y1 = '0%', x2 = '100%', y2 = '0%';
-  
+  let x1 = '0%',
+    y1 = '0%',
+    x2 = '100%',
+    y2 = '0%';
+
   if (typeof direction === 'number' || direction.endsWith('deg')) {
     const angle = typeof direction === 'number' ? direction : parseInt(direction);
     const rad = (angle * Math.PI) / 180;
@@ -141,7 +141,10 @@ export function generateSvgGradient(
     x2 = `${50 + 50 * Math.cos(rad)}%`;
     y2 = `${50 + 50 * Math.sin(rad)}%`;
   } else if (direction === 'vertical' || direction === '180deg') {
-    x1 = '0%'; y1 = '0%'; x2 = '0%'; y2 = '100%';
+    x1 = '0%';
+    y1 = '0%';
+    x2 = '0%';
+    y2 = '100%';
   }
 
   const stops = colors

@@ -14,6 +14,8 @@ import {
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { modernTemplate, generateModernOverlay } from './templates/modern';
+import { classicTemplate, generateClassicOverlay } from './templates/classic';
+import { minimalTemplate, generateMinimalOverlay } from './templates/minimal';
 import { escapeXml, logImageFetchError } from './utils';
 import sharp from 'sharp';
 
@@ -32,7 +34,8 @@ export {
  */
 const templates: Record<string, TemplateConfig> = {
   modern: modernTemplate,
-  // TODO: Add classic and minimal templates
+  classic: classicTemplate,
+  minimal: minimalTemplate,
 };
 
 /**
@@ -138,7 +141,7 @@ async function generateImageWithTemplate(
       } catch (error) {
         // If image fetch fails, create blank canvas
         logImageFetchError(
-          metadata.image, 
+          metadata.image,
           error instanceof Error ? error : new Error(String(error))
         );
         baseImage = await createBlankCanvas(width, height, options);
@@ -151,12 +154,25 @@ async function generateImageWithTemplate(
     // Generate overlay based on template
     let overlayBuffer: Buffer;
 
-    if (template.name === 'modern') {
-      const overlaySvg = generateModernOverlay(metadata, width, height, options);
-      overlayBuffer = Buffer.from(overlaySvg);
-    } else {
-      // Default overlay generation
-      overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
+    switch (template.name) {
+      case 'modern': {
+        const modernOverlaySvg = generateModernOverlay(metadata, width, height, options);
+        overlayBuffer = Buffer.from(modernOverlaySvg);
+        break;
+      }
+      case 'classic': {
+        const classicOverlaySvg = generateClassicOverlay(metadata, width, height, options);
+        overlayBuffer = Buffer.from(classicOverlaySvg);
+        break;
+      }
+      case 'minimal': {
+        const minimalOverlaySvg = generateMinimalOverlay(metadata, width, height, options);
+        overlayBuffer = Buffer.from(minimalOverlaySvg);
+        break;
+      }
+      default:
+        // Fallback to default overlay generation
+        overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
     }
 
     // Composite overlay on base image
@@ -263,7 +279,6 @@ async function generateDefaultOverlay(
 
   return Buffer.from(overlaySvg);
 }
-
 
 /**
  * Generate preview with full result details

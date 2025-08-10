@@ -273,7 +273,7 @@ function calculateTitlePosition(
   lineCount: number,
   fontSize: number,
   lineHeight: number,
-  position?: 'top' | 'center' | 'bottom'
+  position?: 'top' | 'center' | 'bottom' | 'left' | 'right'
 ): number {
   const totalTextHeight = lineCount * fontSize * lineHeight;
 
@@ -282,12 +282,13 @@ function calculateTitlePosition(
       return padding + fontSize;
     case 'bottom':
       return height - padding - totalTextHeight;
+    case 'left':
+    case 'right':
     case 'center':
     default:
       return (height - totalTextHeight) / 2 + fontSize;
   }
 }
-
 
 /**
  * Create fallback image when no metadata is available
