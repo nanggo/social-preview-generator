@@ -11,6 +11,7 @@ import {
   ErrorType,
   PreviewGeneratorError,
 } from '../types';
+import { escapeXml, wrapText } from '../utils';
 
 /**
  * Default dimensions for social media preview images
@@ -287,64 +288,6 @@ function calculateTitlePosition(
   }
 }
 
-/**
- * Wrap text to fit within maximum width
- */
-function wrapText(text: string, maxWidth: number, fontSize: number, maxLines: number): string[] {
-  // Approximate character width (this is a simplified approach)
-  const avgCharWidth = fontSize * 0.6;
-  const maxCharsPerLine = Math.floor(maxWidth / avgCharWidth);
-
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
-
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-
-    if (testLine.length <= maxCharsPerLine) {
-      currentLine = testLine;
-    } else {
-      if (currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        // Word is too long, truncate it
-        lines.push(word.substring(0, maxCharsPerLine - 3) + '...');
-        currentLine = '';
-      }
-    }
-
-    if (lines.length >= maxLines - 1 && currentLine) {
-      // We're at the last allowed line
-      const remainingWords = words.slice(words.indexOf(word) + 1);
-      if (remainingWords.length > 0) {
-        // Add ellipsis if there's more text
-        currentLine = currentLine.substring(0, maxCharsPerLine - 3) + '...';
-      }
-      lines.push(currentLine);
-      break;
-    }
-  }
-
-  if (currentLine && lines.length < maxLines) {
-    lines.push(currentLine);
-  }
-
-  return lines;
-}
-
-/**
- * Escape XML special characters
- */
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
 
 /**
  * Create fallback image when no metadata is available

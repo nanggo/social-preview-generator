@@ -14,6 +14,7 @@ import {
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { modernTemplate, generateModernOverlay } from './templates/modern';
+import { escapeXml } from './utils';
 import sharp from 'sharp';
 
 // Re-export types
@@ -263,17 +264,6 @@ async function generateDefaultOverlay(
   return Buffer.from(overlaySvg);
 }
 
-/**
- * Escape XML special characters
- */
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
 
 /**
  * Generate preview with full result details

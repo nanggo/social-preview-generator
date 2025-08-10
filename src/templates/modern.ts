@@ -4,6 +4,7 @@
  */
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
+import { escapeXml, adjustBrightness, wrapText } from '../utils';
 
 /**
  * Modern template configuration
@@ -81,14 +82,16 @@ export function generateModernOverlay(
     metadata.title,
     maxTitleWidth,
     titleFontSize,
-    modernTemplate.typography.title.maxLines || 2
+    modernTemplate.typography.title.maxLines || 2,
+    'inter'
   );
   const descLines = metadata.description
     ? wrapText(
         metadata.description,
         maxTitleWidth,
         descFontSize,
-        modernTemplate.typography.description?.maxLines || 2
+        modernTemplate.typography.description?.maxLines || 2,
+        'inter'
       )
     : [];
 
@@ -258,91 +261,3 @@ export function generateModernOverlay(
   `;
 }
 
-/**
- * Wrap text to fit within maximum width
- */
-function wrapText(text: string, maxWidth: number, fontSize: number, maxLines: number): string[] {
-  // Approximate character width (adjusted for Inter font)
-  const avgCharWidth = fontSize * 0.55;
-  const maxCharsPerLine = Math.floor(maxWidth / avgCharWidth);
-
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
-
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i];
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-
-    if (testLine.length <= maxCharsPerLine) {
-      currentLine = testLine;
-    } else {
-      if (currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        // Word is too long, truncate it
-        lines.push(word.substring(0, maxCharsPerLine - 3) + '...');
-        currentLine = '';
-      }
-    }
-
-    // Check if we've reached max lines
-    if (lines.length >= maxLines - 1 && currentLine) {
-      const remainingWords = words.slice(i + 1);
-      if (remainingWords.length > 0) {
-        // Add ellipsis if there's more text
-        const truncatedLine = currentLine.substring(0, maxCharsPerLine - 3) + '...';
-        lines.push(truncatedLine);
-      } else {
-        lines.push(currentLine);
-      }
-      break;
-    }
-  }
-
-  if (currentLine && lines.length < maxLines) {
-    lines.push(currentLine);
-  }
-
-  return lines;
-}
-
-/**
- * Escape XML special characters
- */
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-/**
- * Adjust color brightness
- */
-function adjustBrightness(color: string, percent: number): string {
-  // Simple brightness adjustment for hex colors
-  if (color.startsWith('#')) {
-    const num = parseInt(color.replace('#', ''), 16);
-    const amt = Math.round(2.55 * percent);
-    const R = (num >> 16) + amt;
-    const G = ((num >> 8) & 0x00ff) + amt;
-    const B = (num & 0x0000ff) + amt;
-
-    return (
-      '#' +
-      (
-        0x1000000 +
-        (R < 255 ? (R < 1 ? 0 : R) : 255) * 0x10000 +
-        (G < 255 ? (G < 1 ? 0 : G) : 255) * 0x100 +
-        (B < 255 ? (B < 1 ? 0 : B) : 255)
-      )
-        .toString(16)
-        .slice(1)
-    );
-  }
-  return color;
-}
