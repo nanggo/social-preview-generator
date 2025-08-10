@@ -136,7 +136,10 @@ async function generateImageWithTemplate(
           });
       } catch (error) {
         // If image fetch fails, create blank canvas
-        console.warn(`Failed to fetch image ${metadata.image}:`, error instanceof Error ? error.message : String(error));
+        console.warn(
+          `Failed to fetch image ${metadata.image}:`,
+          error instanceof Error ? error.message : String(error)
+        );
         baseImage = await createBlankCanvas(width, height, options);
       }
     } else {

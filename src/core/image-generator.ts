@@ -353,7 +353,6 @@ export async function createFallbackImage(
   url: string,
   options: PreviewOptions = {}
 ): Promise<Buffer> {
-
   try {
     const urlObj = new URL(url);
     const domain = urlObj.hostname;

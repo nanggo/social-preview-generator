@@ -154,18 +154,27 @@ describe('Real URLs Integration Tests', () => {
       const promises = urls.map(url => 
         generatePreview(url, { 
           fallback: { strategy: 'auto' } 
-        }).catch(() => Buffer.alloc(0)) // Handle failures gracefully
+        })
       );
       
-      const results = await Promise.all(promises);
+      const results = await Promise.allSettled(promises);
       const duration = Date.now() - startTime;
 
       expect(results).toHaveLength(3);
       expect(duration).toBeLessThan(15000); // Should complete within 15 seconds
       
       // At least one should succeed
-      const successfulResults = results.filter(r => r.length > 1000);
+      const successfulResults = results.filter(
+        (result): result is PromiseFulfilledResult<Buffer> => 
+          result.status === 'fulfilled' && result.value.length > 1000
+      );
       expect(successfulResults.length).toBeGreaterThan(0);
+      
+      // Log any failures for debugging
+      const failedResults = results.filter(result => result.status === 'rejected');
+      if (failedResults.length > 0) {
+        console.warn(`${failedResults.length} URL(s) failed during concurrent test`);
+      }
     }, testTimeout);
   });
 });
