@@ -14,7 +14,7 @@ import {
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { modernTemplate, generateModernOverlay } from './templates/modern';
-import { escapeXml } from './utils';
+import { escapeXml, logImageFetchError } from './utils';
 import sharp from 'sharp';
 
 // Re-export types
@@ -137,9 +137,9 @@ async function generateImageWithTemplate(
           });
       } catch (error) {
         // If image fetch fails, create blank canvas
-        console.warn(
-          `Failed to fetch image ${metadata.image}:`,
-          error instanceof Error ? error.message : String(error)
+        logImageFetchError(
+          metadata.image, 
+          error instanceof Error ? error : new Error(String(error))
         );
         baseImage = await createBlankCanvas(width, height, options);
       }

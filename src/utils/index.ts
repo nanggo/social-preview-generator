@@ -2,6 +2,9 @@
  * Common utility functions shared across the project
  */
 
+// Re-export logger utilities
+export * from './logger';
+
 /**
  * Escape XML special characters for safe SVG text rendering
  */
