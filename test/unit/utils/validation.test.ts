@@ -10,7 +10,7 @@ describe('Validation utilities', () => {
     test('should pass for valid dimensions', () => {
       expect(() => validateDimensions(1200, 630)).not.toThrow();
       expect(() => validateDimensions(100, 100)).not.toThrow();
-      expect(() => validateDimensions(10000, 10000)).not.toThrow();
+      expect(() => validateDimensions(4096, 4096)).not.toThrow();
     });
 
     test('should throw for dimensions too small', () => {
@@ -28,24 +28,24 @@ describe('Validation utilities', () => {
     });
 
     test('should throw for dimensions too large', () => {
-      expect(() => validateDimensions(15000, 1000)).toThrow(PreviewGeneratorError);
-      expect(() => validateDimensions(1000, 15000)).toThrow(PreviewGeneratorError);
-      expect(() => validateDimensions(20000, 20000)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(5000, 1000)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(1000, 5000)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(8000, 8000)).toThrow(PreviewGeneratorError);
       
       try {
-        validateDimensions(15000, 15000);
+        validateDimensions(5000, 5000);
       } catch (error) {
         expect(error).toBeInstanceOf(PreviewGeneratorError);
         expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
-        expect((error as PreviewGeneratorError).message).toBe('Maximum dimensions: 10000x10000');
+        expect((error as PreviewGeneratorError).message).toBe('Image dimensions cannot exceed 4096x4096 pixels');
       }
     });
 
     test('should handle edge cases', () => {
       expect(() => validateDimensions(99, 100)).toThrow();
       expect(() => validateDimensions(100, 99)).toThrow();
-      expect(() => validateDimensions(10001, 10000)).toThrow();
-      expect(() => validateDimensions(10000, 10001)).toThrow();
+      expect(() => validateDimensions(4097, 4096)).toThrow();
+      expect(() => validateDimensions(4096, 4097)).toThrow();
     });
 
     test('should throw for non-finite numbers', () => {
@@ -85,7 +85,7 @@ describe('Validation utilities', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(PreviewGeneratorError);
         expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
-        expect((error as PreviewGeneratorError).message).toBe('Dimensions must be positive numbers');
+        expect((error as PreviewGeneratorError).message).toBe('Minimum dimensions: 100x100');
       }
       
       try {
@@ -93,7 +93,7 @@ describe('Validation utilities', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(PreviewGeneratorError);
         expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
-        expect((error as PreviewGeneratorError).message).toBe('Dimensions must be positive numbers');
+        expect((error as PreviewGeneratorError).message).toBe('Minimum dimensions: 100x100');
       }
     });
   });

@@ -17,6 +17,7 @@ import { modernTemplate, generateModernOverlay } from './templates/modern';
 import { classicTemplate, generateClassicOverlay } from './templates/classic';
 import { minimalTemplate, generateMinimalOverlay } from './templates/minimal';
 import { escapeXml, logImageFetchError, wrapText } from './utils';
+import { createTransparentCanvas } from './utils/validators';
 import sharp from 'sharp';
 
 // Re-export types
@@ -314,14 +315,7 @@ async function processImageForTemplate(
     // For templates with custom backgrounds (minimal, classic), return transparent canvas
     // They will provide their own background in the SVG overlay
     if (template.name === 'minimal' || template.name === 'classic') {
-      return sharp({
-        create: {
-          width,
-          height,
-          channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent
-        },
-      });
+      return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -330,14 +324,7 @@ async function processImageForTemplate(
   if (!metadata.image) {
     // Templates with custom backgrounds should use transparent canvas
     if (template.name === 'minimal' || template.name === 'classic') {
-      return sharp({
-        create: {
-          width,
-          height,
-          channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent
-        },
-      });
+      return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -386,14 +373,7 @@ async function processImageForTemplate(
 
     // Templates with custom backgrounds should use transparent canvas
     if (template.name === 'minimal' || template.name === 'classic') {
-      return sharp({
-        create: {
-          width,
-          height,
-          channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent
-        },
-      });
+      return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
