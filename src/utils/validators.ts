@@ -17,43 +17,57 @@ export function validateColor(color: string): string {
     return trimmedColor;
   }
 
-  // RGB/RGBA validation with proper range checking
-  const rgbMatch = trimmedColor.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d+))?\s*\)$/);
+  // RGB validation with proper range checking
+  const rgbMatch = trimmedColor.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/);
   if (rgbMatch) {
-    const [, r, g, b, a] = rgbMatch;
+    const [, r, g, b] = rgbMatch;
     const red = parseInt(r, 10);
     const green = parseInt(g, 10);
     const blue = parseInt(b, 10);
     
     if (red <= 255 && green <= 255 && blue <= 255) {
-      if (a !== undefined) {
-        const alpha = parseFloat(a);
-        if (alpha >= 0 && alpha <= 1) {
-          return trimmedColor;
-        }
-      } else {
-        return trimmedColor;
-      }
+      return trimmedColor;
     }
   }
 
-  // HSL/HSLA validation with proper range checking
-  const hslMatch = trimmedColor.match(/^hsla?\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*(?:,\s*(0|1|0?\.\d+))?\s*\)$/);
+  // RGBA validation with proper range checking
+  const rgbaMatch = trimmedColor.match(/^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|1|0?\.\d+)\s*\)$/);
+  if (rgbaMatch) {
+    const [, r, g, b, a] = rgbaMatch;
+    const red = parseInt(r, 10);
+    const green = parseInt(g, 10);
+    const blue = parseInt(b, 10);
+    const alpha = parseFloat(a);
+    
+    if (red <= 255 && green <= 255 && blue <= 255 && alpha >= 0 && alpha <= 1) {
+      return trimmedColor;
+    }
+  }
+
+  // HSL validation with proper range checking
+  const hslMatch = trimmedColor.match(/^hsl\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*\)$/);
   if (hslMatch) {
-    const [, h, s, l, a] = hslMatch;
+    const [, h, s, l] = hslMatch;
     const hue = parseInt(h, 10);
     const saturation = parseInt(s, 10);
     const lightness = parseInt(l, 10);
     
     if (hue <= 360 && saturation <= 100 && lightness <= 100) {
-      if (a !== undefined) {
-        const alpha = parseFloat(a);
-        if (alpha >= 0 && alpha <= 1) {
-          return trimmedColor;
-        }
-      } else {
-        return trimmedColor;
-      }
+      return trimmedColor;
+    }
+  }
+
+  // HSLA validation with proper range checking
+  const hslaMatch = trimmedColor.match(/^hsla\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*,\s*(0|1|0?\.\d+)\s*\)$/);
+  if (hslaMatch) {
+    const [, h, s, l, a] = hslaMatch;
+    const hue = parseInt(h, 10);
+    const saturation = parseInt(s, 10);
+    const lightness = parseInt(l, 10);
+    const alpha = parseFloat(a);
+    
+    if (hue <= 360 && saturation <= 100 && lightness <= 100 && alpha >= 0 && alpha <= 1) {
+      return trimmedColor;
     }
   }
 

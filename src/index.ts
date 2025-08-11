@@ -11,7 +11,7 @@ import {
   ErrorType,
   PreviewGeneratorError,
 } from './types';
-import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
+import { extractMetadata, validateMetadata, applyFallbacks, fetchImage } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { modernTemplate, generateModernOverlay } from './templates/modern';
 import { classicTemplate, generateClassicOverlay } from './templates/classic';
@@ -330,17 +330,6 @@ async function processImageForTemplate(
   }
 
   // Process background image with template-specific effects
-  let fetchImage;
-  try {
-    const metadataModule = await import('./core/metadata-extractor');
-    fetchImage = metadataModule.fetchImage;
-  } catch (importError) {
-    throw new PreviewGeneratorError(
-      ErrorType.IMAGE_ERROR,
-      `Failed to import metadata extractor module: ${importError instanceof Error ? importError.message : String(importError)}`,
-      importError
-    );
-  }
 
   try {
     const imageBuffer = await fetchImage(metadata.image);

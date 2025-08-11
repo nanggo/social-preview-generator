@@ -12,6 +12,7 @@ import {
   PreviewGeneratorError,
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
+import { fetchImage } from './metadata-extractor';
 
 /**
  * Default dimensions for social media preview images
@@ -39,7 +40,6 @@ export async function generateImage(
 
     if (metadata.image) {
       // Use existing image as background
-      const { fetchImage } = await import('./metadata-extractor');
       const imageBuffer = await fetchImage(metadata.image);
       baseImage = await processBackgroundImage(imageBuffer, width, height);
     } else {
