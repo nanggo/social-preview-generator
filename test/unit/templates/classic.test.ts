@@ -203,6 +203,24 @@ describe('Classic Template', () => {
       expect(() => {
         generateClassicOverlay(mockMetadata, 1200, 15000, {});
       }).toThrow('Maximum dimensions: 10000x10000');
+
+      // Test for non-finite numbers
+      expect(() => {
+        generateClassicOverlay(mockMetadata, NaN, 630, {});
+      }).toThrow('Dimensions must be finite numbers');
+
+      expect(() => {
+        generateClassicOverlay(mockMetadata, 1200, Infinity, {});
+      }).toThrow('Dimensions must be finite numbers');
+
+      // Test for negative/zero values
+      expect(() => {
+        generateClassicOverlay(mockMetadata, -100, 630, {});
+      }).toThrow('Dimensions must be positive numbers');
+
+      expect(() => {
+        generateClassicOverlay(mockMetadata, 0, 630, {});
+      }).toThrow('Dimensions must be positive numbers');
     });
   });
 });

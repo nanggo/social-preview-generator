@@ -47,5 +47,54 @@ describe('Validation utilities', () => {
       expect(() => validateDimensions(10001, 10000)).toThrow();
       expect(() => validateDimensions(10000, 10001)).toThrow();
     });
+
+    test('should throw for non-finite numbers', () => {
+      expect(() => validateDimensions(NaN, 630)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(1200, NaN)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(Infinity, 630)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(1200, Infinity)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(-Infinity, 630)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(1200, -Infinity)).toThrow(PreviewGeneratorError);
+      
+      try {
+        validateDimensions(NaN, 630);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+        expect((error as PreviewGeneratorError).message).toBe('Dimensions must be finite numbers');
+      }
+      
+      try {
+        validateDimensions(1200, Infinity);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+        expect((error as PreviewGeneratorError).message).toBe('Dimensions must be finite numbers');
+      }
+    });
+
+    test('should throw for negative or zero values', () => {
+      expect(() => validateDimensions(-100, 630)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(1200, -50)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(0, 630)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(1200, 0)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(-100, -50)).toThrow(PreviewGeneratorError);
+      
+      try {
+        validateDimensions(-100, 630);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+        expect((error as PreviewGeneratorError).message).toBe('Dimensions must be positive numbers');
+      }
+      
+      try {
+        validateDimensions(0, 630);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+        expect((error as PreviewGeneratorError).message).toBe('Dimensions must be positive numbers');
+      }
+    });
   });
 });
