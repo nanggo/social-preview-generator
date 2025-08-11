@@ -4,7 +4,8 @@
  */
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
-import { escapeXml, wrapText, validateDimensions } from '../utils';
+import { escapeXml, wrapText } from '../utils';
+import { validateDimensions, validateColor } from '../utils/validators';
 
 /**
  * Minimal template configuration
@@ -67,9 +68,9 @@ export function generateMinimalOverlay(
   // Validate dimensions
   validateDimensions(width, height);
   const padding = minimalTemplate.layout.padding;
-  const textColor = options.colors?.text || '#000000';
-  const accentColor = options.colors?.accent || '#000000';
-  const backgroundColor = options.colors?.background || '#ffffff';
+  const textColor = validateColor(options.colors?.text || '#000000');
+  const accentColor = validateColor(options.colors?.accent || '#000000');
+  const backgroundColor = validateColor(options.colors?.background || '#ffffff');
 
   // Typography settings with minimal approach
   const titleFontSize = minimalTemplate.typography.title.fontSize;

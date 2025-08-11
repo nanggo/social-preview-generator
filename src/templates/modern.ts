@@ -5,6 +5,7 @@
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, adjustBrightness, wrapText } from '../utils';
+import { validateDimensions, validateColor } from '../utils/validators';
 
 /**
  * Modern template configuration
@@ -64,9 +65,12 @@ export function generateModernOverlay(
   height: number,
   options: PreviewOptions = {}
 ): string {
+  // Validate dimensions
+  validateDimensions(width, height);
+
   const padding = modernTemplate.layout.padding;
-  const textColor = options.colors?.text || '#ffffff';
-  const accentColor = options.colors?.accent || '#4a9eff';
+  const textColor = validateColor(options.colors?.text || '#ffffff');
+  const accentColor = validateColor(options.colors?.accent || '#4a9eff');
   const overlayColor = options.colors?.overlay || 'rgba(0,0,0,0.5)';
 
   // Typography settings

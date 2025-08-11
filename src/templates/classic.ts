@@ -4,7 +4,8 @@
  */
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
-import { escapeXml, wrapText, adjustBrightness, validateDimensions } from '../utils';
+import { escapeXml, wrapText, adjustBrightness } from '../utils';
+import { validateDimensions, validateColor } from '../utils/validators';
 
 /**
  * Classic template configuration
@@ -67,9 +68,9 @@ export function generateClassicOverlay(
   // Validate dimensions
   validateDimensions(width, height);
   const padding = classicTemplate.layout.padding;
-  const textColor = options.colors?.text || '#1a1a1a';
-  const accentColor = options.colors?.accent || '#2c5aa0';
-  const backgroundColor = options.colors?.background || '#ffffff';
+  const textColor = validateColor(options.colors?.text || '#1a1a1a');
+  const accentColor = validateColor(options.colors?.accent || '#2c5aa0');
+  const backgroundColor = validateColor(options.colors?.background || '#ffffff');
 
   // Typography settings
   const titleFontSize = classicTemplate.typography.title.fontSize;

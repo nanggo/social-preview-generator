@@ -197,12 +197,12 @@ describe('Classic Template', () => {
       }).toThrow('Minimum dimensions: 100x100');
 
       expect(() => {
-        generateClassicOverlay(mockMetadata, 15000, 630, {});
-      }).toThrow('Maximum dimensions: 10000x10000');
+        generateClassicOverlay(mockMetadata, 5000, 630, {});
+      }).toThrow('Image dimensions cannot exceed 4096x4096 pixels');
 
       expect(() => {
-        generateClassicOverlay(mockMetadata, 1200, 15000, {});
-      }).toThrow('Maximum dimensions: 10000x10000');
+        generateClassicOverlay(mockMetadata, 1200, 5000, {});
+      }).toThrow('Image dimensions cannot exceed 4096x4096 pixels');
 
       // Test for non-finite numbers
       expect(() => {
@@ -216,11 +216,11 @@ describe('Classic Template', () => {
       // Test for negative/zero values
       expect(() => {
         generateClassicOverlay(mockMetadata, -100, 630, {});
-      }).toThrow('Dimensions must be positive numbers');
+      }).toThrow('Minimum dimensions: 100x100');
 
       expect(() => {
         generateClassicOverlay(mockMetadata, 0, 630, {});
-      }).toThrow('Dimensions must be positive numbers');
+      }).toThrow('Minimum dimensions: 100x100');
     });
   });
 });

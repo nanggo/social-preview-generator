@@ -212,13 +212,13 @@ async function generateDefaultOverlay(
 ): Promise<Buffer> {
   const padding = template.layout.padding || 60;
   const textColor = options.colors?.text || '#ffffff';
-  
+
   // Typography settings
   const titleFontSize = template.typography.title.fontSize;
   const titleLineHeight = template.typography.title.lineHeight || 1.2;
   const descFontSize = template.typography.description?.fontSize || 24;
   const descLineHeight = template.typography.description?.lineHeight || 1.4;
-  
+
   // Text wrapping similar to specific template generators
   const maxTextWidth = width - padding * 2;
   const titleLines = wrapText(
@@ -237,13 +237,13 @@ async function generateDefaultOverlay(
         'default'
       )
     : [];
-  
+
   // Calculate positions for proper vertical centering
   const titleHeight = titleLines.length * titleFontSize * titleLineHeight;
   const descHeight = descLines.length > 0 ? descLines.length * descFontSize * descLineHeight : 0;
   const gap = descLines.length > 0 ? 20 : 0;
   const totalContentHeight = titleHeight + gap + descHeight;
-  
+
   const contentStartY = (height - totalContentHeight) / 2;
   const titleStartY = contentStartY + titleFontSize;
   const descStartY = titleStartY + titleHeight + gap;
@@ -311,16 +311,50 @@ async function processImageForTemplate(
 ): Promise<sharp.Sharp> {
   // Check if template wants no background image
   if (template.layout.imagePosition === 'none') {
+    // For templates with custom backgrounds (minimal, classic), return transparent canvas
+    // They will provide their own background in the SVG overlay
+    if (template.name === 'minimal' || template.name === 'classic') {
+      return sharp({
+        create: {
+          width,
+          height,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent
+        },
+      });
+    }
     return await createBlankCanvas(width, height, options);
   }
 
-  // If no image available, create blank canvas
+  // If no image available, handle based on template
   if (!metadata.image) {
+    // Templates with custom backgrounds should use transparent canvas
+    if (template.name === 'minimal' || template.name === 'classic') {
+      return sharp({
+        create: {
+          width,
+          height,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent
+        },
+      });
+    }
     return await createBlankCanvas(width, height, options);
   }
 
   // Process background image with template-specific effects
-  const { fetchImage } = await import('./core/metadata-extractor');
+  let fetchImage;
+  try {
+    const metadataModule = await import('./core/metadata-extractor');
+    fetchImage = metadataModule.fetchImage;
+  } catch (importError) {
+    throw new PreviewGeneratorError(
+      ErrorType.IMAGE_ERROR,
+      `Failed to import metadata extractor module: ${importError instanceof Error ? importError.message : String(importError)}`,
+      importError
+    );
+  }
+
   try {
     const imageBuffer = await fetchImage(metadata.image);
     let processedImage = sharp(imageBuffer).resize(width, height, {
@@ -343,12 +377,24 @@ async function processImageForTemplate(
     }
 
     return processedImage;
-  } catch (error) {
-    // If image fetch fails, create blank canvas
+  } catch (fetchError) {
+    // If image fetch fails, create appropriate canvas based on template
     logImageFetchError(
       metadata.image,
-      error instanceof Error ? error : new Error(String(error))
+      fetchError instanceof Error ? fetchError : new Error(String(fetchError))
     );
+
+    // Templates with custom backgrounds should use transparent canvas
+    if (template.name === 'minimal' || template.name === 'classic') {
+      return sharp({
+        create: {
+          width,
+          height,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent
+        },
+      });
+    }
     return await createBlankCanvas(width, height, options);
   }
 }
