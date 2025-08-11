@@ -5,7 +5,7 @@
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, wrapText } from '../utils';
-import { validateDimensions, validateColor } from '../utils/validators';
+import { validateColor } from '../utils/validators';
 
 /**
  * Minimal template configuration
@@ -54,6 +54,11 @@ export const minimalTemplate: TemplateConfig = {
     },
     borderRadius: 0,
   },
+  imageProcessing: {
+    brightness: 1.0,
+    requiresTransparentCanvas: true,
+  },
+  overlayGenerator: generateMinimalOverlay,
 };
 
 /**
@@ -65,8 +70,6 @@ export function generateMinimalOverlay(
   height: number,
   options: PreviewOptions = {}
 ): string {
-  // Validate dimensions
-  validateDimensions(width, height);
   const padding = minimalTemplate.layout.padding;
   const textColor = validateColor(options.colors?.text || '#000000');
   const accentColor = validateColor(options.colors?.accent || '#000000');

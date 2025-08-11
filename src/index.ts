@@ -13,11 +13,11 @@ import {
 } from './types';
 import { extractMetadata, validateMetadata, applyFallbacks, fetchImage } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
-import { modernTemplate, generateModernOverlay } from './templates/modern';
-import { classicTemplate, generateClassicOverlay } from './templates/classic';
-import { minimalTemplate, generateMinimalOverlay } from './templates/minimal';
+import { modernTemplate } from './templates/modern';
+import { classicTemplate } from './templates/classic';
+import { minimalTemplate } from './templates/minimal';
 import { escapeXml, logImageFetchError, wrapText } from './utils';
-import { createTransparentCanvas } from './utils/validators';
+import { createTransparentCanvas, validateDimensions } from './utils/validators';
 import sharp from 'sharp';
 
 // Re-export types
@@ -122,31 +122,21 @@ async function generateImageWithTemplate(
   const quality = options.quality || 90;
 
   try {
+    // Validate dimensions once at the start
+    validateDimensions(width, height);
+
     // Create base image with template-specific processing
     const baseImage = await processImageForTemplate(metadata, template, width, height, options);
 
-    // Generate overlay based on template
+    // Generate overlay using template's overlay generator
     let overlayBuffer: Buffer;
 
-    switch (template.name) {
-      case 'modern': {
-        const modernOverlaySvg = generateModernOverlay(metadata, width, height, options);
-        overlayBuffer = Buffer.from(modernOverlaySvg);
-        break;
-      }
-      case 'classic': {
-        const classicOverlaySvg = generateClassicOverlay(metadata, width, height, options);
-        overlayBuffer = Buffer.from(classicOverlaySvg);
-        break;
-      }
-      case 'minimal': {
-        const minimalOverlaySvg = generateMinimalOverlay(metadata, width, height, options);
-        overlayBuffer = Buffer.from(minimalOverlaySvg);
-        break;
-      }
-      default:
-        // Fallback to default overlay generation
-        overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
+    if (template.overlayGenerator) {
+      const overlaySvg = template.overlayGenerator(metadata, width, height, options);
+      overlayBuffer = Buffer.from(overlaySvg);
+    } else {
+      // Fallback to default overlay generation for custom templates
+      overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
     }
 
     // Composite overlay on base image
@@ -312,25 +302,23 @@ async function processImageForTemplate(
 ): Promise<sharp.Sharp> {
   // Check if template wants no background image
   if (template.layout.imagePosition === 'none') {
-    // For templates with custom backgrounds (minimal, classic), return transparent canvas
-    // They will provide their own background in the SVG overlay
-    if (template.name === 'minimal' || template.name === 'classic') {
+    // Use transparent canvas if template requires it, otherwise use blank canvas
+    if (template.imageProcessing?.requiresTransparentCanvas) {
       return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
 
-  // If no image available, handle based on template
+  // If no image available, handle based on template configuration
   if (!metadata.image) {
-    // Templates with custom backgrounds should use transparent canvas
-    if (template.name === 'minimal' || template.name === 'classic') {
+    // Use transparent canvas if template requires it for custom backgrounds
+    if (template.imageProcessing?.requiresTransparentCanvas) {
       return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
 
   // Process background image with template-specific effects
-
   try {
     const imageBuffer = await fetchImage(metadata.image);
     let processedImage = sharp(imageBuffer).resize(width, height, {
@@ -345,45 +333,29 @@ async function processImageForTemplate(
     }
 
     // Apply template-specific brightness/modulation
-    const brightnessEffect = getBrightnessForTemplate(template);
-    if (brightnessEffect !== 1.0) {
+    const brightnessValue = template.imageProcessing?.brightness ?? 1.0;
+    if (brightnessValue !== 1.0) {
       processedImage = processedImage.modulate({
-        brightness: brightnessEffect,
+        brightness: brightnessValue,
       });
     }
 
     return processedImage;
   } catch (fetchError) {
-    // If image fetch fails, create appropriate canvas based on template
+    // If image fetch fails, create appropriate canvas based on template configuration
     logImageFetchError(
       metadata.image,
       fetchError instanceof Error ? fetchError : new Error(String(fetchError))
     );
 
-    // Templates with custom backgrounds should use transparent canvas
-    if (template.name === 'minimal' || template.name === 'classic') {
+    // Use transparent canvas if template requires it for custom backgrounds
+    if (template.imageProcessing?.requiresTransparentCanvas) {
       return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
 }
 
-/**
- * Get brightness effect for template based on its design
- */
-function getBrightnessForTemplate(template: TemplateConfig): number {
-  // Template-specific brightness adjustments for better text readability
-  switch (template.name) {
-    case 'modern':
-      return 0.7; // Darker for better white text contrast
-    case 'classic':
-      return 0.9; // Slightly darker for business look
-    case 'minimal':
-      return 1.0; // No adjustment for clean look
-    default:
-      return 0.8; // Default moderate darkening
-  }
-}
 
 /**
  * Generate preview with full result details

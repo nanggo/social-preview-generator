@@ -126,6 +126,20 @@ export interface TemplateConfig {
   typography: TypographyConfig;
   /** Effects and styling */
   effects?: EffectsConfig;
+  /** Image processing configuration */
+  imageProcessing?: {
+    /** Brightness adjustment for background images (0.0 - 1.0, where 1.0 is original) */
+    brightness?: number;
+    /** Whether template requires transparent canvas when no image available */
+    requiresTransparentCanvas?: boolean;
+  };
+  /** Custom overlay generator function */
+  overlayGenerator?: (
+    metadata: ExtractedMetadata,
+    width: number,
+    height: number,
+    options: PreviewOptions
+  ) => string;
 }
 
 /**

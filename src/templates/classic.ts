@@ -5,7 +5,7 @@
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, wrapText, adjustBrightness } from '../utils';
-import { validateDimensions, validateColor } from '../utils/validators';
+import { validateColor } from '../utils/validators';
 
 /**
  * Classic template configuration
@@ -54,6 +54,11 @@ export const classicTemplate: TemplateConfig = {
     },
     borderRadius: 8,
   },
+  imageProcessing: {
+    brightness: 0.9,
+    requiresTransparentCanvas: true,
+  },
+  overlayGenerator: generateClassicOverlay,
 };
 
 /**
@@ -65,8 +70,6 @@ export function generateClassicOverlay(
   height: number,
   options: PreviewOptions = {}
 ): string {
-  // Validate dimensions
-  validateDimensions(width, height);
   const padding = classicTemplate.layout.padding;
   const textColor = validateColor(options.colors?.text || '#1a1a1a');
   const accentColor = validateColor(options.colors?.accent || '#2c5aa0');

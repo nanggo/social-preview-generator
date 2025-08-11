@@ -5,7 +5,7 @@
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, adjustBrightness, wrapText } from '../utils';
-import { validateDimensions, validateColor } from '../utils/validators';
+import { validateColor } from '../utils/validators';
 
 /**
  * Modern template configuration
@@ -54,6 +54,11 @@ export const modernTemplate: TemplateConfig = {
     },
     borderRadius: 0,
   },
+  imageProcessing: {
+    brightness: 0.7,
+    requiresTransparentCanvas: false,
+  },
+  overlayGenerator: generateModernOverlay,
 };
 
 /**
@@ -65,8 +70,6 @@ export function generateModernOverlay(
   height: number,
   options: PreviewOptions = {}
 ): string {
-  // Validate dimensions
-  validateDimensions(width, height);
 
   const padding = modernTemplate.layout.padding;
   const textColor = validateColor(options.colors?.text || '#ffffff');

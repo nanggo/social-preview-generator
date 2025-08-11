@@ -220,40 +220,5 @@ describe('Minimal Template', () => {
       expect(svg).toContain('<circle');
     });
 
-    it('should validate dimensions', () => {
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, 50, 630, {});
-      }).toThrow('Minimum dimensions: 100x100');
-
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, 1200, 50, {});
-      }).toThrow('Minimum dimensions: 100x100');
-
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, 5000, 630, {});
-      }).toThrow('Image dimensions cannot exceed 4096x4096 pixels');
-
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, 1200, 5000, {});
-      }).toThrow('Image dimensions cannot exceed 4096x4096 pixels');
-
-      // Test for non-finite numbers
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, NaN, 630, {});
-      }).toThrow('Dimensions must be finite numbers');
-
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, 1200, Infinity, {});
-      }).toThrow('Dimensions must be finite numbers');
-
-      // Test for negative/zero values
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, -100, 630, {});
-      }).toThrow('Minimum dimensions: 100x100');
-
-      expect(() => {
-        generateMinimalOverlay(mockMetadata, 0, 630, {});
-      }).toThrow('Minimum dimensions: 100x100');
-    });
   });
 });

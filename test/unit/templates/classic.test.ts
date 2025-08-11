@@ -187,40 +187,5 @@ describe('Classic Template', () => {
       expect(svg).toContain('Site &amp; Company');
     });
 
-    it('should validate dimensions', () => {
-      expect(() => {
-        generateClassicOverlay(mockMetadata, 50, 630, {});
-      }).toThrow('Minimum dimensions: 100x100');
-
-      expect(() => {
-        generateClassicOverlay(mockMetadata, 1200, 50, {});
-      }).toThrow('Minimum dimensions: 100x100');
-
-      expect(() => {
-        generateClassicOverlay(mockMetadata, 5000, 630, {});
-      }).toThrow('Image dimensions cannot exceed 4096x4096 pixels');
-
-      expect(() => {
-        generateClassicOverlay(mockMetadata, 1200, 5000, {});
-      }).toThrow('Image dimensions cannot exceed 4096x4096 pixels');
-
-      // Test for non-finite numbers
-      expect(() => {
-        generateClassicOverlay(mockMetadata, NaN, 630, {});
-      }).toThrow('Dimensions must be finite numbers');
-
-      expect(() => {
-        generateClassicOverlay(mockMetadata, 1200, Infinity, {});
-      }).toThrow('Dimensions must be finite numbers');
-
-      // Test for negative/zero values
-      expect(() => {
-        generateClassicOverlay(mockMetadata, -100, 630, {});
-      }).toThrow('Minimum dimensions: 100x100');
-
-      expect(() => {
-        generateClassicOverlay(mockMetadata, 0, 630, {});
-      }).toThrow('Minimum dimensions: 100x100');
-    });
   });
 });
