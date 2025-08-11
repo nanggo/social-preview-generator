@@ -3,6 +3,7 @@
  */
 
 import { PreviewGeneratorError, ErrorType } from '../types';
+import sharp from 'sharp';
 
 /**
  * Validates CSS color values to prevent injection attacks
@@ -142,8 +143,6 @@ export function validateDimensions(width: number, height: number): void {
  * Creates a transparent canvas for templates that provide their own background
  */
 export function createTransparentCanvas(width: number, height: number) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const sharp = require('sharp');
   return sharp({
     create: {
       width,
