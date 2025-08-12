@@ -6,7 +6,18 @@
 export interface LogContext {
   operation?: string;
   url?: string;
-  error?: Error;
+  hostname?: string;
+  actualIP?: string;
+  cachedIPs?: string[];
+  reason?: string;
+  blockedIPs?: string[];
+  allowedIPs?: string[];
+  address?: string;
+  family?: number;
+  totalAddresses?: number;
+  remoteAddress?: string;
+  remotePort?: number;
+  error?: string | Error;
   metadata?: Record<string, unknown>;
 }
 

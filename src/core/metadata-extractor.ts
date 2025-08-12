@@ -9,7 +9,7 @@ import { promisify } from 'util';
 import { lookup } from 'dns';
 import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions, RedirectOptions } from '../types';
 import { validateUrlInput } from '../utils/validators';
-import { getSecureAgentForUrl } from '../utils/secure-agent';
+import { getEnhancedSecureAgentForUrl, validateRequestSecurity } from '../utils/enhanced-secure-agent';
 import { validateImageBuffer } from '../utils/image-security';
 import { isPrivateOrReservedIP } from '../utils/ip-validation';
 
@@ -61,6 +61,20 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
     // Check HTTPS-only requirement
     if (securityOptions?.httpsOnly && urlObj.protocol !== 'https:') {
       throw new Error('HTTP URLs are not allowed when HTTPS-only mode is enabled.');
+    }
+
+    // Enhanced security validation with TOCTOU protection
+    const securityValidation = await validateRequestSecurity(url);
+    if (!securityValidation.allowed) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `URL blocked by security validation: ${securityValidation.reason}`,
+        { 
+          url, 
+          blockedIPs: securityValidation.blockedIPs,
+          allowedIPs: securityValidation.allowedIPs
+        }
+      );
     }
 
     // Skip IP validation for well-known domains to avoid unnecessary DNS lookups
@@ -150,8 +164,8 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
       maxContentLength: 1 * 1024 * 1024, // Reduced from 2MB to 1MB for HTML content
       maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
-      httpAgent: getSecureAgentForUrl(url),
-      httpsAgent: getSecureAgentForUrl(url),
+      httpAgent: getEnhancedSecureAgentForUrl(url),
+      httpsAgent: getEnhancedSecureAgentForUrl(url),
       beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as RedirectOptions;
@@ -366,8 +380,8 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
       maxContentLength: MAX_IMAGE_SIZE,
       maxBodyLength: MAX_IMAGE_SIZE,
-      httpAgent: getSecureAgentForUrl(validatedUrl),
-      httpsAgent: getSecureAgentForUrl(validatedUrl),
+      httpAgent: getEnhancedSecureAgentForUrl(validatedUrl),
+      httpsAgent: getEnhancedSecureAgentForUrl(validatedUrl),
       beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as RedirectOptions;

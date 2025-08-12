@@ -7,7 +7,7 @@
 
 | 우선순위 | 카테고리 | 완료 | 진행중 | 대기 | 총계 |
 |---------|---------|------|--------|------|------|
-| P0 (Critical) | 보안 | 10 | 0 | 2 | 12 |
+| P0 (Critical) | 보안 | 12 | 0 | 0 | 12 |
 | P1 (High) | 성능 | 0 | 0 | 6 | 6 |
 | P2 (Medium) | 품질 | 0 | 0 | 5 | 5 |
 
@@ -80,34 +80,41 @@
   - **브랜드 타입**: `SanitizedColor` 타입으로 검증 후 템플릿에만 주입 가능하게 설계
   - **CSS 인젝션 차단**: 색상값 외 CSS 구문 완전 차단
 
-### 6. ❌ Rate Limiting 부재
-- **파일**: 전체 시스템 
-- **상태**: ❌ 대기중 - 아키텍처 결정 필요
+### 6. ✅ Rate Limiting 부재
+- **파일**: `examples/middleware/` 디렉토리
+- **상태**: ✅ 완료 (2025-08-12)
+- **커밋**: [PHASE2-1] feat(security): implement comprehensive rate limiting middleware
 - **문제**: DoS 공격 방어 메커니즘 없음
-- **구현 방향**:
-  - **라이브러리 방식**: 코어에 직접 구현보다 `examples/middleware` 제공 권장
-  - **서버 통합 가이드**: IP별 버킷 토큰, 동시성 제한 큐 예시 제공
-  - **참고 구현**: express-rate-limit, 메모리/Redis 백엔드 옵션
-- **추가 고려사항**:
-  - 이미지 생성 비용 기반 제한 (CPU/메모리 사용량)
-  - 사용자별 할당량 시스템
-  - 우선순위 큐 (프리미엄 사용자 우대)
-- **예상 작업시간**: 3시간 (가이드 + 예시)
+- **적용 구현**:
+  - **Express 미들웨어**: Token bucket 알고리즘 기반 (`express-rate-limit.js`)
+  - **범용 제한기**: 프레임워크 독립적 sliding window 구현 (`generic-rate-limit.js`)
+  - **Redis 분산 제한기**: 분산 환경용 Lua 스크립트 기반 (`redis-backed-rate-limit.js`)
+  - **통합 서버 예시**: 완전한 서버 구현 예시 (`rate-limiting-server.js`)
+- **구현된 기능**:
+  - **비용 기반 제한**: 이미지 크기, 효과, 템플릿에 따른 동적 비용 계산
+  - **동시성 제한**: IP별 동시 요청 수 제한 및 대기열 관리
+  - **사용자 등급별 제한**: Free/Basic/Premium/Enterprise 등급별 차등 제한
+  - **모니터링**: 제한 도달 시 로깅 및 메트릭 수집 인터페이스
+- **테스트**: 포괄적 테스트 스위트 (`test-rate-limits.js`) 포함
+- **예상 작업시간**: 3시간 (가이드 + 예시) → **실제 소요**: 2.5시간
 
-### 7. ❌ DNS Rebinding 방어 미흡
-- **파일**: `src/utils/secure-agent.ts`
-- **상태**: ❌ 대기중 - 고도화 필요
+### 7. ✅ DNS Rebinding 방어 미흡
+- **파일**: `src/utils/enhanced-secure-agent.ts`
+- **상태**: ✅ 완료 (2025-08-12)
+- **커밋**: [PHASE2-2] feat(security): enhance DNS rebinding defense with TOCTOU protection
 - **문제**: Time-of-check-time-of-use (TOCTOU) 취약점으로 SSRF 우회 가능
-- **강화 방안**:
-  - **DNS 결과 고정**: 이름→IP 매핑을 TTL 캐시하고 연결 시점 재사용
-  - **이중 검증**: DNS lookup + connect-time `socket.remoteAddress` 재검증
-  - **사설망 차단**: RFC1918, 링크로컬, 멀티캐스트 IP 대역 완전 차단
-  - **연결 전 재검증**: 소켓 연결 직전 대상 IP 다시 한번 검증
-- **고급 공격 대비**:
-  - IPv6 매핑된 IPv4 주소 (`::ffff:192.168.1.1`) 차단
-  - DNS 레코드 TTL 조작 공격 대비
-  - HTTP 리다이렉트 체이닝 제한
-- **예상 작업시간**: 2시간
+- **적용 구현**:
+  - **DNS 캐시 시스템**: TTL 기반 DNS 결과 캐싱으로 일관된 IP 해결
+  - **소켓 레벨 검증**: 연결된 실제 IP를 DNS 캐시와 비교 재검증
+  - **IPv6 보안 강화**: IPv4-매핑 IPv6 및 위험 IPv6 대역 완전 차단
+  - **TLS 보안 설정**: 강화된 cipher suite 및 TLS 1.2+ 강제
+- **고급 보안 기능**:
+  - **동시 검증**: DNS lookup과 socket 연결 시점 IP 일치성 확인
+  - **캐시 관리**: 자동 만료, 크기 제한, 통계 및 무효화 API
+  - **포괄적 IPv6**: `::ffff:192.168.1.1`, `::1`, `fe80::/10` 등 모든 위험 대역
+  - **에이전트 싱글톤**: 성능 최적화된 재사용 가능 에이전트 인스턴스
+- **테스트 커버리지**: DNS 캐싱, TOCTOU 보호, IPv6 보안 등 21개 테스트
+- **예상 작업시간**: 2시간 → **실제 소요**: 2.5시간
 
 ### 8. ✅ 검증 로직 분산 및 타입 안전성 부족
 - **파일**: 전체 아키텍처
@@ -345,7 +352,27 @@
 ### 다음 단계  
 1. ✅ ~~P0 기본 보안 이슈 수정 완료~~ (2025-08-12)
 2. ✅ ~~Phase 1.5: 고급 보안 강화 완료~~ (2025-08-12)
-3. Phase 2: Rate Limiting 및 DNS Rebinding 방어 고도화
+3. ✅ ~~Phase 2: Rate Limiting 및 DNS Rebinding 방어 고도화 완료~~ (2025-08-12)
+4. Phase 3: 성능 최적화 (P1 작업)
+
+### 2025-08-12 (Phase 2 완료)
+- **P0 완전 완료**: 모든 Critical 보안 이슈 12개 항목 100% 완료 ✅
+- **Phase 2.1 완료**: Rate Limiting 시스템 구현
+  - ✅ Express.js 토큰 버킷 미들웨어 (`examples/middleware/express-rate-limit.js`)
+  - ✅ 범용 sliding window 제한기 (`examples/middleware/generic-rate-limit.js`)
+  - ✅ Redis 분산 제한기 with Lua scripts (`examples/middleware/redis-backed-rate-limit.js`)
+  - ✅ 완전한 서버 구현 예시 (`examples/rate-limiting-server.js`)
+  - ✅ 비용 기반 제한 (이미지 크기, 효과, 템플릿별 동적 코스트)
+  - ✅ 사용자 등급별 차등 제한 (Free/Basic/Premium/Enterprise)
+  - ✅ 포괄적 테스트 스위트 (`examples/test-rate-limits.js`)
+- **Phase 2.2 완료**: DNS Rebinding TOCTOU 방어 강화 
+  - ✅ DNS 결과 캐싱 시스템 with TTL 관리 (`src/utils/enhanced-secure-agent.ts`)
+  - ✅ 소켓 레벨 IP 재검증 (연결된 실제 IP vs 캐시된 DNS 결과)
+  - ✅ IPv6 보안 포괄적 강화 (IPv4-mapped, 링크로컬, 멀티캐스트 등)
+  - ✅ TLS 보안 설정 고도화 (cipher suite, TLS 1.2+ 강제)
+  - ✅ 에이전트 싱글톤 패턴으로 성능 최적화
+  - ✅ 캐시 관리 API (통계, 무효화, 자동 정리)
+  - ✅ 21개 테스트 케이스로 TOCTOU 보호 검증
 
 ---
 
