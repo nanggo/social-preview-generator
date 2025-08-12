@@ -406,34 +406,19 @@ class CombinedRateLimiter {
       throw error;
     }
 
-    // Acquire concurrency slot with timeout handling
+    // Acquire concurrency slot with built-in timeout handling
     let releaseSlot;
-    let timeoutHandle;
-    
-    const acquirePromise = this.concurrencyLimiter.acquire(key);
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutHandle = setTimeout(() => {
-        reject(new Error('Request timeout while waiting for concurrency slot'));
-      }, this.options.requestTimeout);
-    });
-
     try {
-      releaseSlot = await Promise.race([acquirePromise, timeoutPromise]);
-      
-      // Clear timeout if acquire succeeded
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
+      releaseSlot = await this.concurrencyLimiter.acquire(
+        key,
+        undefined, // Let acquire generate requestId
+        this.options.requestTimeout
+      );
     } catch (error) {
-      // Clear timeout on error
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-      
       const concurrencyStatus = this.concurrencyLimiter.getStatus(key);
       this.options.onConcurrencyLimitExceeded(key, concurrencyStatus);
       
-      const err = new Error('Concurrency limit exceeded or timeout');
+      const err = new Error(error.message || 'Concurrency limit exceeded or timeout');
       err.code = 'CONCURRENCY_LIMIT_EXCEEDED';
       err.status = concurrencyStatus;
       throw err;

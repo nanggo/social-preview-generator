@@ -5,15 +5,10 @@
 
 import ogs from 'open-graph-scraper';
 import axios from 'axios';
-import { promisify } from 'util';
-import { lookup } from 'dns';
 import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions, RedirectOptions } from '../types';
 import { validateUrlInput } from '../utils/validators';
 import { getEnhancedSecureAgentForUrl, validateRequestSecurity } from '../utils/enhanced-secure-agent';
 import { validateImageBuffer } from '../utils/image-security';
-import { isPrivateOrReservedIP } from '../utils/ip-validation';
-
-const dnsLookup = promisify(lookup);
 
 
 /**
@@ -75,72 +70,6 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
           allowedIPs: securityValidation.allowedIPs
         }
       );
-    }
-
-    // Skip IP validation for well-known domains to avoid unnecessary DNS lookups
-    const hostname = urlObj.hostname.toLowerCase();
-    const wellKnownDomains = [
-      'github.com',
-      'gitlab.com',
-      'bitbucket.org',
-      'stackoverflow.com',
-      'medium.com',
-      'dev.to',
-      'google.com',
-      'youtube.com',
-      'twitter.com',
-      'facebook.com',
-      // Test domains
-      'example.com',
-      'twitter-example.com',
-      'minimal.com',
-      'error-example.com',
-    ];
-
-    const isWellKnown = wellKnownDomains.some(
-      (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
-    );
-
-    if (!isWellKnown) {
-      try {
-        // Try IPv4 first, then IPv6 if IPv4 fails
-        let resolvedAddress: string;
-
-        try {
-          // Resolve hostname to IPv4 address
-          const { address } = await dnsLookup(urlObj.hostname, 4);
-          resolvedAddress = address;
-        } catch {
-          // If IPv4 resolution fails, try IPv6
-          try {
-            const { address } = await dnsLookup(urlObj.hostname, 6);
-            resolvedAddress = address;
-          } catch {
-            throw new Error(
-              `DNS lookup failed for both IPv4 and IPv6 for host: ${urlObj.hostname}. Request blocked to prevent SSRF vulnerabilities.`
-            );
-          }
-        }
-
-        // Check if the resolved address (IPv4 or IPv6) is in a private/reserved range
-        if (isPrivateOrReservedIP(resolvedAddress)) {
-          throw new Error(
-            `Access to private/reserved IP address is not allowed: ${resolvedAddress}`
-          );
-        }
-      } catch (dnsError) {
-        if (
-          dnsError instanceof Error &&
-          (dnsError.message.includes('private/reserved') ||
-            dnsError.message.includes('DNS lookup failed'))
-        ) {
-          throw dnsError; // Re-throw our custom errors
-        }
-        // Other DNS errors - block for security
-        throw new Error(
-          `DNS resolution failed for host: ${urlObj.hostname}. Request blocked to prevent SSRF vulnerabilities.`
-        );
-      }
     }
 
     return urlObj.toString();
