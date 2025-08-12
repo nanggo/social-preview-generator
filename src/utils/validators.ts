@@ -476,9 +476,11 @@ export function validateUrlInput(url: string): string {
  * Check if URL input is safe from injection attacks
  */
 function isSafeUrlInput(url: string): boolean {
-  // Check for blocked protocols
+  // Check for blocked protocols - must check URL start, not anywhere in the string
+  // to avoid false positives like "https://example.com/page?info=some_data:value"
+  const lowerUrl = url.trim().toLowerCase();
   for (const protocol of BLOCKED_PROTOCOLS) {
-    if (url.toLowerCase().includes(protocol)) {
+    if (lowerUrl.startsWith(protocol)) {
       return false;
     }
   }
