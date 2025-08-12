@@ -365,10 +365,16 @@ async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
         .filter((item: string) => item !== 'unknown');
 
       // Block SVG if dangerous elements/attributes were removed
-      const dangerousPatterns = ['script', 'object', 'embed', 'iframe', 'on'];
-      const hasDangerousContent = removedElements.some((item: string) => 
-        dangerousPatterns.some(pattern => item.toLowerCase().includes(pattern))
-      );
+      const dangerousTagPatterns = ['<script>', '<object>', '<embed>', '<iframe>'];
+      const hasDangerousContent = removedElements.some((item: string) => {
+        const lowerItem = item.toLowerCase();
+        if (lowerItem.startsWith('<')) {
+          // Tag elements: check for exact dangerous tag matches
+          return dangerousTagPatterns.some(tag => lowerItem.startsWith(tag));
+        }
+        // Attributes: check for event handlers that start with 'on'
+        return lowerItem.trim().startsWith('on');
+      });
 
       if (hasDangerousContent) {
         throw new PreviewGeneratorError(

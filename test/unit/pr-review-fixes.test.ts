@@ -117,6 +117,42 @@ describe('PR Review Fixes', () => {
         expect((error as PreviewGeneratorError).message).toMatch(/SVG blocked.*object/i);
       }
     });
+
+    it('should NOT falsely block legitimate SVG elements containing "on"', async () => {
+      // These legitimate SVG elements contain 'on' but should not be blocked
+      const legitimateSvg = Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+          <polygon points="10,10 50,10 50,50 10,50" fill="blue"/>
+          <button>Click me</button>
+          <section>Content here</section>
+        </svg>`
+      );
+
+      // Should not throw error due to false positive 'on' matching
+      // Note: DOMPurify might still sanitize button/section as they're not typical SVG elements
+      // But the important thing is our pattern matching doesn't cause false security blocks
+      try {
+        await validateImageBuffer(legitimateSvg, true);
+        // If it succeeds, great! No false positive
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        // Should NOT be blocked due to 'on' pattern - check error message
+        expect((error as PreviewGeneratorError).message).not.toMatch(/SVG blocked.*polygon|button|section/i);
+      }
+    });
+
+    it('should correctly identify event handlers vs element names', async () => {
+      // This should be blocked due to actual event handler
+      const eventHandlerSvg = Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg">
+          <rect onclick="alert('xss')" width="100" height="100"/>
+        </svg>`
+      );
+
+      await expect(validateImageBuffer(eventHandlerSvg, true)).rejects.toThrow(
+        /SVG blocked.*onclick/i
+      );
+    });
   });
 
   describe('SVG MIME Type Conditional Handling', () => {
