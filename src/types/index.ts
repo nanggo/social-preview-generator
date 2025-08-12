@@ -22,6 +22,22 @@ export interface PreviewOptions {
   fonts?: FontConfig[];
   /** Custom colors for the template */
   colors?: ColorConfig;
+  /** Security options */
+  security?: SecurityOptions;
+}
+
+/**
+ * Security configuration options
+ */
+export interface SecurityOptions {
+  /** Force HTTPS-only requests (reject HTTP URLs) */
+  httpsOnly?: boolean;
+  /** Allow SVG images (disabled by default for security) */
+  allowSvg?: boolean;
+  /** Maximum allowed redirects (default: 3) */
+  maxRedirects?: number;
+  /** Request timeout in milliseconds (default: 8000 for HTML, 12000 for images) */
+  timeout?: number;
 }
 
 /**

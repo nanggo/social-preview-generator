@@ -7,7 +7,10 @@ import ogs from 'open-graph-scraper';
 import axios from 'axios';
 import { promisify } from 'util';
 import { lookup } from 'dns';
-import { ExtractedMetadata, ErrorType, PreviewGeneratorError } from '../types';
+import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions } from '../types';
+import { validateUrlInput } from '../utils/validators';
+import { getSecureAgentForUrl } from '../utils/secure-agent';
+import { validateImageBuffer } from '../utils/image-security';
 
 const dnsLookup = promisify(lookup);
 
@@ -157,15 +160,16 @@ function isPrivateOrReservedIPv6(ip: string): boolean {
 /**
  * Extract metadata from a given URL
  * @param url - The URL to extract metadata from
+ * @param securityOptions - Security configuration options
  * @returns Extracted metadata object
  */
-export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
+export async function extractMetadata(url: string, securityOptions?: SecurityOptions): Promise<ExtractedMetadata> {
   try {
-    // Validate URL with SSRF protection
-    const validatedUrl = await validateUrl(url);
+    // Validate URL with SSRF protection and security options
+    const validatedUrl = await validateUrl(url, securityOptions);
 
     // Extract Open Graph data
-    const ogData = await fetchOpenGraphData(validatedUrl);
+    const ogData = await fetchOpenGraphData(validatedUrl, securityOptions);
 
     // Parse and normalize metadata
     const metadata = parseMetadata(ogData, validatedUrl);
@@ -186,13 +190,18 @@ export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
 /**
  * Validate and normalize URL with SSRF protection
  */
-async function validateUrl(url: string): Promise<string> {
+async function validateUrl(url: string, securityOptions?: SecurityOptions): Promise<string> {
   try {
     const urlObj = new URL(url);
 
     // Ensure protocol is http or https
     if (!['http:', 'https:'].includes(urlObj.protocol)) {
       throw new Error('Invalid protocol. Only HTTP and HTTPS are supported.');
+    }
+
+    // Check HTTPS-only requirement
+    if (securityOptions?.httpsOnly && urlObj.protocol !== 'https:') {
+      throw new Error('HTTP URLs are not allowed when HTTPS-only mode is enabled.');
     }
 
     // Skip IP validation for well-known domains to avoid unnecessary DNS lookups
@@ -270,17 +279,37 @@ async function validateUrl(url: string): Promise<string> {
 /**
  * Fetch Open Graph data using open-graph-scraper
  */
-async function fetchOpenGraphData(url: string): Promise<Record<string, unknown>> {
+async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions): Promise<Record<string, unknown>> {
   try {
-    // First, try to fetch HTML content
-    const response = await axios.get(url, {
+    // Create secure axios config with redirect validation and secure agent
+    const axiosConfig = {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
         Accept: 'text/html,application/xhtml+xml',
       },
-      timeout: 10000,
-      maxRedirects: 5,
-    });
+      timeout: securityOptions?.timeout || 8000, // Configurable timeout
+      maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
+      maxContentLength: 1 * 1024 * 1024, // Reduced from 2MB to 1MB for HTML content
+      maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
+      httpAgent: getSecureAgentForUrl(url),
+      httpsAgent: getSecureAgentForUrl(url),
+      beforeRedirect: (options: any) => {
+        // Validate each redirect URL for SSRF protection
+        const redirectUrl = `${options.protocol}//${options.hostname}${options.path || ''}${options.search || ''}`;
+        try {
+          validateUrlInput(redirectUrl);
+        } catch (error) {
+          throw new PreviewGeneratorError(
+            ErrorType.VALIDATION_ERROR,
+            `Redirect to unsafe URL blocked: ${redirectUrl}`,
+            error
+          );
+        }
+      },
+    };
+
+    // First, try to fetch HTML content
+    const response = await axios.get(url, axiosConfig);
 
     // Extract OG data from HTML
     const { error, result } = await ogs({ html: response.data, url });
@@ -441,25 +470,26 @@ function cleanText(text: string): string {
 /**
  * Fetch image from URL and return as buffer with size and type validation
  * @param imageUrl - URL of the image to fetch
+ * @param securityOptions - Security configuration options
  * @returns Image buffer
  */
-export async function fetchImage(imageUrl: string): Promise<Buffer> {
+export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions): Promise<Buffer> {
   try {
     // Validate URL with SSRF protection before fetching
-    const validatedUrl = await validateUrl(imageUrl);
+    const validatedUrl = await validateUrl(imageUrl, securityOptions);
 
     // Maximum allowed image size (15MB)
     const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 
-    // Allowed MIME types for images
+    // Allowed MIME types for images (SVG removed for security)
     const ALLOWED_MIME_TYPES = new Set([
       'image/jpeg',
       'image/jpg',
       'image/png',
       'image/gif',
       'image/webp',
-      'image/svg+xml',
       'image/bmp',
+      'image/tiff',
     ]);
 
     const response = await axios.get(validatedUrl, {
@@ -467,17 +497,32 @@ export async function fetchImage(imageUrl: string): Promise<Buffer> {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
       },
-      timeout: 15000,
-      maxRedirects: 5,
+      timeout: securityOptions?.timeout || 12000, // Configurable timeout (default 12s for images)
+      maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
       maxContentLength: MAX_IMAGE_SIZE,
       maxBodyLength: MAX_IMAGE_SIZE,
+      httpAgent: getSecureAgentForUrl(validatedUrl),
+      httpsAgent: getSecureAgentForUrl(validatedUrl),
+      beforeRedirect: (options: any) => {
+        // Validate each redirect URL for SSRF protection
+        const redirectUrl = `${options.protocol}//${options.hostname}${options.path || ''}${options.search || ''}`;
+        try {
+          validateUrlInput(redirectUrl);
+        } catch (error) {
+          throw new PreviewGeneratorError(
+            ErrorType.VALIDATION_ERROR,
+            `Image redirect to unsafe URL blocked: ${redirectUrl}`,
+            error
+          );
+        }
+      },
     });
 
     // Check content-type header if available
     const contentType = response.headers?.['content-type']?.toLowerCase();
     if (contentType && !ALLOWED_MIME_TYPES.has(contentType)) {
       throw new Error(
-        `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, SVG, and BMP are allowed.`
+        `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, BMP, and TIFF are allowed.`
       );
     }
 
@@ -491,6 +536,9 @@ export async function fetchImage(imageUrl: string): Promise<Buffer> {
         `Image too large: ${contentLength} bytes. Maximum allowed: ${MAX_IMAGE_SIZE} bytes.`
       );
     }
+
+    // Validate image for security (pixel bombs, malformed files, etc.)
+    await validateImageBuffer(imageBuffer, securityOptions?.allowSvg);
 
     return imageBuffer;
   } catch (error) {

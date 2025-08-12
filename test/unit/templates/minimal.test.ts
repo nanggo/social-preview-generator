@@ -56,7 +56,7 @@ describe('Minimal Template', () => {
       expect(svg).toContain('font-weight: 300');
       expect(svg).toContain('class="minimal-title"');
       expect(svg).toContain('class="minimal-description"');
-      expect(svg).toContain('Inter');
+      expect(svg).toContain('-apple-system');
     });
 
     it('should center all content', () => {
