@@ -12,7 +12,8 @@ import { ExtractedMetadata, ErrorType, PreviewGeneratorError } from '../types';
 const dnsLookup = promisify(lookup);
 
 /**
- * Check if an IP address is in a private or reserved range
+ * Check if an IPv4 address is in a private or reserved range
+ * Note: This function only handles IPv4 addresses. IPv6 support will be added in the future.
  */
 function isPrivateOrReservedIP(ip: string): boolean {
   const octets = ip.split('.').map(Number);
@@ -98,10 +99,12 @@ async function validateUrl(url: string): Promise<string> {
 
     if (!isWellKnown) {
       try {
-        // Resolve hostname to IP address
-        const { address } = await dnsLookup(urlObj.hostname);
+        // Resolve hostname to IPv4 address only
+        // We explicitly request IPv4 (family: 4) to avoid issues with IPv6 addresses
+        // which would be incorrectly blocked by our current IP validation logic
+        const { address } = await dnsLookup(urlObj.hostname, 4);
         
-        // Check if the resolved IP is in a private/reserved range
+        // Check if the resolved IPv4 address is in a private/reserved range
         if (isPrivateOrReservedIP(address)) {
           throw new Error(`Access to private/reserved IP address is not allowed: ${address}`);
         }
@@ -109,8 +112,8 @@ async function validateUrl(url: string): Promise<string> {
         if (dnsError instanceof Error && dnsError.message.includes('private/reserved')) {
           throw dnsError; // Re-throw our custom error
         }
-        // For DNS resolution failures, we'll allow the request to proceed
-        // as it will fail naturally at the HTTP level
+        // For DNS resolution failures (including IPv6-only hosts), we'll allow the request to proceed
+        // as it will fail naturally at the HTTP level if the host is unreachable
       }
     }
 
