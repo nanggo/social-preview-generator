@@ -336,19 +336,29 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
   let image: string | undefined;
   if (ogData.ogImage) {
     if (Array.isArray(ogData.ogImage)) {
-      image = (ogData.ogImage[0] as any)?.url || (ogData.ogImage[0] as string);
-    } else if (typeof ogData.ogImage === 'object') {
-      image = (ogData.ogImage as any).url;
-    } else {
-      image = ogData.ogImage as string;
+      const firstImage = ogData.ogImage[0];
+      if (typeof firstImage === 'object' && firstImage !== null && 'url' in firstImage) {
+        image = (firstImage as { url: string }).url;
+      } else if (typeof firstImage === 'string') {
+        image = firstImage;
+      }
+    } else if (typeof ogData.ogImage === 'object' && ogData.ogImage !== null && 'url' in ogData.ogImage) {
+      image = (ogData.ogImage as { url: string }).url;
+    } else if (typeof ogData.ogImage === 'string') {
+      image = ogData.ogImage;
     }
   } else if (ogData.twitterImage) {
     if (Array.isArray(ogData.twitterImage)) {
-      image = (ogData.twitterImage[0] as any)?.url || (ogData.twitterImage[0] as string);
-    } else if (typeof ogData.twitterImage === 'object') {
-      image = (ogData.twitterImage as any).url;
-    } else {
-      image = ogData.twitterImage as string;
+      const firstImage = ogData.twitterImage[0];
+      if (typeof firstImage === 'object' && firstImage !== null && 'url' in firstImage) {
+        image = (firstImage as { url: string }).url;
+      } else if (typeof firstImage === 'string') {
+        image = firstImage;
+      }
+    } else if (typeof ogData.twitterImage === 'object' && ogData.twitterImage !== null && 'url' in ogData.twitterImage) {
+      image = (ogData.twitterImage as { url: string }).url;
+    } else if (typeof ogData.twitterImage === 'string') {
+      image = ogData.twitterImage;
     }
   }
 
