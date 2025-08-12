@@ -41,6 +41,36 @@ export interface SecurityOptions {
 }
 
 /**
+ * Redirect options interface for axios beforeRedirect callback
+ */
+export interface RedirectOptions {
+  /** Request protocol (http: or https:) */
+  protocol: string;
+  /** Target hostname */
+  hostname: string;
+  /** Request path */
+  path?: string;
+  /** Query string parameters */
+  search?: string;
+  /** Request port */
+  port?: string | number;
+  /** Request method */
+  method?: string;
+}
+
+/**
+ * Response details interface for axios beforeRedirect callback
+ */
+export interface RedirectResponseDetails {
+  /** HTTP status code */
+  statusCode: number;
+  /** Response headers */
+  headers: Record<string, string | string[]>;
+  /** Response body (if available) */
+  body?: string;
+}
+
+/**
  * Available template types
  */
 export type TemplateType = 'modern' | 'classic' | 'minimal' | 'custom';

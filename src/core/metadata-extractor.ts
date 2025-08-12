@@ -7,7 +7,7 @@ import ogs from 'open-graph-scraper';
 import axios from 'axios';
 import { promisify } from 'util';
 import { lookup } from 'dns';
-import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions } from '../types';
+import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions, RedirectOptions } from '../types';
 import { validateUrlInput } from '../utils/validators';
 import { getSecureAgentForUrl } from '../utils/secure-agent';
 import { validateImageBuffer } from '../utils/image-security';
@@ -293,9 +293,10 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
       httpAgent: getSecureAgentForUrl(url),
       httpsAgent: getSecureAgentForUrl(url),
-      beforeRedirect: (options: any) => {
-        // Validate each redirect URL for SSRF protection
-        const redirectUrl = `${options.protocol}//${options.hostname}${options.path || ''}${options.search || ''}`;
+      beforeRedirect: (options: Record<string, any>, responseDetails: { headers: Record<string, string>; statusCode: number }) => {
+        // Validate each redirect URL for SSRF protection using typed interface for clarity
+        const redirectOptions = options as RedirectOptions;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
         try {
           validateUrlInput(redirectUrl);
         } catch (error) {
@@ -503,9 +504,10 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       maxBodyLength: MAX_IMAGE_SIZE,
       httpAgent: getSecureAgentForUrl(validatedUrl),
       httpsAgent: getSecureAgentForUrl(validatedUrl),
-      beforeRedirect: (options: any) => {
-        // Validate each redirect URL for SSRF protection
-        const redirectUrl = `${options.protocol}//${options.hostname}${options.path || ''}${options.search || ''}`;
+      beforeRedirect: (options: Record<string, any>, responseDetails: { headers: Record<string, string>; statusCode: number }) => {
+        // Validate each redirect URL for SSRF protection using typed interface for clarity
+        const redirectOptions = options as RedirectOptions;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
         try {
           validateUrlInput(redirectUrl);
         } catch (error) {

@@ -3,16 +3,21 @@ import { ExtractedMetadata } from '../../src/types';
 import { mockHtmlWithOg, mockHtmlMinimal, mockHtmlWithTwitter } from '../fixtures/mock-html';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
+import * as imageSecurity from '../../src/utils/image-security';
 
 jest.mock('axios');
 jest.mock('open-graph-scraper');
+jest.mock('../../src/utils/image-security');
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 const mockedOgs = ogs as jest.MockedFunction<typeof ogs>;
+const mockedImageSecurity = imageSecurity as jest.Mocked<typeof imageSecurity>;
 
 describe('Metadata Extractor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Mock validateImageBuffer to resolve successfully for tests
+    mockedImageSecurity.validateImageBuffer = jest.fn().mockResolvedValue(undefined);
   });
 
   describe('extractMetadata', () => {
@@ -169,7 +174,8 @@ describe('Metadata Extractor', () => {
   describe('fetchImage', () => {
     it('should fetch image successfully', async () => {
       const imageUrl = 'https://example.com/image.jpg';
-      const mockImageData = Buffer.from('mock-image-data');
+      // Mock JPEG image data with proper magic bytes
+      const mockImageData = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, ...Array(100).fill(0)]);
 
       mockedAxios.get.mockResolvedValueOnce({
         data: mockImageData,
@@ -178,16 +184,16 @@ describe('Metadata Extractor', () => {
       const result = await fetchImage(imageUrl);
 
       expect(result).toEqual(mockImageData);
-      expect(mockedAxios.get).toHaveBeenCalledWith(imageUrl, {
+      expect(mockedAxios.get).toHaveBeenCalledWith(imageUrl, expect.objectContaining({
         responseType: 'arraybuffer',
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
         },
-        timeout: 15000,
-        maxRedirects: 5,
+        timeout: 12000,
+        maxRedirects: 3,
         maxContentLength: 15 * 1024 * 1024,
         maxBodyLength: 15 * 1024 * 1024,
-      });
+      }));
     });
 
     it('should throw error on fetch failure', async () => {

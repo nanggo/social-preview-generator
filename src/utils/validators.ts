@@ -465,7 +465,9 @@ function isSafeUrlInput(url: string): boolean {
   const dangerousPatterns = [
     // Injection patterns
     /javascript:/gi, // JavaScript protocol
-    /data:/gi, // Data URIs (can be dangerous)
+    /data:text\/html/gi, // HTML data URIs (specific threat)
+    /data:application\/javascript/gi, // JavaScript data URIs
+    /data:text\/javascript/gi, // JavaScript text data URIs
     /vbscript:/gi, // VBScript protocol
     /file:/gi, // File protocol
     /ftp:/gi, // FTP protocol (not supported)

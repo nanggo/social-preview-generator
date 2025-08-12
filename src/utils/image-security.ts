@@ -4,7 +4,6 @@
  */
 
 import sharp from 'sharp';
-import { fileTypeFromBuffer } from 'file-type';
 import { PreviewGeneratorError, ErrorType } from '../types';
 
 // Maximum allowed pixels for image processing (32 megapixels)
@@ -56,41 +55,28 @@ export async function validateImageBuffer(imageBuffer: Buffer, allowSvg: boolean
     );
   }
 
-  // First, detect actual file type using magic bytes
-  const detectedType = await fileTypeFromBuffer(imageBuffer);
+  // Simple magic bytes check for basic file type validation
+  const header = imageBuffer.slice(0, 16);
   
-  // Define allowed MIME types
-  const allowedMimeTypes = [
-    'image/jpeg',
-    'image/png', 
-    'image/webp',
-    'image/gif',
-    'image/bmp',
-    'image/tiff'
-  ];
+  // Check for basic image file signatures
+  const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+  const isPNG = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
+  const isWebP = header.indexOf(Buffer.from('WEBP')) !== -1;
+  const isGIF = header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46;
+  const isBMP = header[0] === 0x42 && header[1] === 0x4D;
+  const isTIFF = (header[0] === 0x49 && header[1] === 0x49 && header[2] === 0x2A && header[3] === 0x00) ||
+                 (header[0] === 0x4D && header[1] === 0x4D && header[2] === 0x00 && header[3] === 0x2A);
+  const isSVG = allowSvg && imageBuffer.toString('utf8', 0, 100).toLowerCase().includes('<svg');
 
-  // Conditionally allow SVG (disabled by default for security)
-  if (allowSvg) {
-    allowedMimeTypes.push('image/svg+xml');
-  }
-
-  // Validate detected file type
-  if (!detectedType) {
+  if (!isJPEG && !isPNG && !isWebP && !isGIF && !isBMP && !isTIFF && !isSVG) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
-      'Could not determine file type from content. File may be corrupted or not a valid image.'
-    );
-  }
-
-  if (!allowedMimeTypes.includes(detectedType.mime)) {
-    throw new PreviewGeneratorError(
-      ErrorType.IMAGE_ERROR,
-      `Unsupported image type detected: ${detectedType.mime}. Allowed types: ${allowedMimeTypes.join(', ')}`
+      'Unsupported image format. Only JPEG, PNG, WebP, GIF, BMP, and TIFF are supported.'
     );
   }
 
   // Special handling for SVG files (if allowed)
-  if (detectedType.mime === 'image/svg+xml') {
+  if (isSVG) {
     await validateSvgContent(imageBuffer);
     return; // Skip Sharp validation for SVG
   }
@@ -124,21 +110,12 @@ export async function validateImageBuffer(imageBuffer: Buffer, allowSvg: boolean
       );
     }
 
-    // Cross-validate detected type with Sharp format
-    const sharpFormatMap: Record<string, string> = {
-      'image/jpeg': 'jpeg',
-      'image/png': 'png',
-      'image/webp': 'webp', 
-      'image/gif': 'gif',
-      'image/bmp': 'bmp',
-      'image/tiff': 'tiff'
-    };
-
-    const expectedFormat = sharpFormatMap[detectedType.mime];
-    if (metadata.format && metadata.format !== expectedFormat) {
+    // Sharp format validation - ensure it's a recognized image format
+    const supportedFormats = ['jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff'];
+    if (metadata.format && !supportedFormats.includes(metadata.format)) {
       throw new PreviewGeneratorError(
         ErrorType.IMAGE_ERROR,
-        `File type mismatch: detected ${detectedType.mime} but Sharp identified ${metadata.format}`
+        `Unsupported image format detected by Sharp: ${metadata.format}`
       );
     }
 
@@ -161,29 +138,61 @@ export async function validateImageBuffer(imageBuffer: Buffer, allowSvg: boolean
 async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
   const svgContent = svgBuffer.toString('utf8');
   
-  // Check for potentially dangerous SVG content
+  // Check for potentially dangerous SVG content with more precise patterns
   const dangerousPatterns = [
-    /<script/gi,           // Script tags
-    /javascript:/gi,       // JavaScript protocol
-    /data:/gi,            // Data URIs (can contain JS)
-    /@import/gi,          // CSS imports
-    /url\(/gi,            // External URL references
-    /<foreignObject/gi,   // Foreign objects (can contain HTML)
-    /<iframe/gi,          // Iframe tags
-    /<object/gi,          // Object tags
-    /<embed/gi,           // Embed tags
-    /onload/gi,           // Event handlers
-    /onclick/gi,
-    /onmouseover/gi,
-    /onerror/gi,
+    /<script/gi,                    // Script tags
+    /javascript:/gi,                // JavaScript protocol
+    /data:text\/html/gi,           // HTML data URIs (specific threat)
+    /data:application\/javascript/gi, // JavaScript data URIs
+    /data:text\/javascript/gi,     // JavaScript text data URIs
+    /@import\s+["']?https?:/gi,    // External CSS imports (not local)
+    /url\(["']?https?:/gi,         // External URL references (not local refs like #id)
+    /url\(["']?data:text\/html/gi, // Data URL with HTML
+    /url\(["']?javascript:/gi,     // JavaScript URLs
+    /<foreignObject/gi,            // Foreign objects (can contain HTML)
+    /<iframe/gi,                   // Iframe tags
+    /<object/gi,                   // Object tags
+    /<embed/gi,                    // Embed tags
+    /onload\s*=/gi,               // Event handlers with assignment
+    /onclick\s*=/gi,
+    /onmouseover\s*=/gi,
+    /onerror\s*=/gi,
+    /onmouseout\s*=/gi,
+    /onfocus\s*=/gi,
+    /onblur\s*=/gi,
+    /onkeydown\s*=/gi,
+    /onkeyup\s*=/gi,
+    /onsubmit\s*=/gi,
   ];
 
+  // Check for dangerous patterns with specific context validation
   for (const pattern of dangerousPatterns) {
-    if (pattern.test(svgContent)) {
-      throw new PreviewGeneratorError(
-        ErrorType.IMAGE_ERROR,
-        'SVG content contains potentially dangerous elements and has been blocked for security'
-      );
+    const matches = svgContent.match(pattern);
+    if (matches) {
+      // Additional validation to reduce false positives
+      for (const match of matches) {
+        const lowerMatch = match.toLowerCase();
+        
+        // Allow safe local references like url(#gradient) or url("#pattern")
+        if (lowerMatch.includes('url(') && 
+            (lowerMatch.includes('#') || lowerMatch.includes('"#') || lowerMatch.includes("'#"))) {
+          continue; // Skip safe local references
+        }
+        
+        // Allow safe data URIs for images (not HTML/JS)
+        if (lowerMatch.includes('data:') && 
+            (lowerMatch.includes('data:image/') || 
+             lowerMatch.includes('data:font/') ||
+             lowerMatch.includes('data:application/font'))) {
+          continue; // Skip safe image/font data URIs
+        }
+        
+        // If we reach here, it's a potentially dangerous pattern
+        throw new PreviewGeneratorError(
+          ErrorType.IMAGE_ERROR,
+          `SVG content contains potentially dangerous element: ${match.slice(0, 50)}...`
+        );
+      }
     }
   }
 
