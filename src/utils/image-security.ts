@@ -5,6 +5,8 @@
 
 import sharp from 'sharp';
 import { PreviewGeneratorError, ErrorType } from '../types';
+import { JSDOM } from 'jsdom';
+import DOMPurify from 'dompurify';
 
 // Maximum allowed pixels for image processing (32 megapixels)
 const MAX_INPUT_PIXELS = 32 * 1024 * 1024;
@@ -24,8 +26,8 @@ export function initializeSharpSecurity(): void {
   try {
     // Set global pixel limit to prevent pixel bomb attacks
     // Note: sharp.limitInputPixels() might not be available in all versions
-    if (typeof (sharp as any).limitInputPixels === 'function') {
-      (sharp as any).limitInputPixels(MAX_INPUT_PIXELS);
+    if (typeof (sharp as unknown as { limitInputPixels?: (pixels: number) => void }).limitInputPixels === 'function') {
+      (sharp as unknown as { limitInputPixels: (pixels: number) => void }).limitInputPixels(MAX_INPUT_PIXELS);
     }
 
     // Set memory limits
@@ -39,6 +41,7 @@ export function initializeSharpSecurity(): void {
     sharp.concurrency(4);
   } catch (error) {
     // Silently fail if Sharp configuration is not supported
+    // eslint-disable-next-line no-console
     console.warn('Could not configure Sharp security settings:', error);
   }
 }
@@ -133,74 +136,86 @@ export async function validateImageBuffer(imageBuffer: Buffer, allowSvg: boolean
 }
 
 /**
- * Validate SVG content for security risks
+ * Validate SVG content for security risks using DOMPurify
  */
 async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
   const svgContent = svgBuffer.toString('utf8');
   
-  // Check for potentially dangerous SVG content with more precise patterns
-  const dangerousPatterns = [
-    /<script/gi,                    // Script tags
-    /javascript:/gi,                // JavaScript protocol
-    /data:text\/html/gi,           // HTML data URIs (specific threat)
-    /data:application\/javascript/gi, // JavaScript data URIs
-    /data:text\/javascript/gi,     // JavaScript text data URIs
-    /@import\s+["']?https?:/gi,    // External CSS imports (not local)
-    /url\(["']?https?:/gi,         // External URL references (not local refs like #id)
-    /url\(["']?data:text\/html/gi, // Data URL with HTML
-    /url\(["']?javascript:/gi,     // JavaScript URLs
-    /<foreignObject/gi,            // Foreign objects (can contain HTML)
-    /<iframe/gi,                   // Iframe tags
-    /<object/gi,                   // Object tags
-    /<embed/gi,                    // Embed tags
-    /onload\s*=/gi,               // Event handlers with assignment
-    /onclick\s*=/gi,
-    /onmouseover\s*=/gi,
-    /onerror\s*=/gi,
-    /onmouseout\s*=/gi,
-    /onfocus\s*=/gi,
-    /onblur\s*=/gi,
-    /onkeydown\s*=/gi,
-    /onkeyup\s*=/gi,
-    /onsubmit\s*=/gi,
-  ];
-
-  // Check for dangerous patterns with specific context validation
-  for (const pattern of dangerousPatterns) {
-    const matches = svgContent.match(pattern);
-    if (matches) {
-      // Additional validation to reduce false positives
-      for (const match of matches) {
-        const lowerMatch = match.toLowerCase();
-        
-        // Allow safe local references like url(#gradient) or url("#pattern")
-        if (lowerMatch.includes('url(') && 
-            (lowerMatch.includes('#') || lowerMatch.includes('"#') || lowerMatch.includes("'#"))) {
-          continue; // Skip safe local references
-        }
-        
-        // Allow safe data URIs for images (not HTML/JS)
-        if (lowerMatch.includes('data:') && 
-            (lowerMatch.includes('data:image/') || 
-             lowerMatch.includes('data:font/') ||
-             lowerMatch.includes('data:application/font'))) {
-          continue; // Skip safe image/font data URIs
-        }
-        
-        // If we reach here, it's a potentially dangerous pattern
-        throw new PreviewGeneratorError(
-          ErrorType.IMAGE_ERROR,
-          `SVG content contains potentially dangerous element: ${match.slice(0, 50)}...`
-        );
-      }
-    }
-  }
-
-  // Check SVG size limits
+  // Check SVG size limits first
   if (svgContent.length > 1024 * 1024) { // 1MB limit for SVG
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
       `SVG content too large: ${svgContent.length} characters. Maximum allowed: 1MB`
+    );
+  }
+
+  try {
+    // Create JSDOM window for DOMPurify
+    const window = new JSDOM('').window;
+    const purify = DOMPurify(window);
+
+    // Configure DOMPurify for strict SVG sanitization
+    const cleanSvg = purify.sanitize(svgContent, {
+      USE_PROFILES: { svg: true, svgFilters: true },
+      ALLOWED_TAGS: [
+        'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
+        'text', 'tspan', 'textPath', 'defs', 'clipPath', 'mask', 'pattern', 'image',
+        'switch', 'foreignObject', 'marker', 'symbol', 'use', 'style',
+        'linearGradient', 'radialGradient', 'stop', 'animate', 'animateTransform',
+        'animateMotion', 'set', 'title', 'desc', 'metadata'
+      ],
+      ALLOWED_ATTR: [
+        'id', 'class', 'style', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
+        'width', 'height', 'd', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray',
+        'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
+        'fill-opacity', 'stroke-opacity', 'opacity', 'visibility', 'display', 'overflow',
+        'clip-path', 'mask', 'filter', 'transform', 'viewBox', 'preserveAspectRatio',
+        'xmlns', 'xmlns:xlink', 'xlink:href', 'href', 'gradientUnits', 'gradientTransform',
+        'spreadMethod', 'stop-color', 'stop-opacity', 'offset', 'patternUnits',
+        'patternContentUnits', 'patternTransform', 'markerUnits', 'markerWidth',
+        'markerHeight', 'orient', 'refX', 'refY', 'dx', 'dy', 'rotate', 'textLength',
+        'lengthAdjust', 'font-family', 'font-size', 'font-weight', 'font-style',
+        'text-anchor', 'text-decoration', 'letter-spacing', 'word-spacing'
+      ],
+      ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?):\/\/|mailto:|tel:|callto:|cid:|xmpp:|#)/i,
+      FORBID_TAGS: ['script', 'object', 'embed', 'iframe'],
+      FORBID_ATTR: [
+        'onload', 'onerror', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur',
+        'onkeydown', 'onkeyup', 'onkeypress', 'onsubmit', 'onreset', 'onselect', 'onchange',
+        'onabort', 'onunload', 'onbeforeunload', 'ontouchstart', 'ontouchend', 'ontouchmove',
+        'ontouchcancel', 'onpointerdown', 'onpointerup', 'onpointermove', 'onpointercancel'
+      ],
+      KEEP_CONTENT: false,
+      RETURN_DOM: false,
+      RETURN_DOM_FRAGMENT: false,
+      SANITIZE_DOM: true
+    });
+
+    // Check if DOMPurify removed any content (indicates potentially malicious SVG)
+    if (cleanSvg.length < svgContent.length * 0.8) {
+      throw new PreviewGeneratorError(
+        ErrorType.IMAGE_ERROR,
+        'SVG content contains potentially malicious elements that were removed during sanitization'
+      );
+    }
+
+    // Validate that the result is still a valid SVG
+    if (!cleanSvg.includes('<svg') && !cleanSvg.toLowerCase().includes('svg')) {
+      throw new PreviewGeneratorError(
+        ErrorType.IMAGE_ERROR,
+        'SVG validation failed: content does not appear to be a valid SVG after sanitization'
+      );
+    }
+
+  } catch (error) {
+    if (error instanceof PreviewGeneratorError) {
+      throw error;
+    }
+    
+    // DOMPurify failed - likely malformed or malicious SVG
+    throw new PreviewGeneratorError(
+      ErrorType.IMAGE_ERROR,
+      `SVG sanitization failed: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 }
