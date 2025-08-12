@@ -185,6 +185,8 @@ describe('Metadata Extractor', () => {
         },
         timeout: 15000,
         maxRedirects: 5,
+        maxContentLength: 15 * 1024 * 1024,
+        maxBodyLength: 15 * 1024 * 1024,
       });
     });
 

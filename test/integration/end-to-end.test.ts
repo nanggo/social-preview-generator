@@ -156,6 +156,86 @@ describe('End-to-End Integration Tests', () => {
     });
   });
 
+  describe('Template-specific generation', () => {
+    it('should generate modern template successfully', async () => {
+      const url = 'https://example.com';
+      const options: PreviewOptions = { template: 'modern' };
+      
+      const result = await generatePreview(url, options);
+      
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(10);
+    });
+
+    it('should generate classic template successfully', async () => {
+      const url = 'https://example.com';
+      const options: PreviewOptions = { template: 'classic' };
+      
+      const result = await generatePreview(url, options);
+      
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(10);
+    });
+
+    it('should generate minimal template successfully', async () => {
+      const url = 'https://example.com';
+      const options: PreviewOptions = { template: 'minimal' };
+      
+      const result = await generatePreview(url, options);
+      
+      expect(result).toBeInstanceOf(Buffer);
+      expect(result.length).toBeGreaterThan(10);
+    });
+
+    it('should handle template-specific color options', async () => {
+      const url = 'https://example.com';
+      
+      // Test each template with custom colors
+      const templates: Array<'modern' | 'classic' | 'minimal'> = ['modern', 'classic', 'minimal'];
+      
+      for (const template of templates) {
+        const options: PreviewOptions = {
+          template,
+          colors: {
+            text: '#333333',
+            accent: '#007acc',
+            background: '#f5f5f5',
+          },
+        };
+        
+        const result = await generatePreview(url, options);
+        
+        expect(result).toBeInstanceOf(Buffer);
+        expect(result.length).toBeGreaterThan(10);
+      }
+    });
+
+    it('should handle long content across all templates', async () => {
+      const url = 'https://example.com';
+      
+      // Mock long content metadata for all template iterations
+      mockedOgs.mockResolvedValue({
+        error: false,
+        result: {
+          ogTitle: 'This is an extremely long title that should be properly handled by all template types with appropriate wrapping and truncation',
+          ogDescription: 'This is a very long description that contains a lot of text and should be properly wrapped and truncated according to each template\'s specific design requirements and text handling capabilities',
+          ogSiteName: 'Very Long Site Name That Might Need Truncation',
+        },
+        html: '<html></html>',
+        response: {} as any,
+      });
+
+      const templates: Array<'modern' | 'classic' | 'minimal'> = ['modern', 'classic', 'minimal'];
+      
+      for (const template of templates) {
+        const result = await generatePreview(url, { template });
+        
+        expect(result).toBeInstanceOf(Buffer);
+        expect(result.length).toBeGreaterThan(10);
+      }
+    });
+  });
+
   describe('generatePreviewWithDetails', () => {
     it('should return detailed preview information', async () => {
       const url = 'https://example.com';

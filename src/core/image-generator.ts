@@ -12,6 +12,8 @@ import {
   PreviewGeneratorError,
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
+import { fetchImage } from './metadata-extractor';
+import { createTransparentCanvas } from '../utils/validators';
 
 /**
  * Default dimensions for social media preview images
@@ -39,12 +41,15 @@ export async function generateImage(
 
     if (metadata.image) {
       // Use existing image as background
-      const { fetchImage } = await import('./metadata-extractor');
       const imageBuffer = await fetchImage(metadata.image);
-      baseImage = await processBackgroundImage(imageBuffer, width, height);
+      baseImage = await processBackgroundImage(imageBuffer, width, height, template);
     } else {
-      // Create blank canvas with gradient background
-      baseImage = await createBlankCanvas(width, height, options);
+      // Create blank canvas with gradient background or transparent canvas based on template settings
+      if (template.imageProcessing?.requiresTransparentCanvas) {
+        baseImage = createTransparentCanvas(width, height);
+      } else {
+        baseImage = await createBlankCanvas(width, height, options);
+      }
     }
 
     // Generate text overlay SVG
@@ -72,27 +77,53 @@ export async function generateImage(
 }
 
 /**
- * Process background image to fit dimensions
+ * Process background image to fit dimensions with template-specific processing
  */
 async function processBackgroundImage(
   imageBuffer: Buffer,
   width: number,
-  height: number
+  height: number,
+  template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
     const image = sharp(imageBuffer);
     await image.metadata();
 
-    // Resize and crop to fit exact dimensions
-    return image
-      .resize(width, height, {
-        fit: 'cover',
-        position: 'center',
-      })
-      .blur(2) // Slight blur for better text readability
-      .modulate({
-        brightness: 0.7, // Darken slightly for better text contrast
-      });
+    // Apply template-specific image processing settings
+    const imageProcessing = template.imageProcessing || {};
+
+    let processedImage = image.resize(width, height, {
+      fit: 'cover',
+      position: 'center',
+    });
+
+    // Apply template-specific blur if specified
+    const blurRadius = imageProcessing.blur || template.effects?.blur?.radius || 2;
+    if (blurRadius > 0) {
+      processedImage = processedImage.blur(blurRadius);
+    }
+
+    // Apply template-specific brightness and saturation together for efficiency
+    const brightness = imageProcessing.brightness !== undefined ? imageProcessing.brightness : 0.7;
+
+    const saturation = imageProcessing.saturation;
+
+    // Apply modulation only once with all necessary changes
+    if (brightness !== 1 || saturation !== undefined) {
+      const modulateOptions: { brightness?: number; saturation?: number } = {};
+
+      if (brightness !== 1) {
+        modulateOptions.brightness = brightness;
+      }
+
+      if (saturation !== undefined) {
+        modulateOptions.saturation = saturation;
+      }
+
+      processedImage = processedImage.modulate(modulateOptions);
+    }
+
+    return processedImage;
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
@@ -105,7 +136,7 @@ async function processBackgroundImage(
 /**
  * Create blank canvas with gradient background
  */
-async function createBlankCanvas(
+export async function createBlankCanvas(
   width: number,
   height: number,
   options: PreviewOptions
@@ -273,7 +304,7 @@ function calculateTitlePosition(
   lineCount: number,
   fontSize: number,
   lineHeight: number,
-  position?: 'top' | 'center' | 'bottom'
+  position?: 'top' | 'center' | 'bottom' | 'left' | 'right'
 ): number {
   const totalTextHeight = lineCount * fontSize * lineHeight;
 
@@ -282,12 +313,13 @@ function calculateTitlePosition(
       return padding + fontSize;
     case 'bottom':
       return height - padding - totalTextHeight;
+    case 'left':
+    case 'right':
     case 'center':
     default:
       return (height - totalTextHeight) / 2 + fontSize;
   }
 }
-
 
 /**
  * Create fallback image when no metadata is available

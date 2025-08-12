@@ -5,6 +5,7 @@
 
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, adjustBrightness, wrapText } from '../utils';
+import { validateColor } from '../utils/validators';
 
 /**
  * Modern template configuration
@@ -53,6 +54,11 @@ export const modernTemplate: TemplateConfig = {
     },
     borderRadius: 0,
   },
+  imageProcessing: {
+    brightness: 0.7,
+    requiresTransparentCanvas: false,
+  },
+  overlayGenerator: generateModernOverlay,
 };
 
 /**
@@ -62,19 +68,20 @@ export function generateModernOverlay(
   metadata: ExtractedMetadata,
   width: number,
   height: number,
-  options: PreviewOptions = {}
+  options: PreviewOptions = {},
+  template: TemplateConfig = modernTemplate
 ): string {
-  const padding = modernTemplate.layout.padding;
-  const textColor = options.colors?.text || '#ffffff';
-  const accentColor = options.colors?.accent || '#4a9eff';
-  const overlayColor = options.colors?.overlay || 'rgba(0,0,0,0.5)';
+  const padding = template.layout.padding;
+  const textColor = validateColor(options.colors?.text || '#ffffff');
+  const accentColor = validateColor(options.colors?.accent || '#4a9eff');
+  const overlayColor = validateColor(options.colors?.overlay || 'rgba(0,0,0,0.5)');
 
   // Typography settings
-  const titleFontSize = modernTemplate.typography.title.fontSize;
-  const titleLineHeight = modernTemplate.typography.title.lineHeight || 1.2;
-  const descFontSize = modernTemplate.typography.description?.fontSize || 28;
-  const descLineHeight = modernTemplate.typography.description?.lineHeight || 1.4;
-  const siteNameFontSize = modernTemplate.typography.siteName?.fontSize || 22;
+  const titleFontSize = template.typography.title.fontSize;
+  const titleLineHeight = template.typography.title.lineHeight || 1.2;
+  const descFontSize = template.typography.description?.fontSize || 28;
+  const descLineHeight = template.typography.description?.lineHeight || 1.4;
+  const siteNameFontSize = template.typography.siteName?.fontSize || 22;
 
   // Calculate text wrapping
   const maxTitleWidth = width - padding * 2;
@@ -82,7 +89,7 @@ export function generateModernOverlay(
     metadata.title,
     maxTitleWidth,
     titleFontSize,
-    modernTemplate.typography.title.maxLines || 2,
+    template.typography.title.maxLines || 2,
     'inter'
   );
   const descLines = metadata.description
@@ -90,7 +97,7 @@ export function generateModernOverlay(
         metadata.description,
         maxTitleWidth,
         descFontSize,
-        modernTemplate.typography.description?.maxLines || 2,
+        template.typography.description?.maxLines || 2,
         'inter'
       )
     : [];
@@ -260,4 +267,3 @@ export function generateModernOverlay(
     </svg>
   `;
 }
-

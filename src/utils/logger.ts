@@ -44,14 +44,14 @@ export class Logger {
     const levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
     const currentLevelIndex = levels.indexOf(this.logLevel);
     const messageLevelIndex = levels.indexOf(level);
-    
+
     return messageLevelIndex >= currentLevelIndex;
   }
 
   private formatMessage(level: LogLevel, message: string, context?: LogContext): string {
     const timestamp = new Date().toISOString();
     const prefix = `[${timestamp}] [${level.toUpperCase()}] [social-preview-generator]`;
-    
+
     if (!context) {
       return `${prefix} ${message}`;
     }
@@ -59,7 +59,7 @@ export class Logger {
     const contextParts: string[] = [];
     if (context.operation) contextParts.push(`operation=${context.operation}`);
     if (context.url) contextParts.push(`url=${context.url}`);
-    
+
     const contextStr = contextParts.length > 0 ? ` {${contextParts.join(', ')}}` : '';
     return `${prefix} ${message}${contextStr}`;
   }
@@ -113,7 +113,7 @@ export const logImageFetchError = (url: string, error: Error): void => {
 
 export const logMetadataExtractionError = (url: string, error: Error): void => {
   logger.warn(`Failed to extract metadata`, {
-    operation: 'metadata-extraction', 
+    operation: 'metadata-extraction',
     url,
     error,
   });
