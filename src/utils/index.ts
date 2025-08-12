@@ -22,23 +22,139 @@ export function escapeXml(text: string): string {
 
 /**
  * Adjust color brightness by a percentage
- * @param color - Hex color string (e.g., '#ff0000')
+ * @param color - Color string (hex, rgb, rgba, hsl, hsla, or named color)
  * @param percent - Brightness adjustment percentage (-100 to 100)
- * @returns Adjusted hex color string
+ * @returns Adjusted color string (always returns hex format for consistency)
  */
 export function adjustBrightness(color: string, percent: number): string {
-  // Handle non-hex colors by returning as-is
-  if (!color.startsWith('#')) {
+  // Convert various color formats to RGB values
+  const rgb = parseColor(color);
+  if (!rgb) {
+    // If parsing fails, return original color
     return color;
   }
 
-  const num = parseInt(color.replace('#', ''), 16);
+  // Apply brightness adjustment
   const amt = Math.round(2.55 * percent);
-  const R = Math.max(0, Math.min(255, (num >> 16) + amt));
-  const G = Math.max(0, Math.min(255, ((num >> 8) & 0x00ff) + amt));
-  const B = Math.max(0, Math.min(255, (num & 0x0000ff) + amt));
+  const r = Math.max(0, Math.min(255, rgb.r + amt));
+  const g = Math.max(0, Math.min(255, rgb.g + amt));
+  const b = Math.max(0, Math.min(255, rgb.b + amt));
 
-  return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+  // Return as hex format
+  return rgbToHex(r, g, b);
+}
+
+/**
+ * Parse various color formats to RGB values
+ * @param color - Color string in various formats
+ * @returns RGB object or null if parsing fails
+ */
+function parseColor(color: string): { r: number; g: number; b: number } | null {
+  const trimmedColor = color.trim().toLowerCase();
+
+  // Hex colors (#RGB, #RRGGBB, #RRGGBBAA)
+  if (trimmedColor.startsWith('#')) {
+    const hex = trimmedColor.slice(1);
+    if (hex.length === 3) {
+      // #RGB -> #RRGGBB
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      return { r, g, b };
+    } else if (hex.length === 6) {
+      // #RRGGBB
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return { r, g, b };
+    } else if (hex.length === 8) {
+      // #RRGGBBAA (ignore alpha)
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return { r, g, b };
+    }
+  }
+
+  // RGB/RGBA colors
+  const rgbMatch = trimmedColor.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*[\d.]+)?\s*\)/);
+  if (rgbMatch) {
+    return {
+      r: parseInt(rgbMatch[1], 10),
+      g: parseInt(rgbMatch[2], 10),
+      b: parseInt(rgbMatch[3], 10),
+    };
+  }
+
+  // HSL/HSLA colors - basic conversion
+  const hslMatch = trimmedColor.match(/hsla?\(\s*(\d+)\s*,\s*(\d+)%\s*,\s*(\d+)%\s*(?:,\s*[\d.]+)?\s*\)/);
+  if (hslMatch) {
+    const h = parseInt(hslMatch[1], 10) / 360;
+    const s = parseInt(hslMatch[2], 10) / 100;
+    const l = parseInt(hslMatch[3], 10) / 100;
+    return hslToRgb(h, s, l);
+  }
+
+  // Named colors - basic support for common ones
+  const namedColors: Record<string, { r: number; g: number; b: number }> = {
+    black: { r: 0, g: 0, b: 0 },
+    white: { r: 255, g: 255, b: 255 },
+    red: { r: 255, g: 0, b: 0 },
+    green: { r: 0, g: 128, b: 0 },
+    blue: { r: 0, g: 0, b: 255 },
+    yellow: { r: 255, g: 255, b: 0 },
+    cyan: { r: 0, g: 255, b: 255 },
+    magenta: { r: 255, g: 0, b: 255 },
+    gray: { r: 128, g: 128, b: 128 },
+    grey: { r: 128, g: 128, b: 128 },
+    orange: { r: 255, g: 165, b: 0 },
+    purple: { r: 128, g: 0, b: 128 },
+  };
+
+  if (namedColors[trimmedColor]) {
+    return namedColors[trimmedColor];
+  }
+
+  return null;
+}
+
+/**
+ * Convert RGB values to hex string
+ */
+function rgbToHex(r: number, g: number, b: number): string {
+  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+/**
+ * Convert HSL to RGB
+ */
+function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+  let r, g, b;
+
+  if (s === 0) {
+    r = g = b = l; // achromatic
+  } else {
+    const hue2rgb = (p: number, q: number, t: number): number => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+
+  return {
+    r: Math.round(r * 255),
+    g: Math.round(g * 255),
+    b: Math.round(b * 255),
+  };
 }
 
 /**

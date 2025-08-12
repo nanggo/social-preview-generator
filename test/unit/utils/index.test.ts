@@ -37,9 +37,24 @@ describe('Utility Functions', () => {
       expect(result).toBe('#808080');
     });
 
-    it('should handle non-hex colors by returning them unchanged', () => {
-      const color = 'rgba(255,0,0,0.5)';
-      expect(adjustBrightness(color, 50)).toBe(color);
+    it('should handle RGB/RGBA colors by converting to hex and adjusting brightness', () => {
+      const result = adjustBrightness('rgba(255,0,0,0.5)', 50);
+      expect(result).toBe('#ff7f7f'); // rgb(255,0,0) + 50% brightness -> #ff7f7f
+    });
+
+    it('should handle named colors', () => {
+      const result = adjustBrightness('red', 20);
+      expect(result).toBe('#ff3333'); // red (255,0,0) + 20% brightness
+    });
+
+    it('should handle HSL colors', () => {
+      const result = adjustBrightness('hsl(0, 100%, 50%)', 25); 
+      expect(result).toBe('#ff4040'); // hsl(0,100%,50%) = rgb(255,0,0) + 25% brightness
+    });
+
+    it('should return original color for unparseable formats', () => {
+      const invalidColor = 'invalid-color';
+      expect(adjustBrightness(invalidColor, 50)).toBe(invalidColor);
     });
 
     it('should clamp values to valid ranges', () => {
