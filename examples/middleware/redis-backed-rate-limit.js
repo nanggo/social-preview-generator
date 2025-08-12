@@ -36,7 +36,20 @@ if expiredCost > 0 then
 end
 
 -- Get current total cost
-local current_total_cost = tonumber(redis.call('GET', totalKey)) or 0
+local current_total_cost = tonumber(redis.call('GET', totalKey))
+
+if current_total_cost == nil then
+    -- Recalculate from sorted set to prevent bypass if counter key is missing
+    local members = redis.call('ZRANGE', requestKey, 0, -1)
+    current_total_cost = 0
+    for _, member in ipairs(members) do
+        local member_cost = tonumber(string.match(member, '^%d+:(%d+):'))
+        if member_cost then
+            current_total_cost = current_total_cost + member_cost
+        end
+    end
+    redis.call('SET', totalKey, current_total_cost)
+end
 
 -- Ensure total doesn't go negative due to race conditions
 if current_total_cost < 0 then
@@ -293,9 +306,14 @@ class RedisRateLimiter {
   }
 
   /**
-   * Wait for concurrency slot with timeout (non-polling approach)
-   * Note: For production use, consider implementing Redis Pub/Sub or blocking commands
-   * for better performance with high concurrency.
+   * Wait for concurrency slot with timeout (exponential backoff approach)
+   * 
+   * PRODUCTION NOTE: This exponential backoff approach reduces Redis load compared to
+   * constant polling, but is still not optimal for high-concurrency scenarios.
+   * For production systems, consider implementing:
+   * 1. Redis Pub/Sub: Publish slot release events to waiting clients
+   * 2. Blocking commands: Use BLPOP/BRPOP with queue lists for efficient waiting
+   * These approaches eliminate polling entirely and provide better scalability.
    */
   async waitForConcurrencySlot(requestData, timeout = 30000) {
     const requestId = crypto.randomUUID();

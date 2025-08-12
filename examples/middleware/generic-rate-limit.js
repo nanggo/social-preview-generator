@@ -5,6 +5,8 @@
  * Uses sliding window log with memory storage.
  */
 
+const crypto = require('crypto');
+
 class SlidingWindowRateLimiter {
   constructor(options = {}) {
     // Input validation
@@ -192,7 +194,7 @@ class ConcurrentRequestLimiter {
     this.queues = new Map(); // key -> Array of pending promises
   }
 
-  async acquire(key, requestId = Math.random().toString(36), timeout = 30000) {
+  async acquire(key, requestId = crypto.randomUUID(), timeout = 30000) {
     return new Promise((resolve, reject) => {
       // Initialize tracking for this key if needed
       if (!this.active.has(key)) {
