@@ -374,6 +374,20 @@
   - ✅ 캐시 관리 API (통계, 무효화, 자동 정리)
   - ✅ 21개 테스트 케이스로 TOCTOU 보호 검증
 
+### 2025-08-13 (추가 보안 최적화)
+- **보안 검증 중복 제거**: `metadata-extractor.ts`에서 중복 DNS 검증 로직 제거
+  - ✅ `validateRequestSecurity()` 이후 불필요한 DNS 조회 제거 ([c0f59bf])
+  - ✅ 성능 향상: DNS lookup 중복 호출 방지
+  - ✅ 코드 간소화: 66라인 중복 로직 제거 (80-144라인)
+- **리소스 누수 방지**: `generic-rate-limit.js` 동시성 슬롯 타임아웃 개선
+  - ✅ `Promise.race` 패턴 제거로 리소스 누수 방지 ([c0f59bf])
+  - ✅ 내장 타임아웃 메커니즘 활용으로 안정성 향상
+  - ✅ 메모리 누수 가능성 완전 제거
+- **브랜치 정리**: 작업 완료된 보안 브랜치들 정리
+  - ✅ `enhance/security-improvements` 로컬/리모트 삭제
+  - ✅ `feature/security-enhancements`, `fix/critical-security-p0` 리모트 참조 정리
+  - ✅ master 브랜치로 통합 완료
+
 ---
 
 ## 🔧 테스트 명령어
