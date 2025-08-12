@@ -42,6 +42,9 @@ function isPrivateOrReservedIPv4(ip: string): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
   if (a === 192 && b === 168) return true; // 192.168.0.0/16
   
+  // Carrier-Grade NAT (RFC 6598)
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10
+  
   // Loopback
   if (a === 127) return true; // 127.0.0.0/8
   

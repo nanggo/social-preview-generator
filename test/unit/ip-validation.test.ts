@@ -23,6 +23,9 @@ describe('IP Address Validation', () => {
     if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
     if (a === 192 && b === 168) return true; // 192.168.0.0/16
     
+    // Carrier-Grade NAT (RFC 6598)
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10
+    
     // Loopback
     if (a === 127) return true; // 127.0.0.0/8
     
@@ -99,6 +102,13 @@ describe('IP Address Validation', () => {
       // 192.168.0.0/16
       expect(isPrivateOrReservedIPv4('192.168.1.1')).toBe(true);
       expect(isPrivateOrReservedIPv4('192.168.255.255')).toBe(true);
+    });
+
+    it('should detect carrier-grade NAT addresses', () => {
+      expect(isPrivateOrReservedIPv4('100.64.0.1')).toBe(true);
+      expect(isPrivateOrReservedIPv4('100.127.255.255')).toBe(true);
+      expect(isPrivateOrReservedIPv4('100.63.255.255')).toBe(false); // Outside range
+      expect(isPrivateOrReservedIPv4('100.128.0.0')).toBe(false); // Outside range
     });
 
     it('should detect link-local addresses', () => {
