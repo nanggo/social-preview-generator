@@ -211,7 +211,7 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
     else if (addr.family === 6) {
       const ip = addr.address.toLowerCase();
       if (
-        ip.startsWith('::1') ||           // Localhost
+        ip === '::1' ||                   // Localhost (exact match)
         ip.startsWith('fe80:') ||         // Link-local
         ip.startsWith('fc00:') ||         // Unique local
         ip.startsWith('fd00:') ||         // Unique local

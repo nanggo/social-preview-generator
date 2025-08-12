@@ -272,7 +272,7 @@ function createRateLimiter(config = {}) {
         concurrencyLimiters.delete(key);
       }
     });
-  }, Math.max(options.windowMs, 60000)); // Clean up every minute minimum
+  }, 60 * 1000); // Clean up every minute, regardless of window size
 
   // Cleanup on process exit
   const cleanup = () => {
