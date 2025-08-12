@@ -467,21 +467,36 @@ function createRedisRateLimiter(redisClient, options = {}) {
         user: req.user // For user-based limits
       };
 
-      await limiter.processRequest(requestData, async () => {
-        // Request is allowed, continue to next middleware
-        next();
-      });
+      // Acquire slot and get rate limiting info
+      const { releaseSlot, rateStatus } = await limiter.acquireSlotForRequest(requestData);
 
       // Add headers for monitoring
       const status = await limiter.getStatus(requestData);
       res.set({
         'X-RateLimit-Limit': status.rate.limit,
         'X-RateLimit-Remaining': status.rate.remaining,
-        'X-RateLimit-Reset': Math.ceil((Date.now() + options.windowMs) / 1000),
+        'X-RateLimit-Reset': Math.ceil(rateStatus.resetTime / 1000),
         'X-Concurrent-Limit': status.concurrency.limit,
         'X-Concurrent-Active': status.concurrency.active,
         'X-Concurrent-Queued': status.concurrency.queued
       });
+
+      // Override res.end to release slot only after response completes
+      const originalEnd = res.end;
+      let endCalled = false;
+      res.end = function(...args) {
+        if (!endCalled) {
+          endCalled = true;
+          // Release the concurrency slot when response actually ends
+          releaseSlot().catch(err => {
+            console.error('Failed to release concurrency slot:', err);
+          });
+        }
+        return originalEnd.apply(this, args);
+      };
+
+      // Continue to next middleware
+      next();
 
     } catch (error) {
       if (error.code === 'RATE_LIMIT_EXCEEDED') {
