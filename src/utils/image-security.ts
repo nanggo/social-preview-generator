@@ -8,6 +8,10 @@ import { PreviewGeneratorError, ErrorType } from '../types';
 import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import * as os from 'os';
+
+// Cache file-type module to avoid repeated dynamic imports
+let fileTypeModule: any = null;
+let fileTypeImportPromise: Promise<any> | null = null;
 import {
   MAX_INPUT_PIXELS,
   MAX_IMAGE_WIDTH,
@@ -168,7 +172,15 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
 
   // First attempt: Use file-type library for robust detection
   try {
-    const { fileTypeFromBuffer } = await import('file-type');
+    // Use cached module or import if not cached
+    if (!fileTypeModule) {
+      if (!fileTypeImportPromise) {
+        fileTypeImportPromise = import('file-type');
+      }
+      fileTypeModule = await fileTypeImportPromise;
+    }
+    
+    const { fileTypeFromBuffer } = fileTypeModule;
     const detected = await fileTypeFromBuffer(imageBuffer);
 
     if (!detected || !ALLOWED_MIME_TYPES.has(detected.mime)) {

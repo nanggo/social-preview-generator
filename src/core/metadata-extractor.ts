@@ -9,6 +9,7 @@ import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions, R
 import { validateUrlInput } from '../utils/validators';
 import { getEnhancedSecureAgentForUrl, validateRequestSecurity } from '../utils/enhanced-secure-agent';
 import { validateImageBuffer } from '../utils/image-security';
+import { metadataCache } from '../utils/cache';
 
 
 /**
@@ -19,6 +20,15 @@ import { validateImageBuffer } from '../utils/image-security';
  */
 export async function extractMetadata(url: string, securityOptions?: SecurityOptions): Promise<ExtractedMetadata> {
   try {
+    // Create cache key based on URL and security options
+    const cacheKey = `${url}:${JSON.stringify(securityOptions || {})}`;
+    
+    // Check cache first
+    const cachedMetadata = metadataCache.get(cacheKey);
+    if (cachedMetadata) {
+      return cachedMetadata as ExtractedMetadata;
+    }
+
     // Validate URL with SSRF protection and security options
     const validatedUrl = await validateUrl(url, securityOptions);
 
@@ -27,6 +37,9 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
 
     // Parse and normalize metadata
     const metadata = parseMetadata(ogData, validatedUrl);
+
+    // Cache the result
+    metadataCache.set(cacheKey, metadata);
 
     return metadata;
   } catch (error) {
