@@ -17,7 +17,7 @@ import { modernTemplate } from './templates/modern';
 import { classicTemplate } from './templates/classic';
 import { minimalTemplate } from './templates/minimal';
 import { escapeXml, logImageFetchError, wrapText } from './utils';
-import { createTransparentCanvas, validateDimensions } from './utils/validators';
+import { createTransparentCanvas, validateDimensions, validateColor, validateOptions } from './utils/validators';
 import sharp from 'sharp';
 
 // Re-export types
@@ -47,13 +47,16 @@ const templates: Record<string, TemplateConfig> = {
  */
 export async function generatePreview(url: string, options: PreviewOptions = {}): Promise<Buffer> {
   try {
+    // Validate options first
+    validateOptions(options);
+
     // Set default options
     const finalOptions: PreviewOptions = {
       template: 'modern',
       width: DEFAULT_DIMENSIONS.width,
       height: DEFAULT_DIMENSIONS.height,
       quality: 90,
-      cache: true,
+      cache: false, // Set to false until caching is properly implemented
       ...options,
     };
 
@@ -169,8 +172,8 @@ async function createBlankCanvas(
   height: number,
   options: PreviewOptions
 ): Promise<sharp.Sharp> {
-  const backgroundColor = options.colors?.background || '#1a1a2e';
-  const accentColor = options.colors?.accent || '#16213e';
+  const backgroundColor = validateColor(options.colors?.background || '#1a1a2e');
+  const accentColor = validateColor(options.colors?.accent || '#16213e');
 
   const gradientSvg = `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
@@ -202,7 +205,7 @@ async function generateDefaultOverlay(
   options: PreviewOptions
 ): Promise<Buffer> {
   const padding = template.layout.padding || 60;
-  const textColor = options.colors?.text || '#ffffff';
+  const textColor = validateColor(options.colors?.text || '#ffffff');
 
   // Typography settings
   const titleFontSize = template.typography.title.fontSize;
@@ -364,18 +367,91 @@ export async function generatePreviewWithDetails(
   url: string,
   options: PreviewOptions = {}
 ): Promise<GeneratedPreview> {
-  const buffer = await generatePreview(url, options);
-  const metadata = await extractMetadata(url);
+  try {
+    // Validate options first
+    validateOptions(options);
 
-  return {
-    buffer,
-    format: 'jpeg',
-    dimensions: {
-      width: options.width || DEFAULT_DIMENSIONS.width,
-      height: options.height || DEFAULT_DIMENSIONS.height,
-    },
-    metadata,
-    template: options.template || 'modern',
-    cached: false, // TODO: Implement caching
-  };
+    // Set default options
+    const finalOptions: PreviewOptions = {
+      template: 'modern',
+      width: DEFAULT_DIMENSIONS.width,
+      height: DEFAULT_DIMENSIONS.height,
+      quality: 90,
+      cache: false, // Set to false until caching is properly implemented
+      ...options,
+    };
+
+    // Extract metadata from URL once
+    let metadata: ExtractedMetadata;
+    try {
+      metadata = await extractMetadata(url);
+
+      // Validate metadata
+      if (!validateMetadata(metadata)) {
+        // Apply fallbacks if metadata is incomplete
+        metadata = applyFallbacks(metadata, url);
+      }
+    } catch (error) {
+      // If metadata extraction fails completely, use fallback
+      if (
+        finalOptions.fallback?.strategy === 'generate' ||
+        finalOptions.fallback?.strategy === 'auto'
+      ) {
+        const buffer = await createFallbackImage(url, finalOptions);
+        // Create minimal metadata for fallback
+        const fallbackMetadata = applyFallbacks({}, url);
+        return {
+          buffer,
+          format: 'jpeg',
+          dimensions: {
+            width: finalOptions.width || DEFAULT_DIMENSIONS.width,
+            height: finalOptions.height || DEFAULT_DIMENSIONS.height,
+          },
+          metadata: fallbackMetadata,
+          template: finalOptions.template || 'modern',
+          cached: false,
+        };
+      }
+      throw error;
+    }
+
+    // Get template configuration
+    const templateName = finalOptions.template || 'modern';
+    const template = templates[templateName];
+
+    if (!template && templateName !== 'custom') {
+      throw new PreviewGeneratorError(
+        ErrorType.TEMPLATE_ERROR,
+        `Template "${templateName}" not found`
+      );
+    }
+
+    // Generate image based on template - reuse metadata instead of re-extracting
+    const buffer = await generateImageWithTemplate(
+      metadata,
+      template || modernTemplate,
+      finalOptions
+    );
+
+    return {
+      buffer,
+      format: 'jpeg',
+      dimensions: {
+        width: finalOptions.width || DEFAULT_DIMENSIONS.width,
+        height: finalOptions.height || DEFAULT_DIMENSIONS.height,
+      },
+      metadata,
+      template: finalOptions.template || 'modern',
+      cached: false, // TODO: Implement caching
+    };
+  } catch (error) {
+    if (error instanceof PreviewGeneratorError) {
+      throw error;
+    }
+    throw new PreviewGeneratorError(
+      ErrorType.IMAGE_ERROR,
+      `Failed to generate preview with details for ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      error
+    );
+  }
 }

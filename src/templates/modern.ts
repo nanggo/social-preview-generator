@@ -74,7 +74,7 @@ export function generateModernOverlay(
   const padding = modernTemplate.layout.padding;
   const textColor = validateColor(options.colors?.text || '#ffffff');
   const accentColor = validateColor(options.colors?.accent || '#4a9eff');
-  const overlayColor = options.colors?.overlay || 'rgba(0,0,0,0.5)';
+  const overlayColor = validateColor(options.colors?.overlay || 'rgba(0,0,0,0.5)');
 
   // Typography settings
   const titleFontSize = modernTemplate.typography.title.fontSize;

@@ -2,7 +2,7 @@
  * Validation utilities for social preview generator
  */
 
-import { PreviewGeneratorError, ErrorType } from '../types';
+import { PreviewGeneratorError, ErrorType, PreviewOptions } from '../types';
 import sharp from 'sharp';
 
 /**
@@ -151,4 +151,58 @@ export function createTransparentCanvas(width: number, height: number) {
       background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent
     },
   });
+}
+
+/**
+ * Validates all preview options including dimensions, quality, and colors
+ */
+export function validateOptions(options: PreviewOptions): void {
+  // Validate dimensions if provided
+  if (options.width !== undefined || options.height !== undefined) {
+    const width = options.width || 1200;
+    const height = options.height || 630;
+    validateDimensions(width, height);
+  }
+
+  // Validate quality if provided (1-100 range)
+  if (options.quality !== undefined) {
+    if (!Number.isFinite(options.quality) || options.quality < 1 || options.quality > 100) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Quality must be between 1 and 100, got: ${options.quality}`
+      );
+    }
+  }
+
+  // Validate colors if provided
+  if (options.colors) {
+    const colors = options.colors;
+    
+    // Validate each color property if it exists
+    if (colors.primary) validateColor(colors.primary);
+    if (colors.secondary) validateColor(colors.secondary);
+    if (colors.background) validateColor(colors.background);
+    if (colors.text) validateColor(colors.text);
+    if (colors.accent) validateColor(colors.accent);
+    if (colors.overlay) validateColor(colors.overlay);
+  }
+
+  // Validate template type if provided
+  if (options.template !== undefined) {
+    const allowedTemplates = ['modern', 'classic', 'minimal', 'custom'];
+    if (!allowedTemplates.includes(options.template)) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Invalid template type: ${options.template}. Allowed templates: ${allowedTemplates.join(', ')}`
+      );
+    }
+  }
+
+  // Validate cache option if provided
+  if (options.cache !== undefined && typeof options.cache !== 'boolean') {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `Cache option must be boolean, got: ${typeof options.cache}`
+    );
+  }
 }

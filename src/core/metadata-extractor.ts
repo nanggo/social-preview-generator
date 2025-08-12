@@ -5,7 +5,43 @@
 
 import ogs from 'open-graph-scraper';
 import axios from 'axios';
+import { promisify } from 'util';
+import { lookup } from 'dns';
 import { ExtractedMetadata, ErrorType, PreviewGeneratorError } from '../types';
+
+const dnsLookup = promisify(lookup);
+
+/**
+ * Check if an IP address is in a private or reserved range
+ */
+function isPrivateOrReservedIP(ip: string): boolean {
+  const octets = ip.split('.').map(Number);
+  
+  if (octets.length !== 4 || octets.some(octet => octet < 0 || octet > 255)) {
+    return true; // Invalid IP format, treat as blocked
+  }
+
+  const [a, b] = octets;
+  
+  // IPv4 private ranges
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  
+  // Loopback
+  if (a === 127) return true; // 127.0.0.0/8
+  
+  // Link-local
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16
+  
+  // Multicast and reserved
+  if (a >= 224) return true; // 224.0.0.0/3
+  
+  // Localhost
+  if (ip === '0.0.0.0') return true;
+  
+  return false;
+}
 
 /**
  * Extract metadata from a given URL
@@ -14,8 +50,8 @@ import { ExtractedMetadata, ErrorType, PreviewGeneratorError } from '../types';
  */
 export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
   try {
-    // Validate URL
-    const validatedUrl = validateUrl(url);
+    // Validate URL with SSRF protection
+    const validatedUrl = await validateUrl(url);
 
     // Extract Open Graph data
     const ogData = await fetchOpenGraphData(validatedUrl);
@@ -37,15 +73,45 @@ export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
 }
 
 /**
- * Validate and normalize URL
+ * Validate and normalize URL with SSRF protection
  */
-function validateUrl(url: string): string {
+async function validateUrl(url: string): Promise<string> {
   try {
     const urlObj = new URL(url);
 
     // Ensure protocol is http or https
     if (!['http:', 'https:'].includes(urlObj.protocol)) {
       throw new Error('Invalid protocol. Only HTTP and HTTPS are supported.');
+    }
+
+    // Skip IP validation for well-known domains to avoid unnecessary DNS lookups
+    const hostname = urlObj.hostname.toLowerCase();
+    const wellKnownDomains = [
+      'github.com', 'gitlab.com', 'bitbucket.org', 
+      'stackoverflow.com', 'medium.com', 'dev.to',
+      'google.com', 'youtube.com', 'twitter.com', 'facebook.com'
+    ];
+    
+    const isWellKnown = wellKnownDomains.some(domain => 
+      hostname === domain || hostname.endsWith(`.${domain}`)
+    );
+
+    if (!isWellKnown) {
+      try {
+        // Resolve hostname to IP address
+        const { address } = await dnsLookup(urlObj.hostname);
+        
+        // Check if the resolved IP is in a private/reserved range
+        if (isPrivateOrReservedIP(address)) {
+          throw new Error(`Access to private/reserved IP address is not allowed: ${address}`);
+        }
+      } catch (dnsError) {
+        if (dnsError instanceof Error && dnsError.message.includes('private/reserved')) {
+          throw dnsError; // Re-throw our custom error
+        }
+        // For DNS resolution failures, we'll allow the request to proceed
+        // as it will fail naturally at the HTTP level
+      }
     }
 
     return urlObj.toString();
@@ -208,12 +274,21 @@ function cleanText(text: string): string {
 }
 
 /**
- * Fetch image from URL and return as buffer
+ * Fetch image from URL and return as buffer with size and type validation
  * @param imageUrl - URL of the image to fetch
  * @returns Image buffer
  */
 export async function fetchImage(imageUrl: string): Promise<Buffer> {
   try {
+    // Maximum allowed image size (15MB)
+    const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
+    
+    // Allowed MIME types for images
+    const ALLOWED_MIME_TYPES = new Set([
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 
+      'image/webp', 'image/svg+xml', 'image/bmp'
+    ]);
+
     const response = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
       headers: {
@@ -221,13 +296,27 @@ export async function fetchImage(imageUrl: string): Promise<Buffer> {
       },
       timeout: 15000,
       maxRedirects: 5,
+      maxContentLength: MAX_IMAGE_SIZE,
+      maxBodyLength: MAX_IMAGE_SIZE,
     });
+
+    // Check content-type header if available
+    const contentType = response.headers?.['content-type']?.toLowerCase();
+    if (contentType && !ALLOWED_MIME_TYPES.has(contentType)) {
+      throw new Error(`Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, SVG, and BMP are allowed.`);
+    }
+
+    // Check actual content length
+    const contentLength = Buffer.from(response.data).length;
+    if (contentLength > MAX_IMAGE_SIZE) {
+      throw new Error(`Image too large: ${contentLength} bytes. Maximum allowed: ${MAX_IMAGE_SIZE} bytes.`);
+    }
 
     return Buffer.from(response.data);
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
-      `Failed to fetch image from ${imageUrl}`,
+      `Failed to fetch image from ${imageUrl}: ${error instanceof Error ? error.message : String(error)}`,
       error
     );
   }
