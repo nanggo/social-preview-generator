@@ -98,15 +98,16 @@ describe('Security Validation Tests', () => {
       });
     });
 
-    it('should reject URLs with control characters', () => {
+    it('should sanitize URLs with control characters', () => {
       const urlsWithControlChars = [
-        'https://example.com/\x00path',
-        'https://example.com/\x1fpath',  
+        { input: 'https://example.com/\x00path', expected: 'https://example.com/path' },
+        { input: 'https://example.com/\x1fpath', expected: 'https://example.com/path' },  
         // Note: \n, \r, \t are handled by URL constructor and may be normalized
       ];
 
-      urlsWithControlChars.forEach(url => {
-        expect(() => validateUrlInput(url)).toThrow(PreviewGeneratorError);
+      urlsWithControlChars.forEach(({ input, expected }) => {
+        const result = validateUrlInput(input);
+        expect(result).toBe(expected);
       });
     });
 
@@ -189,16 +190,20 @@ describe('Security Validation Tests', () => {
       });
     });
 
-    it('should reject control characters (except allowed)', () => {
+    it('should sanitize control characters (except allowed)', () => {
       const controlChars = [
-        'text\x00with\x01null',
-        'text\x08with\x0ccontrol',
-        'text\x0ewith\x1fchars',
-        'text\x7fwith\x80extended',
+        { input: 'text\x00with\x01null', expected: 'textwithnull' },
+        { input: 'text\x08with\x0ccontrol', expected: 'textwithcontrol' },
+        { input: 'text\x0ewith\x1fchars', expected: 'textwithchars' },
+        { input: 'text\x7fwith\x80extended', expected: 'textwithextended' },
+        // Test Unicode control characters
+        { input: 'text\u202Ewith\u200Bbidi', expected: 'textwithbidi' },
+        { input: 'text\u200E\u200Fmarked', expected: 'textmarked' },
       ];
 
-      controlChars.forEach(text => {
-        expect(() => validateTextInput(text)).toThrow(PreviewGeneratorError);
+      controlChars.forEach(({ input, expected }) => {
+        const result = validateTextInput(input);
+        expect(result).toBe(expected);
       });
     });
 
@@ -284,8 +289,8 @@ describe('Security Validation Tests', () => {
       // URL with whitespace should be trimmed
       expect(validateUrlInput(' https://example.com ')).toBe('https://example.com/');
 
-      // Text with whitespace should be preserved
-      expect(validateTextInput('  text with spaces  ')).toBe('  text with spaces  ');
+      // Text with whitespace should be trimmed during sanitization
+      expect(validateTextInput('  text with spaces  ')).toBe('text with spaces');
     });
 
     it('should validate type checking', () => {

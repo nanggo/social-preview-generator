@@ -20,10 +20,11 @@ import sharp from 'sharp';
  * Enhanced security to prevent CSS injection attacks
  */
 export function validateColor(color: string): SanitizedColor {
-  const trimmedColor = color.trim();
+  // Sanitize control characters first
+  const sanitizedColor = sanitizeControlChars(color.trim());
 
   // Security checks - reject dangerous patterns
-  if (!isSafeColorInput(trimmedColor)) {
+  if (!isSafeColorInput(sanitizedColor)) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
       `Invalid color value: ${color}. Contains potentially dangerous characters or patterns.`
@@ -32,12 +33,12 @@ export function validateColor(color: string): SanitizedColor {
 
   // Hex color validation (#RGB, #RRGGBB, #RRGGBBAA)
   const hexPattern = /^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/;
-  if (hexPattern.test(trimmedColor)) {
-    return trimmedColor as SanitizedColor;
+  if (hexPattern.test(sanitizedColor)) {
+    return sanitizedColor as SanitizedColor;
   }
 
   // RGB validation with proper range checking
-  const rgbMatch = trimmedColor.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/);
+  const rgbMatch = sanitizedColor.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/);
   if (rgbMatch) {
     const [, r, g, b] = rgbMatch;
     const red = parseInt(r, 10);
@@ -45,12 +46,12 @@ export function validateColor(color: string): SanitizedColor {
     const blue = parseInt(b, 10);
 
     if (red <= 255 && green <= 255 && blue <= 255) {
-      return trimmedColor as SanitizedColor;
+      return sanitizedColor as SanitizedColor;
     }
   }
 
   // RGBA validation with proper range checking
-  const rgbaMatch = trimmedColor.match(
+  const rgbaMatch = sanitizedColor.match(
     /^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|1|0?\.\d+)\s*\)$/
   );
   if (rgbaMatch) {
@@ -61,12 +62,12 @@ export function validateColor(color: string): SanitizedColor {
     const alpha = parseFloat(a);
 
     if (red <= 255 && green <= 255 && blue <= 255 && alpha >= 0 && alpha <= 1) {
-      return trimmedColor as SanitizedColor;
+      return sanitizedColor as SanitizedColor;
     }
   }
 
   // HSL validation with proper range checking
-  const hslMatch = trimmedColor.match(/^hsl\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*\)$/);
+  const hslMatch = sanitizedColor.match(/^hsl\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*\)$/);
   if (hslMatch) {
     const [, h, s, l] = hslMatch;
     const hue = parseInt(h, 10);
@@ -74,12 +75,12 @@ export function validateColor(color: string): SanitizedColor {
     const lightness = parseInt(l, 10);
 
     if (hue <= 360 && saturation <= 100 && lightness <= 100) {
-      return trimmedColor as SanitizedColor;
+      return sanitizedColor as SanitizedColor;
     }
   }
 
   // HSLA validation with proper range checking
-  const hslaMatch = trimmedColor.match(
+  const hslaMatch = sanitizedColor.match(
     /^hsla\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*,\s*(0|1|0?\.\d+)\s*\)$/
   );
   if (hslaMatch) {
@@ -90,7 +91,7 @@ export function validateColor(color: string): SanitizedColor {
     const alpha = parseFloat(a);
 
     if (hue <= 360 && saturation <= 100 && lightness <= 100 && alpha >= 0 && alpha <= 1) {
-      return trimmedColor as SanitizedColor;
+      return sanitizedColor as SanitizedColor;
     }
   }
 
@@ -246,8 +247,8 @@ export function validateColor(color: string): SanitizedColor {
     'transparent',
   ]);
 
-  if (namedColors.has(trimmedColor.toLowerCase())) {
-    return trimmedColor.toLowerCase() as SanitizedColor;
+  if (namedColors.has(sanitizedColor.toLowerCase())) {
+    return sanitizedColor.toLowerCase() as SanitizedColor;
   }
 
   // If validation fails, throw an error
@@ -430,10 +431,10 @@ export function validateUrlInput(url: string): string {
     throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL must be a non-empty string');
   }
 
-  const trimmedUrl = url.trim();
+  const sanitizedUrl = sanitizeControlChars(url.trim());
 
   // Length check
-  if (trimmedUrl.length > 2048) {
+  if (sanitizedUrl.length > 2048) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
       'URL exceeds maximum length of 2048 characters'
@@ -441,7 +442,7 @@ export function validateUrlInput(url: string): string {
   }
 
   // Security patterns check
-  if (!isSafeUrlInput(trimmedUrl)) {
+  if (!isSafeUrlInput(sanitizedUrl)) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
       'URL contains potentially dangerous characters or patterns'
@@ -449,7 +450,7 @@ export function validateUrlInput(url: string): string {
   }
 
   try {
-    const urlObj = new URL(trimmedUrl);
+    const urlObj = new URL(sanitizedUrl);
 
     // Protocol validation
     if (!['http:', 'https:'].includes(urlObj.protocol)) {
@@ -525,15 +526,62 @@ export function validateTextInput(text: string, fieldName: string = 'text'): str
     );
   }
 
+  // Remove control characters and dangerous Unicode sequences
+  const sanitizedText = sanitizeControlChars(text);
+
   // Security check for dangerous patterns
-  if (!isSafeTextInput(text)) {
+  if (!isSafeTextInput(sanitizedText)) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
       `${fieldName} contains potentially dangerous characters or patterns`
     );
   }
 
-  return text;
+  return sanitizedText;
+}
+
+/**
+ * Sanitize control characters and dangerous Unicode sequences
+ * Centralizes all control character filtering logic
+ */
+export function sanitizeControlChars(text: string): string {
+  return text
+    // ASCII control characters (except tab \t, newline \n, carriage return \r)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+    // Extended ASCII control characters
+    .replace(/[\x80-\x9f]/g, '')
+    
+    // Unicode Bidirectional Text Control Characters (Bidi attacks)
+    .replace(/\u202E/g, '') // RIGHT-TO-LEFT OVERRIDE
+    .replace(/\u202D/g, '') // LEFT-TO-RIGHT OVERRIDE  
+    .replace(/\u200E/g, '') // LEFT-TO-RIGHT MARK
+    .replace(/\u200F/g, '') // RIGHT-TO-LEFT MARK
+    .replace(/\u061C/g, '') // ARABIC LETTER MARK
+    .replace(/\u2066/g, '') // LEFT-TO-RIGHT ISOLATE
+    .replace(/\u2067/g, '') // RIGHT-TO-LEFT ISOLATE
+    .replace(/\u2068/g, '') // FIRST STRONG ISOLATE
+    .replace(/\u2069/g, '') // POP DIRECTIONAL ISOLATE
+    
+    // Zero-width and formatting characters
+    .replace(/\u200B/g, '') // ZERO WIDTH SPACE
+    .replace(/\u200C/g, '') // ZERO WIDTH NON-JOINER
+    .replace(/\u200D/g, '') // ZERO WIDTH JOINER
+    .replace(/\uFEFF/g, '') // ZERO WIDTH NO-BREAK SPACE (BOM)
+    .replace(/\u00AD/g, '') // SOFT HYPHEN
+    .replace(/\u034F/g, '') // COMBINING GRAPHEME JOINER
+    
+    // Other dangerous control characters
+    .replace(/\u180E/g, '') // MONGOLIAN VOWEL SEPARATOR
+    .replace(/\u2028/g, '') // LINE SEPARATOR
+    .replace(/\u2029/g, '') // PARAGRAPH SEPARATOR
+    
+    // Variation selectors (can cause display confusion)
+    .replace(/[\uFE00-\uFE0F]/g, '') // VARIATION SELECTOR-1 through 16
+    // Note: VARIATION SELECTOR-17 through 256 are in supplementary plane,
+    // would need surrogate pair handling - skipping for now as they're rare
+    
+    // Trim remaining whitespace
+    .trim();
 }
 
 /**
@@ -657,7 +705,7 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
  */
 export function sanitizeText(text: string): SanitizedText {
   const validated = validateTextInput(text, 'text');
-  // Additional sanitization for advanced control characters will be added in next step
+  // Control character sanitization is now centralized in validateTextInput
   return validated as SanitizedText;
 }
 
