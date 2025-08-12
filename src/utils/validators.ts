@@ -274,8 +274,8 @@ function isSafeColorInput(color: string): boolean {
     /\{/g, // CSS block starters
     /\\/g, // Escape sequences
     // eslint-disable-next-line no-control-regex
-    /\x00-\x1f/g, // Control characters
-    /\x7f-\x9f/g, // Extended control characters
+    /[\x00-\x1f]/g, // Control characters
+    /[\x7f-\x9f]/g, // Extended control characters
     /[\n\r\t\f\v]/g, // Whitespace that shouldn't be in color values
   ];
 
