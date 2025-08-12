@@ -384,10 +384,11 @@ class RedisRateLimiter {
   }
 
   /**
-   * Complete request processing with rate and concurrency limiting
+   * Acquire concurrency slot and return release function for Express middleware
+   * This is compatible with Express middleware lifecycle
    */
-  async processRequest(requestData, handler) {
-    // Check rate limit
+  async acquireSlotForRequest(requestData) {
+    // Check rate limit first
     const rateStatus = await this.checkRateLimit(requestData);
     
     if (!rateStatus.allowed) {
@@ -409,18 +410,43 @@ class RedisRateLimiter {
       throw err;
     }
 
+    // Return release function for middleware to call on request completion
+    const releaseSlot = async () => {
+      try {
+        await this.releaseConcurrencySlot(requestData, slotInfo.requestId);
+      } catch (error) {
+        console.error('Error releasing concurrency slot:', error);
+      }
+    };
+
+    return {
+      releaseSlot,
+      rateStatus,
+      concurrencyStatus: slotInfo
+    };
+  }
+
+  /**
+   * @deprecated Use acquireSlotForRequest instead for Express middleware compatibility
+   * Complete request processing with rate and concurrency limiting
+   */
+  async processRequest(requestData, handler) {
+    console.warn('processRequest is deprecated. Use acquireSlotForRequest for Express middleware compatibility.');
+    
+    const slotInfo = await this.acquireSlotForRequest(requestData);
+    
     // Execute handler with proper cleanup
     try {
       const result = await handler(requestData);
       return {
         success: true,
         result,
-        rateStatus,
-        concurrencyStatus: slotInfo
+        rateStatus: slotInfo.rateStatus,
+        concurrencyStatus: slotInfo.concurrencyStatus
       };
     } finally {
       // Always release the slot
-      await this.releaseConcurrencySlot(requestData, slotInfo.requestId);
+      await slotInfo.releaseSlot();
     }
   }
 }

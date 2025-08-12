@@ -54,13 +54,15 @@ class TokenBucket {
 }
 
 class ConcurrencyLimiter {
-  constructor(maxConcurrent) {
+  constructor(maxConcurrent, maxQueueSize = 100, timeoutMs = 30000) {
     this.maxConcurrent = maxConcurrent;
+    this.maxQueueSize = maxQueueSize;
+    this.timeoutMs = timeoutMs;
     this.active = new Map(); // IP -> count
     this.queues = new Map(); // IP -> queue of pending requests
   }
 
-  async acquire(key) {
+  async acquire(key, requestId = Math.random().toString(36)) {
     return new Promise((resolve, reject) => {
       const currentActive = this.active.get(key) || 0;
       
@@ -69,17 +71,59 @@ class ConcurrencyLimiter {
         this.active.set(key, currentActive + 1);
         resolve(() => this.release(key));
       } else {
-        // Add to queue
+        // Check queue size limit
         if (!this.queues.has(key)) {
           this.queues.set(key, []);
         }
         
-        this.queues.get(key).push({
+        const queue = this.queues.get(key);
+        if (queue.length >= this.maxQueueSize) {
+          reject(new Error(`Queue capacity exceeded (max: ${this.maxQueueSize})`));
+          return;
+        }
+        
+        // Add to queue with timeout
+        const queueEntry = {
+          requestId,
           resolve: (release) => resolve(release),
-          reject
-        });
+          reject,
+          timestamp: Date.now()
+        };
+
+        // Set timeout to remove from queue and reject
+        const timeoutHandle = setTimeout(() => {
+          this.removeFromQueue(key, requestId);
+          reject(new Error(`Concurrency slot acquire timeout after ${this.timeoutMs}ms`));
+        }, this.timeoutMs);
+
+        queueEntry.timeoutHandle = timeoutHandle;
+        queue.push(queueEntry);
       }
     });
+  }
+
+  /**
+   * Remove a specific request from the queue (used for timeout cleanup)
+   */
+  removeFromQueue(key, requestId) {
+    const queue = this.queues.get(key);
+    if (!queue) return;
+
+    const index = queue.findIndex(entry => entry.requestId === requestId);
+    if (index !== -1) {
+      const entry = queue[index];
+      // Clear timeout handle
+      if (entry.timeoutHandle) {
+        clearTimeout(entry.timeoutHandle);
+      }
+      // Remove from queue
+      queue.splice(index, 1);
+      
+      // Clean up empty queue
+      if (queue.length === 0) {
+        this.queues.delete(key);
+      }
+    }
   }
 
   release(key) {
@@ -96,6 +140,12 @@ class ConcurrencyLimiter {
     const queue = this.queues.get(key);
     if (queue && queue.length > 0 && newActive < this.maxConcurrent) {
       const next = queue.shift();
+      
+      // Clear timeout handle since we're processing this request
+      if (next.timeoutHandle) {
+        clearTimeout(next.timeoutHandle);
+      }
+      
       if (queue.length === 0) {
         this.queues.delete(key);
       }
@@ -111,6 +161,25 @@ class ConcurrencyLimiter {
       queued: this.queues.get(key)?.length || 0,
       maxConcurrent: this.maxConcurrent
     };
+  }
+
+  /**
+   * Clean shutdown - clear all timeouts and reject pending requests
+   */
+  destroy() {
+    // Clear all timeout handles and reject pending requests
+    for (const [key, queue] of this.queues.entries()) {
+      for (const entry of queue) {
+        if (entry.timeoutHandle) {
+          clearTimeout(entry.timeoutHandle);
+        }
+        entry.reject(new Error('ConcurrencyLimiter is being destroyed'));
+      }
+    }
+    
+    // Clear all data
+    this.active.clear();
+    this.queues.clear();
   }
 }
 
