@@ -356,21 +356,21 @@ export function createEnhancedSecureHttpAgent(): http.Agent {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agent.createConnection = function(options: any, callback?: any) {
     const hostname = options.host || options.hostname;
-    
-    // Create the connection normally first
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const socket = originalCreateConnection.call(this, options, (err: Error | null) => {
-      if (err) {
-        return callback?.(err);
-      }
+    const socket = originalCreateConnection.call(this, options, callback);
 
+    // Listen for the 'connect' event to perform validation after connection is established
+    socket.on('connect', () => {
       // Perform socket-level IP validation after connection
       if (!validateSocketIP(socket as net.Socket, hostname)) {
         const validationError = new Error(
           `Connection rejected: socket IP validation failed for ${hostname}`
         );
-        socket.destroy();
-        return callback?.(validationError);
+        logger.warn('TOCTOU protection triggered: destroying connection', {
+          hostname,
+          remoteAddress: (socket as net.Socket).remoteAddress
+        });
+        socket.destroy(validationError);
+        return;
       }
 
       logger.debug('Socket IP validation passed', {
@@ -378,8 +378,6 @@ export function createEnhancedSecureHttpAgent(): http.Agent {
         remoteAddress: (socket as net.Socket).remoteAddress,
         remotePort: (socket as net.Socket).remotePort
       });
-
-      callback?.(null);
     });
 
     return socket;
@@ -414,25 +412,26 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
     }
   });
 
-  // Override createConnection for socket-level validation
+  // Override createConnection for socket-level validation  
   const originalCreateConnection = agent.createConnection;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agent.createConnection = function(options: any, callback?: any) {
     const hostname = options.host || options.hostname;
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const socket = originalCreateConnection.call(this, options, (err: Error | null) => {
-      if (err) {
-        return callback?.(err);
-      }
+    const socket = originalCreateConnection.call(this, options, callback);
 
-      // Perform socket-level IP validation
+    // Listen for the 'secureConnect' event for TLS sockets
+    socket.on('secureConnect', () => {
+      // Perform socket-level IP validation after TLS connection
       if (!validateSocketIP(socket as tls.TLSSocket, hostname)) {
         const validationError = new Error(
           `TLS connection rejected: socket IP validation failed for ${hostname}`
         );
-        socket.destroy();
-        return callback?.(validationError);
+        logger.warn('TOCTOU protection triggered: destroying TLS connection', {
+          hostname,
+          remoteAddress: (socket as tls.TLSSocket).remoteAddress
+        });
+        socket.destroy(validationError);
+        return;
       }
 
       logger.debug('TLS socket IP validation passed', {
@@ -440,8 +439,6 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
         remoteAddress: (socket as tls.TLSSocket).remoteAddress,
         remotePort: (socket as tls.TLSSocket).remotePort
       });
-
-      callback?.(null);
     });
 
     return socket;

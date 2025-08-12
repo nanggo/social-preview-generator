@@ -60,18 +60,20 @@ class ConcurrencyLimiter {
     this.maxConcurrent = maxConcurrent;
     this.maxQueueSize = maxQueueSize;
     this.timeoutMs = timeoutMs;
-    this.active = new Map(); // IP -> count
+    this.active = new Map(); // IP -> Set of request IDs  
     this.queues = new Map(); // IP -> queue of pending requests
   }
 
   async acquire(key, requestId = crypto.randomUUID()) {
     return new Promise((resolve, reject) => {
-      const currentActive = this.active.get(key) || 0;
+      const activeSet = this.active.get(key) || new Set();
+      const currentActive = activeSet.size;
       
       if (currentActive < this.maxConcurrent) {
         // Can proceed immediately
-        this.active.set(key, currentActive + 1);
-        resolve(() => this.release(key));
+        activeSet.add(requestId);
+        this.active.set(key, activeSet);
+        resolve(() => this.release(key, requestId));
       } else {
         // Check queue size limit
         if (!this.queues.has(key)) {
@@ -128,14 +130,20 @@ class ConcurrencyLimiter {
     }
   }
 
-  release(key) {
-    const currentActive = this.active.get(key) || 0;
-    const newActive = Math.max(0, currentActive - 1);
+  release(key, requestId) {
+    const activeSet = this.active.get(key);
+    if (!activeSet || !activeSet.has(requestId)) {
+      // Request ID not found - avoid double release
+      return;
+    }
+    
+    activeSet.delete(requestId);
+    const newActive = activeSet.size;
     
     if (newActive === 0) {
       this.active.delete(key);
     } else {
-      this.active.set(key, newActive);
+      this.active.set(key, activeSet);
     }
 
     // Process queue
@@ -152,14 +160,16 @@ class ConcurrencyLimiter {
         this.queues.delete(key);
       }
       
-      this.active.set(key, newActive + 1);
-      next.resolve(() => this.release(key));
+      // Add new request to active set
+      activeSet.add(next.requestId);
+      this.active.set(key, activeSet);
+      next.resolve(() => this.release(key, next.requestId));
     }
   }
 
   getStatus(key) {
     return {
-      active: this.active.get(key) || 0,
+      active: this.active.get(key)?.size || 0,
       queued: this.queues.get(key)?.length || 0,
       maxConcurrent: this.maxConcurrent
     };
@@ -393,8 +403,30 @@ function createRateLimiter(config = {}) {
     next();
   };
 
+  // Attach getStatus method to middleware for external access
+  middleware.getStatus = (req) => {
+    const key = typeof options.keyGenerator === 'function' 
+      ? options.keyGenerator(req) 
+      : options.keyGenerator;
+    
+    const bucket = buckets.get(key);
+    const concurrencyLimiter = concurrencyLimiters.get(key);
+    
+    if (!bucket || !concurrencyLimiter) {
+      return {
+        requests: { remaining: options.maxRequests, capacity: options.maxRequests },
+        concurrent: { active: 0, queued: 0, max: options.maxConcurrent }
+      };
+    }
+    
+    return {
+      requests: bucket.getStatus(),
+      concurrent: concurrencyLimiter.getStatus(key)
+    };
+  };
+
   // Return both middleware and cleanup function
-  // Applications should call cleanup during graceful shutdown
+  // Applications should call cleanup during graceful shutdown  
   return { middleware, cleanup };
 }
 

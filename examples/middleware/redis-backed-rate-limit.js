@@ -493,7 +493,7 @@ class RedisRateLimiter {
 function createRedisRateLimiter(redisClient, options = {}) {
   const limiter = new RedisRateLimiter(redisClient, options);
   
-  return async (req, res, next) => {
+  const middleware = async (req, res, next) => {
     try {
       const requestData = {
         ip: req.ip || req.connection.remoteAddress,
@@ -557,6 +557,12 @@ function createRedisRateLimiter(redisClient, options = {}) {
       });
     }
   };
+
+  // Attach methods to middleware for external access
+  middleware.getStatus = (requestData) => limiter.getStatus(requestData);
+  middleware.limiter = limiter; // Direct access to limiter instance
+
+  return middleware;
 }
 
 module.exports = {
