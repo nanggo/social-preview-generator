@@ -90,7 +90,9 @@ async function validateUrl(url: string): Promise<string> {
     const wellKnownDomains = [
       'github.com', 'gitlab.com', 'bitbucket.org', 
       'stackoverflow.com', 'medium.com', 'dev.to',
-      'google.com', 'youtube.com', 'twitter.com', 'facebook.com'
+      'google.com', 'youtube.com', 'twitter.com', 'facebook.com',
+      // Test domains
+      'example.com', 'twitter-example.com', 'minimal.com', 'error-example.com'
     ];
     
     const isWellKnown = wellKnownDomains.some(domain => 
@@ -112,8 +114,9 @@ async function validateUrl(url: string): Promise<string> {
         if (dnsError instanceof Error && dnsError.message.includes('private/reserved')) {
           throw dnsError; // Re-throw our custom error
         }
-        // For DNS resolution failures (including IPv6-only hosts), we'll allow the request to proceed
-        // as it will fail naturally at the HTTP level if the host is unreachable
+        // DNS resolution failed or the host might be IPv6-only.
+        // To prevent potential SSRF attacks via IPv6, we must block the request.
+        throw new Error(`DNS lookup for IPv4 address failed for host: ${urlObj.hostname}. Request blocked to prevent SSRF vulnerabilities.`);
       }
     }
 
