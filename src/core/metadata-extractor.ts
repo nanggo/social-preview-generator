@@ -7,165 +7,28 @@ import ogs from 'open-graph-scraper';
 import axios from 'axios';
 import { promisify } from 'util';
 import { lookup } from 'dns';
-import { ExtractedMetadata, ErrorType, PreviewGeneratorError } from '../types';
+import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions, RedirectOptions } from '../types';
+import { validateUrlInput } from '../utils/validators';
+import { getSecureAgentForUrl } from '../utils/secure-agent';
+import { validateImageBuffer } from '../utils/image-security';
+import { isPrivateOrReservedIP } from '../utils/ip-validation';
 
 const dnsLookup = promisify(lookup);
 
-/**
- * Check if an IP address (IPv4 or IPv6) is in a private or reserved range
- */
-function isPrivateOrReservedIP(ip: string): boolean {
-  // IPv6 address detection
-  if (ip.includes(':')) {
-    return isPrivateOrReservedIPv6(ip);
-  }
-
-  // IPv4 address validation
-  return isPrivateOrReservedIPv4(ip);
-}
-
-/**
- * Check if an IPv4 address is in a private or reserved range
- */
-function isPrivateOrReservedIPv4(ip: string): boolean {
-  const octets = ip.split('.').map(Number);
-
-  if (
-    octets.length !== 4 ||
-    octets.some(isNaN) ||
-    octets.some((octet) => octet < 0 || octet > 255)
-  ) {
-    return true; // Invalid IP format, treat as blocked
-  }
-
-  const [a, b] = octets;
-
-  // IPv4 private and reserved ranges
-  if (a === 0) return true; // 0.0.0.0/8 (reserved)
-  if (a === 10) return true; // 10.0.0.0/8
-  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-  if (a === 192 && b === 168) return true; // 192.168.0.0/16
-
-  // Carrier-Grade NAT (RFC 6598)
-  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10
-
-  // Loopback
-  if (a === 127) return true; // 127.0.0.0/8
-
-  // Link-local
-  if (a === 169 && b === 254) return true; // 169.254.0.0/16
-
-  // Multicast and reserved
-  if (a >= 224) return true; // 224.0.0.0/3
-
-  return false;
-}
-
-/**
- * Check if an IPv6 address is in a private or reserved range
- */
-function isPrivateOrReservedIPv6(ip: string): boolean {
-  try {
-    // Normalize IPv6 address - remove brackets if present
-    const normalizedIP = ip.replace(/^\[|\]$/g, '').toLowerCase();
-
-    // IPv6 private and reserved ranges
-    const privatePrefixes = [
-      '::', // Unspecified address
-      '::1', // Loopback
-      'fe80:', // Link-local
-      'fec0:', // Site-local (deprecated but still reserved)
-      'ff', // Multicast (ff00::/8)
-      'fc', // Unique local addresses (fc00::/7)
-      'fd', // Unique local addresses (fd00::/8)
-      '2001:db8:', // Documentation prefix
-      '2002:', // 6to4 addresses
-    ];
-
-    // Check against known private/reserved prefixes
-    for (const prefix of privatePrefixes) {
-      if (normalizedIP.startsWith(prefix)) {
-        return true;
-      }
-    }
-
-    // Comprehensive check for IPv4-mapped IPv6 addresses
-    if (normalizedIP.startsWith('::ffff:')) {
-      const ipv4Part = normalizedIP.replace('::ffff:', '');
-
-      // Handle dot notation IPv4 (e.g., ::ffff:192.168.1.1)
-      if (ipv4Part.includes('.')) {
-        return isPrivateOrReservedIPv4(ipv4Part);
-      }
-
-      // Handle hex notation IPv4 (e.g., ::ffff:c0a8:101 for 192.168.1.1)
-      if (ipv4Part.length === 8 && /^[0-9a-f]+$/.test(ipv4Part)) {
-        const hexPart1 = ipv4Part.slice(0, 4);
-        const hexPart2 = ipv4Part.slice(4, 8);
-
-        const octet1 = parseInt(hexPart1.slice(0, 2), 16);
-        const octet2 = parseInt(hexPart1.slice(2, 4), 16);
-        const octet3 = parseInt(hexPart2.slice(0, 2), 16);
-        const octet4 = parseInt(hexPart2.slice(2, 4), 16);
-
-        const reconstructedIPv4 = `${octet1}.${octet2}.${octet3}.${octet4}`;
-        return isPrivateOrReservedIPv4(reconstructedIPv4);
-      }
-
-      // Handle colon-separated hex notation (e.g., ::ffff:c0a8:101)
-      if (ipv4Part.includes(':')) {
-        const hexParts = ipv4Part.split(':');
-        if (hexParts.length === 2) {
-          try {
-            const part1 = parseInt(hexParts[0], 16);
-            const part2 = parseInt(hexParts[1], 16);
-
-            const octet1 = (part1 >> 8) & 0xff;
-            const octet2 = part1 & 0xff;
-            const octet3 = (part2 >> 8) & 0xff;
-            const octet4 = part2 & 0xff;
-
-            const reconstructedIPv4 = `${octet1}.${octet2}.${octet3}.${octet4}`;
-            return isPrivateOrReservedIPv4(reconstructedIPv4);
-          } catch {
-            // If conversion fails, treat as blocked for security
-            return true;
-          }
-        }
-      }
-
-      // If we can't parse the IPv4 part, treat as blocked for security
-      return true;
-    }
-
-    // Also check for general IPv4-mapped patterns that don't start with ::ffff:
-    // Some systems use different mappings
-    if (
-      normalizedIP.includes('::') &&
-      normalizedIP.match(/[0-9a-f]*\.[0-9a-f]*\.[0-9a-f]*\.[0-9a-f]*/)
-    ) {
-      return true; // Block any suspicious IPv4-like patterns in IPv6
-    }
-
-    return false;
-  } catch {
-    // If parsing fails, treat as blocked for security
-    return true;
-  }
-}
 
 /**
  * Extract metadata from a given URL
  * @param url - The URL to extract metadata from
+ * @param securityOptions - Security configuration options
  * @returns Extracted metadata object
  */
-export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
+export async function extractMetadata(url: string, securityOptions?: SecurityOptions): Promise<ExtractedMetadata> {
   try {
-    // Validate URL with SSRF protection
-    const validatedUrl = await validateUrl(url);
+    // Validate URL with SSRF protection and security options
+    const validatedUrl = await validateUrl(url, securityOptions);
 
     // Extract Open Graph data
-    const ogData = await fetchOpenGraphData(validatedUrl);
+    const ogData = await fetchOpenGraphData(validatedUrl, securityOptions);
 
     // Parse and normalize metadata
     const metadata = parseMetadata(ogData, validatedUrl);
@@ -186,13 +49,18 @@ export async function extractMetadata(url: string): Promise<ExtractedMetadata> {
 /**
  * Validate and normalize URL with SSRF protection
  */
-async function validateUrl(url: string): Promise<string> {
+async function validateUrl(url: string, securityOptions?: SecurityOptions): Promise<string> {
   try {
     const urlObj = new URL(url);
 
     // Ensure protocol is http or https
     if (!['http:', 'https:'].includes(urlObj.protocol)) {
       throw new Error('Invalid protocol. Only HTTP and HTTPS are supported.');
+    }
+
+    // Check HTTPS-only requirement
+    if (securityOptions?.httpsOnly && urlObj.protocol !== 'https:') {
+      throw new Error('HTTP URLs are not allowed when HTTPS-only mode is enabled.');
     }
 
     // Skip IP validation for well-known domains to avoid unnecessary DNS lookups
@@ -270,17 +138,38 @@ async function validateUrl(url: string): Promise<string> {
 /**
  * Fetch Open Graph data using open-graph-scraper
  */
-async function fetchOpenGraphData(url: string): Promise<Record<string, unknown>> {
+async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions): Promise<Record<string, unknown>> {
   try {
-    // First, try to fetch HTML content
-    const response = await axios.get(url, {
+    // Create secure axios config with redirect validation and secure agent
+    const axiosConfig = {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
         Accept: 'text/html,application/xhtml+xml',
       },
-      timeout: 10000,
-      maxRedirects: 5,
-    });
+      timeout: securityOptions?.timeout || 8000, // Configurable timeout
+      maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
+      maxContentLength: 1 * 1024 * 1024, // Reduced from 2MB to 1MB for HTML content
+      maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
+      httpAgent: getSecureAgentForUrl(url),
+      httpsAgent: getSecureAgentForUrl(url),
+      beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
+        // Validate each redirect URL for SSRF protection using typed interface for clarity
+        const redirectOptions = options as RedirectOptions;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+        try {
+          validateUrlInput(redirectUrl);
+        } catch (error) {
+          throw new PreviewGeneratorError(
+            ErrorType.VALIDATION_ERROR,
+            `Redirect to unsafe URL blocked: ${redirectUrl}`,
+            error
+          );
+        }
+      },
+    };
+
+    // First, try to fetch HTML content
+    const response = await axios.get(url, axiosConfig);
 
     // Extract OG data from HTML
     const { error, result } = await ogs({ html: response.data, url });
@@ -441,43 +330,65 @@ function cleanText(text: string): string {
 /**
  * Fetch image from URL and return as buffer with size and type validation
  * @param imageUrl - URL of the image to fetch
+ * @param securityOptions - Security configuration options
  * @returns Image buffer
  */
-export async function fetchImage(imageUrl: string): Promise<Buffer> {
+export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions): Promise<Buffer> {
   try {
     // Validate URL with SSRF protection before fetching
-    const validatedUrl = await validateUrl(imageUrl);
+    const validatedUrl = await validateUrl(imageUrl, securityOptions);
 
     // Maximum allowed image size (15MB)
     const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 
-    // Allowed MIME types for images
+    // Allowed MIME types for images (SVG conditionally allowed based on security settings)
     const ALLOWED_MIME_TYPES = new Set([
       'image/jpeg',
       'image/jpg',
       'image/png',
       'image/gif',
       'image/webp',
-      'image/svg+xml',
       'image/bmp',
+      'image/tiff',
     ]);
+
+    // Add SVG to allowed types only if explicitly permitted
+    if (securityOptions?.allowSvg) {
+      ALLOWED_MIME_TYPES.add('image/svg+xml');
+    }
 
     const response = await axios.get(validatedUrl, {
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
       },
-      timeout: 15000,
-      maxRedirects: 5,
+      timeout: securityOptions?.timeout || 12000, // Configurable timeout (default 12s for images)
+      maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
       maxContentLength: MAX_IMAGE_SIZE,
       maxBodyLength: MAX_IMAGE_SIZE,
+      httpAgent: getSecureAgentForUrl(validatedUrl),
+      httpsAgent: getSecureAgentForUrl(validatedUrl),
+      beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
+        // Validate each redirect URL for SSRF protection using typed interface for clarity
+        const redirectOptions = options as RedirectOptions;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+        try {
+          validateUrlInput(redirectUrl);
+        } catch (error) {
+          throw new PreviewGeneratorError(
+            ErrorType.VALIDATION_ERROR,
+            `Image redirect to unsafe URL blocked: ${redirectUrl}`,
+            error
+          );
+        }
+      },
     });
 
     // Check content-type header if available
     const contentType = response.headers?.['content-type']?.toLowerCase();
     if (contentType && !ALLOWED_MIME_TYPES.has(contentType)) {
       throw new Error(
-        `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, SVG, and BMP are allowed.`
+        `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, BMP, and TIFF are allowed.`
       );
     }
 
@@ -491,6 +402,9 @@ export async function fetchImage(imageUrl: string): Promise<Buffer> {
         `Image too large: ${contentLength} bytes. Maximum allowed: ${MAX_IMAGE_SIZE} bytes.`
       );
     }
+
+    // Validate image for security (pixel bombs, malformed files, etc.)
+    await validateImageBuffer(imageBuffer, securityOptions?.allowSvg);
 
     return imageBuffer;
   } catch (error) {

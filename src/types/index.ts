@@ -22,6 +22,52 @@ export interface PreviewOptions {
   fonts?: FontConfig[];
   /** Custom colors for the template */
   colors?: ColorConfig;
+  /** Security options */
+  security?: SecurityOptions;
+}
+
+/**
+ * Security configuration options
+ */
+export interface SecurityOptions {
+  /** Force HTTPS-only requests (reject HTTP URLs) */
+  httpsOnly?: boolean;
+  /** Allow SVG images (disabled by default for security) */
+  allowSvg?: boolean;
+  /** Maximum allowed redirects (default: 3) */
+  maxRedirects?: number;
+  /** Request timeout in milliseconds (default: 8000 for HTML, 12000 for images) */
+  timeout?: number;
+}
+
+/**
+ * Redirect options interface for axios beforeRedirect callback
+ */
+export interface RedirectOptions {
+  /** Request protocol (http: or https:) */
+  protocol: string;
+  /** Target hostname */
+  hostname: string;
+  /** Request path */
+  path?: string;
+  /** Query string parameters */
+  search?: string;
+  /** Request port */
+  port?: string | number;
+  /** Request method */
+  method?: string;
+}
+
+/**
+ * Response details interface for axios beforeRedirect callback
+ */
+export interface RedirectResponseDetails {
+  /** HTTP status code */
+  statusCode: number;
+  /** Response headers */
+  headers: Record<string, string | string[]>;
+  /** Response body (if available) */
+  body?: string;
 }
 
 /**

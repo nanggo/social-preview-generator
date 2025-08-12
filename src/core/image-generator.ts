@@ -4,6 +4,7 @@
  */
 
 import sharp from 'sharp';
+import { createSecureSharpInstance, secureResize } from '../utils/image-security';
 import {
   ExtractedMetadata,
   PreviewOptions,
@@ -86,13 +87,15 @@ async function processBackgroundImage(
   template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
-    const image = sharp(imageBuffer);
+    // Use secure Sharp instance
+    const image = createSecureSharpInstance(imageBuffer);
     await image.metadata();
 
     // Apply template-specific image processing settings
     const imageProcessing = template.imageProcessing || {};
 
-    let processedImage = image.resize(width, height, {
+    // Use secure resize function
+    let processedImage = secureResize(image, width, height, {
       fit: 'cover',
       position: 'center',
     });
@@ -221,16 +224,15 @@ async function generateTextOverlay(
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <style>
-          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
           .title { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${titleFontSize}px; 
             font-weight: 700; 
             fill: ${textColor};
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
           }
           .description { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${descFontSize}px; 
             font-weight: 400; 
             fill: ${textColor};
@@ -238,7 +240,7 @@ async function generateTextOverlay(
             filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
           }
           .siteName { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 600; 
             fill: ${textColor};

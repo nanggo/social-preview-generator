@@ -118,7 +118,7 @@ export function generateModernOverlay(
         <style type="text/css">
           <![CDATA[
           .title { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${titleFontSize}px; 
             font-weight: 800; 
             fill: ${textColor};
@@ -126,7 +126,7 @@ export function generateModernOverlay(
             letter-spacing: -0.02em;
           }
           .description { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${descFontSize}px; 
             font-weight: 400; 
             fill: ${textColor};
@@ -135,7 +135,7 @@ export function generateModernOverlay(
             letter-spacing: -0.01em;
           }
           .siteName { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 600; 
             fill: ${textColor};
@@ -144,7 +144,7 @@ export function generateModernOverlay(
             text-transform: uppercase;
           }
           .domain {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: 18px; 
             font-weight: 500; 
             fill: ${textColor};

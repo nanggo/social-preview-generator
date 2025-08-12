@@ -118,7 +118,7 @@ export function generateMinimalOverlay(
         <style type="text/css">
           <![CDATA[
           .minimal-title { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${titleFontSize}px; 
             font-weight: 300; 
             fill: ${textColor};
@@ -126,7 +126,7 @@ export function generateMinimalOverlay(
             line-height: ${titleLineHeight};
           }
           .minimal-description { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${descFontSize}px; 
             font-weight: 300; 
             fill: ${textColor};
@@ -135,7 +135,7 @@ export function generateMinimalOverlay(
             line-height: ${descLineHeight};
           }
           .minimal-sitename { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 500; 
             fill: ${accentColor};
@@ -144,7 +144,7 @@ export function generateMinimalOverlay(
             opacity: 0.6;
           }
           .minimal-domain {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
             font-size: 14px; 
             font-weight: 400; 
             fill: ${textColor};

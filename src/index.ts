@@ -29,6 +29,10 @@ import {
   validateOptions,
 } from './utils/validators';
 import sharp from 'sharp';
+import { initializeSharpSecurity } from './utils/image-security';
+
+// Initialize Sharp security settings
+initializeSharpSecurity();
 
 // Re-export types
 export {
@@ -241,7 +245,7 @@ async function processImageForTemplate(
 
   // Process background image with template-specific effects
   try {
-    const imageBuffer = await fetchImage(metadata.image);
+    const imageBuffer = await fetchImage(metadata.image, options.security);
     let processedImage = sharp(imageBuffer).resize(width, height, {
       fit: 'cover',
       position: 'center',
@@ -301,7 +305,7 @@ export async function generatePreviewWithDetails(
     // Extract metadata from URL once
     let metadata: ExtractedMetadata;
     try {
-      metadata = await extractMetadata(url);
+      metadata = await extractMetadata(url, finalOptions.security);
 
       // Validate metadata
       if (!validateMetadata(metadata)) {
