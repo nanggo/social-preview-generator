@@ -13,6 +13,25 @@ import {
   SanitizedOptions
 } from '../types';
 import sharp from 'sharp';
+import {
+  MAX_TEXT_LENGTH,
+  MAX_COLOR_LENGTH,
+  MAX_URL_LENGTH,
+  ALLOWED_TEMPLATES,
+  DIMENSION_LIMITS,
+  QUALITY_LIMITS,
+  DANGEROUS_CSS_PATTERNS,
+  SUSPICIOUS_PATTERNS,
+  DANGEROUS_HTML_PATTERNS,
+  SUSPICIOUS_URL_PARAMS,
+  ASCII_CONTROL_CHARS,
+  EXTENDED_ASCII_CONTROL_CHARS,
+  BIDI_CONTROL_CHARS,
+  ZERO_WIDTH_CHARS,
+  DANGEROUS_UNICODE_CHARS,
+  ALLOWED_PROTOCOLS,
+  BLOCKED_PROTOCOLS,
+} from '../constants/security';
 
 /**
  * Validates CSS color values to prevent injection attacks
@@ -263,57 +282,24 @@ export function validateColor(color: string): SanitizedColor {
  */
 function isSafeColorInput(color: string): boolean {
   // Maximum length check to prevent DoS
-  if (color.length > 100) {
+  if (color.length > MAX_COLOR_LENGTH) {
     return false;
   }
 
-  // Reject dangerous characters and patterns
-  const dangerousPatterns = [
-    // CSS injection patterns
-    /[<>]/g, // HTML tags
-    /javascript:/gi, // JavaScript protocol
-    /expression\(/gi, // CSS expressions (IE)
-    /data:/gi, // Data URIs
-    /url\(/gi, // URL functions
-    /import/gi, // CSS imports
-    /@/g, // CSS at-rules
-    /\/\*/g, // CSS comments
-    /\*\//g, // CSS comment ends
-    /;/g, // CSS statement terminators
-    /\}/g, // CSS block terminators
-    /\{/g, // CSS block starters
-    /\\/g, // Escape sequences
-    // eslint-disable-next-line no-control-regex
-    /[\x00-\x1f]/g, // Control characters
-    /[\x7f-\x9f]/g, // Extended control characters
-    /[\n\r\t\f\v]/g, // Whitespace that shouldn't be in color values
-  ];
-
-  // Check against dangerous patterns
-  for (const pattern of dangerousPatterns) {
-    if (pattern.test(color)) {
+  // Check against dangerous CSS patterns
+  for (const pattern of DANGEROUS_CSS_PATTERNS) {
+    // Create new RegExp to avoid global flag state issues
+    const testPattern = new RegExp(pattern.source, pattern.flags);
+    if (testPattern.test(color)) {
       return false;
     }
   }
 
   // Additional checks for suspicious combinations
-  const suspiciousPatterns = [
-    /script/gi, // Script references
-    /eval/gi, // Eval functions
-    /function/gi, // Function declarations
-    /return/gi, // Return statements
-    /alert/gi, // Alert calls
-    /prompt/gi, // Prompt calls
-    /confirm/gi, // Confirm calls
-    /document/gi, // Document object
-    /window/gi, // Window object
-    /console/gi, // Console object
-    /xhr/gi, // XMLHttpRequest
-    /fetch/gi, // Fetch API
-  ];
-
-  for (const pattern of suspiciousPatterns) {
-    if (pattern.test(color)) {
+  for (const pattern of SUSPICIOUS_PATTERNS) {
+    // Create new RegExp to avoid global flag state issues
+    const testPattern = new RegExp(pattern.source, pattern.flags);
+    if (testPattern.test(color)) {
       return false;
     }
   }
@@ -332,14 +318,17 @@ export function validateDimensions(width: number, height: number): void {
     );
   }
 
-  if (width < 100 || height < 100) {
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Minimum dimensions: 100x100');
-  }
-
-  if (width > 4096 || height > 4096) {
+  if (width < DIMENSION_LIMITS.MIN_WIDTH || height < DIMENSION_LIMITS.MIN_HEIGHT) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
-      'Image dimensions cannot exceed 4096x4096 pixels'
+      `Minimum dimensions: ${DIMENSION_LIMITS.MIN_WIDTH}x${DIMENSION_LIMITS.MIN_HEIGHT}`
+    );
+  }
+
+  if (width > DIMENSION_LIMITS.MAX_WIDTH || height > DIMENSION_LIMITS.MAX_HEIGHT) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `Image dimensions cannot exceed ${DIMENSION_LIMITS.MAX_WIDTH}x${DIMENSION_LIMITS.MAX_HEIGHT} pixels`
     );
   }
 }
@@ -375,12 +364,12 @@ export function validateOptionsLegacy(options: PreviewOptions): void {
     validateDimensions(width, height);
   }
 
-  // Validate quality if provided (1-100 range)
+  // Validate quality if provided
   if (options.quality !== undefined) {
-    if (!Number.isFinite(options.quality) || options.quality < 1 || options.quality > 100) {
+    if (!Number.isFinite(options.quality) || options.quality < QUALITY_LIMITS.MIN || options.quality > QUALITY_LIMITS.MAX) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
-        `Quality must be between 1 and 100, got: ${options.quality}`
+        `Quality must be between ${QUALITY_LIMITS.MIN} and ${QUALITY_LIMITS.MAX}, got: ${options.quality}`
       );
     }
   }
@@ -400,11 +389,10 @@ export function validateOptionsLegacy(options: PreviewOptions): void {
 
   // Validate template type if provided
   if (options.template !== undefined) {
-    const allowedTemplates = ['modern', 'classic', 'minimal', 'custom'];
-    if (!allowedTemplates.includes(options.template)) {
+    if (!ALLOWED_TEMPLATES.includes(options.template as any)) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
-        `Invalid template type: ${options.template}. Allowed templates: ${allowedTemplates.join(', ')}`
+        `Invalid template type: ${options.template}. Allowed templates: ${ALLOWED_TEMPLATES.join(', ')}`
       );
     }
   }
@@ -434,10 +422,10 @@ export function validateUrlInput(url: string): string {
   const sanitizedUrl = sanitizeControlChars(url.trim());
 
   // Length check
-  if (sanitizedUrl.length > 2048) {
+  if (sanitizedUrl.length > MAX_URL_LENGTH) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
-      'URL exceeds maximum length of 2048 characters'
+      `URL exceeds maximum length of ${MAX_URL_LENGTH} characters`
     );
   }
 
@@ -453,10 +441,10 @@ export function validateUrlInput(url: string): string {
     const urlObj = new URL(sanitizedUrl);
 
     // Protocol validation
-    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+    if (!ALLOWED_PROTOCOLS.includes(urlObj.protocol as any)) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
-        'Invalid protocol. Only HTTP and HTTPS are supported.'
+        `Invalid protocol. Only ${ALLOWED_PROTOCOLS.join(' and ')} are supported.`
       );
     }
 
@@ -478,33 +466,27 @@ export function validateUrlInput(url: string): string {
  * Check if URL input is safe from injection attacks
  */
 function isSafeUrlInput(url: string): boolean {
-  const dangerousPatterns = [
-    // Injection patterns
-    /javascript:/gi, // JavaScript protocol
-    /data:text\/html/gi, // HTML data URIs (specific threat)
-    /data:application\/javascript/gi, // JavaScript data URIs
-    /data:text\/javascript/gi, // JavaScript text data URIs
-    /vbscript:/gi, // VBScript protocol
-    /file:/gi, // File protocol
-    /ftp:/gi, // FTP protocol (not supported)
-
-    // Control characters
-    // eslint-disable-next-line no-control-regex
-    /[\x00-\x1f\x7f-\x9f]/g, // Control characters
-    /[\n\r\t]/g, // Line breaks and tabs
-
-    // Potential XSS patterns
-    /<script/gi, // Script tags
-    /%3Cscript/gi, // URL encoded script tags
-    /javascript%3A/gi, // URL encoded javascript protocol
-    /eval\(/gi, // Eval functions
-    /expression\(/gi, // CSS expressions
-  ];
-
-  for (const pattern of dangerousPatterns) {
-    if (pattern.test(url)) {
+  // Check for blocked protocols
+  for (const protocol of BLOCKED_PROTOCOLS) {
+    if (url.toLowerCase().includes(protocol)) {
       return false;
     }
+  }
+  
+  // Check for dangerous HTML/Script patterns
+  for (const pattern of DANGEROUS_HTML_PATTERNS) {
+    // Create new RegExp to avoid global flag state issues
+    const testPattern = new RegExp(pattern.source, pattern.flags);
+    if (testPattern.test(url)) {
+      return false;
+    }
+  }
+
+  // Check for control characters
+  const asciiPattern = new RegExp(ASCII_CONTROL_CHARS.source, ASCII_CONTROL_CHARS.flags);
+  const extendedPattern = new RegExp(EXTENDED_ASCII_CONTROL_CHARS.source, EXTENDED_ASCII_CONTROL_CHARS.flags);
+  if (asciiPattern.test(url) || extendedPattern.test(url)) {
+    return false;
   }
 
   return true;
@@ -519,10 +501,10 @@ export function validateTextInput(text: string, fieldName: string = 'text'): str
   }
 
   // Length check - reasonable limits for text content
-  if (text.length > 10000) {
+  if (text.length > MAX_TEXT_LENGTH) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
-      `${fieldName} exceeds maximum length of 10,000 characters`
+      `${fieldName} exceeds maximum length of ${MAX_TEXT_LENGTH} characters`
     );
   }
 
@@ -545,83 +527,48 @@ export function validateTextInput(text: string, fieldName: string = 'text'): str
  * Centralizes all control character filtering logic
  */
 export function sanitizeControlChars(text: string): string {
-  return text
+  let sanitized = text
     // ASCII control characters (except tab \t, newline \n, carriage return \r)
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+    .replace(ASCII_CONTROL_CHARS, '')
     // Extended ASCII control characters
-    .replace(/[\x80-\x9f]/g, '')
+    .replace(EXTENDED_ASCII_CONTROL_CHARS, '');
     
-    // Unicode Bidirectional Text Control Characters (Bidi attacks)
-    .replace(/\u202E/g, '') // RIGHT-TO-LEFT OVERRIDE
-    .replace(/\u202D/g, '') // LEFT-TO-RIGHT OVERRIDE  
-    .replace(/\u200E/g, '') // LEFT-TO-RIGHT MARK
-    .replace(/\u200F/g, '') // RIGHT-TO-LEFT MARK
-    .replace(/\u061C/g, '') // ARABIC LETTER MARK
-    .replace(/\u2066/g, '') // LEFT-TO-RIGHT ISOLATE
-    .replace(/\u2067/g, '') // RIGHT-TO-LEFT ISOLATE
-    .replace(/\u2068/g, '') // FIRST STRONG ISOLATE
-    .replace(/\u2069/g, '') // POP DIRECTIONAL ISOLATE
-    
-    // Zero-width and formatting characters
-    .replace(/\u200B/g, '') // ZERO WIDTH SPACE
-    .replace(/\u200C/g, '') // ZERO WIDTH NON-JOINER
-    .replace(/\u200D/g, '') // ZERO WIDTH JOINER
-    .replace(/\uFEFF/g, '') // ZERO WIDTH NO-BREAK SPACE (BOM)
-    .replace(/\u00AD/g, '') // SOFT HYPHEN
-    .replace(/\u034F/g, '') // COMBINING GRAPHEME JOINER
-    
-    // Other dangerous control characters
-    .replace(/\u180E/g, '') // MONGOLIAN VOWEL SEPARATOR
-    .replace(/\u2028/g, '') // LINE SEPARATOR
-    .replace(/\u2029/g, '') // PARAGRAPH SEPARATOR
-    
-    // Variation selectors (can cause display confusion)
-    .replace(/[\uFE00-\uFE0F]/g, '') // VARIATION SELECTOR-1 through 16
-    // Note: VARIATION SELECTOR-17 through 256 are in supplementary plane,
-    // would need surrogate pair handling - skipping for now as they're rare
-    
-    // Trim remaining whitespace
-    .trim();
+  // Unicode Bidirectional Text Control Characters (Bidi attacks)
+  Object.values(BIDI_CONTROL_CHARS).forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '');
+  });
+  
+  // Zero-width and formatting characters
+  Object.values(ZERO_WIDTH_CHARS).forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '');
+  });
+  
+  // Other dangerous Unicode characters
+  Object.values(DANGEROUS_UNICODE_CHARS).forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '');
+  });
+  
+  return sanitized.trim();
 }
 
 /**
  * Check if text input is safe from injection attacks
  */
 function isSafeTextInput(text: string): boolean {
-  const dangerousPatterns = [
-    // Script injection patterns
-    /<script/gi, // Script tags
-    /<\/script>/gi, // Script closing tags
-    /javascript:/gi, // JavaScript protocol
-    /data:/gi, // Data URIs
-    /vbscript:/gi, // VBScript protocol
-
-    // HTML injection patterns
-    /<iframe/gi, // Iframe tags
-    /<object/gi, // Object tags
-    /<embed/gi, // Embed tags
-    /<applet/gi, // Applet tags
-    /<meta/gi, // Meta tags
-    /<link/gi, // Link tags
-    /<style/gi, // Style tags
-
-    // Event handlers
-    /on\w+\s*=/gi, // Event handlers (onclick, onload, etc.)
-
-    // Expression patterns
-    /expression\(/gi, // CSS expressions
-    /eval\(/gi, // Eval functions
-    /function\s*\(/gi, // Function declarations
-
-    // Control characters that shouldn't be in normal text
-    // eslint-disable-next-line no-control-regex
-    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, // Control characters (except \n, \r, \t)
-  ];
-
-  for (const pattern of dangerousPatterns) {
-    if (pattern.test(text)) {
+  // Check against dangerous HTML/Script patterns
+  for (const pattern of DANGEROUS_HTML_PATTERNS) {
+    // Create new RegExp to avoid global flag state issues
+    const testPattern = new RegExp(pattern.source, pattern.flags);
+    if (testPattern.test(text)) {
       return false;
     }
+  }
+
+  // Check for control characters that shouldn't be in normal text
+  // Create new RegExp instance to avoid state issues
+  const controlCharsPattern = new RegExp(ASCII_CONTROL_CHARS.source, ASCII_CONTROL_CHARS.flags);
+  if (controlCharsPattern.test(text)) {
+    return false;
   }
 
   return true;
@@ -638,8 +585,7 @@ export function validateImageUrl(imageUrl: string): string {
   const urlObj = new URL(validatedUrl);
 
   // Check for suspicious query parameters
-  const suspiciousParams = ['callback', 'jsonp', 'eval', 'script'];
-  for (const param of suspiciousParams) {
+  for (const param of SUSPICIOUS_URL_PARAMS) {
     if (urlObj.searchParams.has(param)) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
@@ -689,10 +635,10 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
 
   // Validate quality
   if (sanitized.quality !== undefined) {
-    if (sanitized.quality < 1 || sanitized.quality > 100) {
+    if (sanitized.quality < QUALITY_LIMITS.MIN || sanitized.quality > QUALITY_LIMITS.MAX) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
-        'Quality must be between 1 and 100'
+        `Quality must be between ${QUALITY_LIMITS.MIN} and ${QUALITY_LIMITS.MAX}`
       );
     }
   }
@@ -729,10 +675,10 @@ export function validateDimension(value: number): ValidatedDimension {
   }
 
   // Reasonable limits for image dimensions
-  if (value > 8192) {
+  if (value > DIMENSION_LIMITS.MAX_WIDTH) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
-      'Dimension exceeds maximum allowed size of 8192 pixels'
+      `Dimension exceeds maximum allowed size of ${DIMENSION_LIMITS.MAX_WIDTH} pixels`
     );
   }
 
