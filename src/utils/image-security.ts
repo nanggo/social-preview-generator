@@ -91,8 +91,8 @@ export async function validateImageBuffer(
   await validateImageFormat(imageBuffer);
 
   try {
-    // Get metadata without loading the full image
-    const metadata = await sharp(imageBuffer, { failOnError: false }).metadata();
+    // Get metadata with strict error handling for security
+    const metadata = await sharp(imageBuffer, SHARP_SECURITY_CONFIG).metadata();
 
     // Check if dimensions are valid
     if (!metadata.width || !metadata.height) {
@@ -267,15 +267,20 @@ export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
         .filter((item: string) => item !== 'unknown');
 
       // Block SVG if dangerous elements/attributes were removed
-      const dangerousTagPatterns = ['<script>', '<object>', '<embed>', '<iframe>'];
+      // Only block for truly dangerous content, not just structural HTML elements
+      const criticalDangerousTags = ['<script', '<object', '<embed', '<iframe', '<link', '<meta'];
       const hasDangerousContent = removedElements.some((item: string) => {
         const lowerItem = item.toLowerCase();
         if (lowerItem.startsWith('<')) {
-          // Tag elements: check for exact dangerous tag matches
-          return dangerousTagPatterns.some(tag => lowerItem.startsWith(tag));
+          // Tag elements: only check for critical security threats
+          return criticalDangerousTags.some(tag => lowerItem.startsWith(tag));
         }
-        // Attributes: check for event handlers that start with 'on'
-        return lowerItem.trim().startsWith('on');
+        // Attributes: check for event handlers or dangerous external references
+        const trimmedItem = lowerItem.trim();
+        return trimmedItem.startsWith('on') || 
+               trimmedItem.startsWith('href=') || 
+               trimmedItem.startsWith('xlink:href=') ||
+               trimmedItem.startsWith('style=');
       });
 
       if (hasDangerousContent) {

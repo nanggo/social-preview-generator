@@ -160,6 +160,7 @@ export const SUSPICIOUS_PATTERNS = [
 // =============================================================================
 
 /** ASCII control characters to remove (except \t, \n, \r) */
+// eslint-disable-next-line no-control-regex
 export const ASCII_CONTROL_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
 
 /** Extended ASCII control characters */
@@ -293,7 +294,7 @@ export const SHARP_SECURITY_CONFIG = {
   limitInputPixels: MAX_INPUT_PIXELS,
   sequentialRead: true,
   density: 300,
-  failOnError: false,
+  failOnError: true,  // Security: fail fast on corrupted/malicious images
   stripMetadata: true,
 } as const;
 

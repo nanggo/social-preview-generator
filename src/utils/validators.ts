@@ -440,17 +440,27 @@ export function validateUrlInput(url: string): string {
   try {
     const urlObj = new URL(sanitizedUrl);
 
-    // Protocol validation
-    if (!ALLOWED_PROTOCOLS.includes(urlObj.protocol as any)) {
+    // Protocol validation - URL.protocol is always lowercase, so direct comparison is safe
+    const protocol = urlObj.protocol.toLowerCase();
+    if (!ALLOWED_PROTOCOLS.includes(protocol as typeof ALLOWED_PROTOCOLS[number])) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
-        `Invalid protocol. Only ${ALLOWED_PROTOCOLS.join(' and ')} are supported.`
+        `Invalid protocol: ${protocol}. Only ${ALLOWED_PROTOCOLS.join(' and ')} are supported.`
       );
     }
 
-    // Hostname validation
-    if (!urlObj.hostname || urlObj.hostname.length === 0) {
+    // Hostname validation - ensure hostname exists and is not empty
+    if (!urlObj.hostname || urlObj.hostname.trim().length === 0) {
       throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL must have a valid hostname');
+    }
+
+    // Additional security: reject URLs with unusual characters in hostname
+    const hostnamePattern = /^[a-zA-Z0-9.-]+$/;
+    if (!hostnamePattern.test(urlObj.hostname)) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR, 
+        'URL hostname contains invalid characters'
+      );
     }
 
     return urlObj.toString();
