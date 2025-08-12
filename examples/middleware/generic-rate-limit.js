@@ -7,6 +7,20 @@
 
 class SlidingWindowRateLimiter {
   constructor(options = {}) {
+    // Input validation
+    if (options.windowMs && (options.windowMs < 1000 || !Number.isInteger(options.windowMs))) {
+      throw new Error('windowMs must be an integer >= 1000ms');
+    }
+    if (options.maxRequests && (options.maxRequests < 1 || !Number.isInteger(options.maxRequests))) {
+      throw new Error('maxRequests must be an integer >= 1');
+    }
+    if (options.costFunction && typeof options.costFunction !== 'function') {
+      throw new Error('costFunction must be a function');
+    }
+    if (options.keyGenerator && typeof options.keyGenerator !== 'function') {
+      throw new Error('keyGenerator must be a function');
+    }
+
     this.options = {
       windowMs: 15 * 60 * 1000, // 15 minutes
       maxRequests: 100,
@@ -31,6 +45,12 @@ class SlidingWindowRateLimiter {
   async checkLimit(requestData) {
     const key = this.options.keyGenerator(requestData);
     const cost = this.options.costFunction(requestData);
+    
+    // Validate cost function result
+    if (!Number.isInteger(cost) || cost < 1) {
+      throw new Error(`costFunction must return an integer >= 1, got: ${cost}`);
+    }
+    
     const now = Date.now();
     const windowStart = now - this.options.windowMs;
 
@@ -38,7 +58,10 @@ class SlidingWindowRateLimiter {
     let requests = this.options.storage.get(key) || [];
     
     // Remove expired requests
-    requests = requests.filter(timestamp => timestamp > windowStart);
+    requests = requests.filter(entry => {
+      const timestamp = typeof entry === 'object' ? entry.timestamp : entry;
+      return timestamp > windowStart;
+    });
 
     // Calculate current usage
     const currentRequests = requests.reduce((total, entry) => {
@@ -154,13 +177,22 @@ class SlidingWindowRateLimiter {
  * Concurrent request limiter
  */
 class ConcurrentRequestLimiter {
-  constructor(maxConcurrent = 5) {
+  constructor(maxConcurrent = 5, maxQueueSize = 100) {
+    // Input validation
+    if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
+      throw new Error('maxConcurrent must be an integer >= 1');
+    }
+    if (!Number.isInteger(maxQueueSize) || maxQueueSize < 0) {
+      throw new Error('maxQueueSize must be an integer >= 0');
+    }
+
     this.maxConcurrent = maxConcurrent;
+    this.maxQueueSize = maxQueueSize;
     this.active = new Map(); // key -> Set of request IDs
     this.queues = new Map(); // key -> Array of pending promises
   }
 
-  async acquire(key, requestId = Math.random().toString(36)) {
+  async acquire(key, requestId = Math.random().toString(36), timeout = 30000) {
     return new Promise((resolve, reject) => {
       // Initialize tracking for this key if needed
       if (!this.active.has(key)) {
@@ -174,19 +206,60 @@ class ConcurrentRequestLimiter {
         activeSet.add(requestId);
         resolve(() => this.release(key, requestId));
       } else {
-        // Add to queue
+        // Add to queue with size limit
         if (!this.queues.has(key)) {
           this.queues.set(key, []);
         }
 
-        this.queues.get(key).push({
+        const queue = this.queues.get(key);
+        if (queue.length >= this.maxQueueSize) {
+          reject(new Error(`Queue capacity exceeded (max: ${this.maxQueueSize})`));
+          return;
+        }
+
+        const queueEntry = {
           requestId,
           resolve: (release) => resolve(release),
           reject,
           timestamp: Date.now()
-        });
+        };
+
+        // Set timeout to remove from queue and reject
+        const timeoutHandle = setTimeout(() => {
+          this.removeFromQueue(key, requestId);
+          reject(new Error(`Concurrency slot acquire timeout after ${timeout}ms`));
+        }, timeout);
+
+        // Store timeout handle for cleanup
+        queueEntry.timeoutHandle = timeoutHandle;
+        
+        this.queues.get(key).push(queueEntry);
       }
     });
+  }
+
+  /**
+   * Remove a specific request from the queue (used for timeout cleanup)
+   */
+  removeFromQueue(key, requestId) {
+    const queue = this.queues.get(key);
+    if (!queue) return;
+
+    const index = queue.findIndex(entry => entry.requestId === requestId);
+    if (index !== -1) {
+      const entry = queue[index];
+      // Clear timeout handle
+      if (entry.timeoutHandle) {
+        clearTimeout(entry.timeoutHandle);
+      }
+      // Remove from queue
+      queue.splice(index, 1);
+      
+      // Clean up empty queue
+      if (queue.length === 0) {
+        this.queues.delete(key);
+      }
+    }
   }
 
   release(key, requestId) {
@@ -203,6 +276,11 @@ class ConcurrentRequestLimiter {
     const queue = this.queues.get(key);
     if (queue && queue.length > 0) {
       const next = queue.shift();
+      
+      // Clear timeout handle since we're processing this request
+      if (next.timeoutHandle) {
+        clearTimeout(next.timeoutHandle);
+      }
       
       if (queue.length === 0) {
         this.queues.delete(key);
@@ -226,6 +304,25 @@ class ConcurrentRequestLimiter {
       queued,
       maxConcurrent: this.maxConcurrent
     };
+  }
+
+  /**
+   * Clean shutdown - clear all timeouts and reject pending requests
+   */
+  destroy() {
+    // Clear all timeout handles and reject pending requests
+    for (const [key, queue] of this.queues.entries()) {
+      for (const entry of queue) {
+        if (entry.timeoutHandle) {
+          clearTimeout(entry.timeoutHandle);
+        }
+        entry.reject(new Error('ConcurrentRequestLimiter is being destroyed'));
+      }
+    }
+    
+    // Clear all data
+    this.active.clear();
+    this.queues.clear();
   }
 }
 
@@ -287,20 +384,30 @@ class CombinedRateLimiter {
       throw error;
     }
 
-    // Acquire concurrency slot
+    // Acquire concurrency slot with timeout handling
     let releaseSlot;
+    let timeoutHandle;
+    
+    const acquirePromise = this.concurrencyLimiter.acquire(key);
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
+      timeoutHandle = setTimeout(() => {
         reject(new Error('Request timeout while waiting for concurrency slot'));
       }, this.options.requestTimeout);
     });
 
     try {
-      releaseSlot = await Promise.race([
-        this.concurrencyLimiter.acquire(key),
-        timeoutPromise
-      ]);
+      releaseSlot = await Promise.race([acquirePromise, timeoutPromise]);
+      
+      // Clear timeout if acquire succeeded
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
     } catch (error) {
+      // Clear timeout on error
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      
       const concurrencyStatus = this.concurrencyLimiter.getStatus(key);
       this.options.onConcurrencyLimitExceeded(key, concurrencyStatus);
       
@@ -319,9 +426,17 @@ class CombinedRateLimiter {
         rateStatus,
         concurrencyStatus: this.concurrencyLimiter.getStatus(key)
       };
+    } catch (handlerError) {
+      // Re-throw handler errors after cleanup
+      throw handlerError;
     } finally {
+      // Always release the concurrency slot
       if (releaseSlot) {
-        releaseSlot();
+        try {
+          releaseSlot();
+        } catch (releaseError) {
+          console.error('Error releasing concurrency slot:', releaseError);
+        }
       }
     }
   }
@@ -344,6 +459,7 @@ class CombinedRateLimiter {
    */
   destroy() {
     this.rateLimiter.destroy();
+    this.concurrencyLimiter.destroy();
   }
 }
 
