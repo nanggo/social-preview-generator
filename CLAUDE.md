@@ -1,6 +1,6 @@
 # Social Preview Generator - Development Guidelines
 
-## Development Workflow: Plan-Code-Test Cycle
+## Development Workflow: Plan-Code-Test-Security-Commit Cycle
 
 ### 1. Plan Phase
 - Define optimal solution strategy for the problem at hand
@@ -25,10 +25,15 @@
   - Build process
   - Unit/Integration tests
 - If tests fail: return to Plan phase and iterate until success
-- On test success: proceed to commit and push
+- On test success: proceed to security review phase
 
-### 4. Completion
-- Commit and push changes after successful testing
+### 4. Security Review Phase
+- **MANDATORY**: Always run `/security-review` before any commit
+- Address any security vulnerabilities identified in the review
+- Only proceed to commit after security review passes
+
+### 5. Completion
+- Commit and push changes after successful testing and security review
 - For PR review tasks: comment '/gemini review'
 
 ## Project Organization

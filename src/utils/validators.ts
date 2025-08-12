@@ -147,6 +147,7 @@ function isSafeColorInput(color: string): boolean {
     /\}/g,                      // CSS block terminators
     /\{/g,                      // CSS block starters
     /\\/g,                      // Escape sequences
+    // eslint-disable-next-line no-control-regex
     /\x00-\x1f/g,              // Control characters
     /\x7f-\x9f/g,              // Extended control characters
     /[\n\r\t\f\v]/g,           // Whitespace that shouldn't be in color values
@@ -356,6 +357,7 @@ function isSafeUrlInput(url: string): boolean {
     /ftp:/gi,                   // FTP protocol (not supported)
     
     // Control characters
+    // eslint-disable-next-line no-control-regex
     /[\x00-\x1f\x7f-\x9f]/g,   // Control characters
     /[\n\r\t]/g,               // Line breaks and tabs
     
@@ -436,6 +438,7 @@ function isSafeTextInput(text: string): boolean {
     /function\s*\(/gi,         // Function declarations
     
     // Control characters that shouldn't be in normal text
+    // eslint-disable-next-line no-control-regex
     /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,  // Control characters (except \n, \r, \t)
   ];
 

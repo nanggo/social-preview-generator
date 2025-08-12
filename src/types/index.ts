@@ -144,7 +144,8 @@ export interface TemplateConfig {
     metadata: ExtractedMetadata,
     width: number,
     height: number,
-    options: PreviewOptions
+    options: PreviewOptions,
+    template?: TemplateConfig
   ) => string;
 }
 
@@ -298,9 +299,9 @@ export enum ErrorType {
  */
 export class PreviewGeneratorError extends Error {
   type: ErrorType;
-  details?: any;
+  details?: unknown;
 
-  constructor(type: ErrorType, message: string, details?: any) {
+  constructor(type: ErrorType, message: string, details?: unknown) {
     super(message);
     this.name = 'PreviewGeneratorError';
     this.type = type;

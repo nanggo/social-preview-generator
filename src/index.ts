@@ -53,7 +53,7 @@ export async function generatePreview(url: string, options: PreviewOptions = {})
 /**
  * Generate image with specific template
  */
-async function generateImageWithTemplate(
+export async function generateImageWithTemplate(
   metadata: ExtractedMetadata,
   template: TemplateConfig,
   options: PreviewOptions
@@ -73,7 +73,7 @@ async function generateImageWithTemplate(
     let overlayBuffer: Buffer;
 
     if (template.overlayGenerator) {
-      const overlaySvg = template.overlayGenerator(metadata, width, height, options);
+      const overlaySvg = template.overlayGenerator(metadata, width, height, options, template);
       overlayBuffer = Buffer.from(overlaySvg);
     } else {
       // Fallback to default overlay generation for custom templates
@@ -367,7 +367,7 @@ export async function generatePreviewWithDetails(
     // Generate image based on template - reuse metadata instead of re-extracting
     const buffer = await generateImageWithTemplate(
       metadata,
-      template || modernTemplate,
+      template || templates.modern,
       finalOptions
     );
 

@@ -68,19 +68,20 @@ export function generateMinimalOverlay(
   metadata: ExtractedMetadata,
   width: number,
   height: number,
-  options: PreviewOptions = {}
+  options: PreviewOptions = {},
+  template: TemplateConfig = minimalTemplate
 ): string {
-  const padding = minimalTemplate.layout.padding;
+  const padding = template.layout.padding;
   const textColor = validateColor(options.colors?.text || '#000000');
   const accentColor = validateColor(options.colors?.accent || '#000000');
   const backgroundColor = validateColor(options.colors?.background || '#ffffff');
 
   // Typography settings with minimal approach
-  const titleFontSize = minimalTemplate.typography.title.fontSize;
-  const titleLineHeight = minimalTemplate.typography.title.lineHeight || 1.1;
-  const descFontSize = minimalTemplate.typography.description?.fontSize || 26;
-  const descLineHeight = minimalTemplate.typography.description?.lineHeight || 1.6;
-  const siteNameFontSize = minimalTemplate.typography.siteName?.fontSize || 16;
+  const titleFontSize = template.typography.title.fontSize;
+  const titleLineHeight = template.typography.title.lineHeight || 1.1;
+  const descFontSize = template.typography.description?.fontSize || 26;
+  const descLineHeight = template.typography.description?.lineHeight || 1.6;
+  const siteNameFontSize = template.typography.siteName?.fontSize || 16;
 
   // Text wrapping with generous spacing
   const maxTextWidth = width - padding * 2;
@@ -88,7 +89,7 @@ export function generateMinimalOverlay(
     metadata.title,
     maxTextWidth,
     titleFontSize,
-    minimalTemplate.typography.title.maxLines || 2,
+    template.typography.title.maxLines || 2,
     'inter'
   );
   const descLines = metadata.description
@@ -96,7 +97,7 @@ export function generateMinimalOverlay(
         metadata.description,
         maxTextWidth,
         descFontSize,
-        minimalTemplate.typography.description?.maxLines || 2,
+        template.typography.description?.maxLines || 2,
         'inter'
       )
     : [];

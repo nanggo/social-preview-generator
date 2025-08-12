@@ -68,19 +68,20 @@ export function generateClassicOverlay(
   metadata: ExtractedMetadata,
   width: number,
   height: number,
-  options: PreviewOptions = {}
+  options: PreviewOptions = {},
+  template: TemplateConfig = classicTemplate
 ): string {
-  const padding = classicTemplate.layout.padding;
+  const padding = template.layout.padding;
   const textColor = validateColor(options.colors?.text || '#1a1a1a');
   const accentColor = validateColor(options.colors?.accent || '#2c5aa0');
   const backgroundColor = validateColor(options.colors?.background || '#ffffff');
 
   // Typography settings
-  const titleFontSize = classicTemplate.typography.title.fontSize;
-  const titleLineHeight = classicTemplate.typography.title.lineHeight || 1.3;
-  const descFontSize = classicTemplate.typography.description?.fontSize || 24;
-  const descLineHeight = classicTemplate.typography.description?.lineHeight || 1.5;
-  const siteNameFontSize = classicTemplate.typography.siteName?.fontSize || 18;
+  const titleFontSize = template.typography.title.fontSize;
+  const titleLineHeight = template.typography.title.lineHeight || 1.3;
+  const descFontSize = template.typography.description?.fontSize || 24;
+  const descLineHeight = template.typography.description?.lineHeight || 1.5;
+  const siteNameFontSize = template.typography.siteName?.fontSize || 18;
 
   // Layout calculations
   const contentWidth = Math.floor((width - padding * 3) * 0.6); // 60% for text, 40% for image
@@ -91,7 +92,7 @@ export function generateClassicOverlay(
     metadata.title,
     contentWidth,
     titleFontSize,
-    classicTemplate.typography.title.maxLines || 3,
+    template.typography.title.maxLines || 3,
     'default'
   );
   const descLines = metadata.description
@@ -99,7 +100,7 @@ export function generateClassicOverlay(
         metadata.description,
         contentWidth,
         descFontSize,
-        classicTemplate.typography.description?.maxLines || 3,
+        template.typography.description?.maxLines || 3,
         'default'
       )
     : [];

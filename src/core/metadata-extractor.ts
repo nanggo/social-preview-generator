@@ -167,12 +167,12 @@ async function validateUrl(url: string): Promise<string> {
           // Resolve hostname to IPv4 address
           const { address } = await dnsLookup(urlObj.hostname, 4);
           resolvedAddress = address;
-        } catch (ipv4Error) {
+        } catch {
           // If IPv4 resolution fails, try IPv6
           try {
             const { address } = await dnsLookup(urlObj.hostname, 6);
             resolvedAddress = address;
-          } catch (ipv6Error) {
+          } catch {
             throw new Error(`DNS lookup failed for both IPv4 and IPv6 for host: ${urlObj.hostname}. Request blocked to prevent SSRF vulnerabilities.`);
           }
         }
@@ -199,7 +199,7 @@ async function validateUrl(url: string): Promise<string> {
 /**
  * Fetch Open Graph data using open-graph-scraper
  */
-async function fetchOpenGraphData(url: string): Promise<any> {
+async function fetchOpenGraphData(url: string): Promise<Record<string, unknown>> {
   try {
     // First, try to fetch HTML content
     const response = await axios.get(url, {
@@ -242,38 +242,38 @@ async function fetchOpenGraphData(url: string): Promise<any> {
 /**
  * Parse and normalize metadata from Open Graph data
  */
-function parseMetadata(ogData: any, url: string): ExtractedMetadata {
+function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedMetadata {
   const urlObj = new URL(url);
 
   // Extract title (prioritize OG title, then Twitter, then HTML title)
   const title =
-    ogData.ogTitle || ogData.twitterTitle || ogData.dcTitle || ogData.title || urlObj.hostname;
+    (ogData.ogTitle as string) || (ogData.twitterTitle as string) || (ogData.dcTitle as string) || (ogData.title as string) || urlObj.hostname;
 
   // Extract description
   const description =
-    ogData.ogDescription ||
-    ogData.twitterDescription ||
-    ogData.dcDescription ||
-    ogData.description ||
+    (ogData.ogDescription as string) ||
+    (ogData.twitterDescription as string) ||
+    (ogData.dcDescription as string) ||
+    (ogData.description as string) ||
     '';
 
   // Extract image URL (prioritize OG image, then Twitter image)
   let image: string | undefined;
   if (ogData.ogImage) {
     if (Array.isArray(ogData.ogImage)) {
-      image = ogData.ogImage[0]?.url || ogData.ogImage[0];
+      image = (ogData.ogImage[0] as any)?.url || (ogData.ogImage[0] as string);
     } else if (typeof ogData.ogImage === 'object') {
-      image = ogData.ogImage.url;
+      image = (ogData.ogImage as any).url;
     } else {
-      image = ogData.ogImage;
+      image = ogData.ogImage as string;
     }
   } else if (ogData.twitterImage) {
     if (Array.isArray(ogData.twitterImage)) {
-      image = ogData.twitterImage[0]?.url || ogData.twitterImage[0];
+      image = (ogData.twitterImage[0] as any)?.url || (ogData.twitterImage[0] as string);
     } else if (typeof ogData.twitterImage === 'object') {
-      image = ogData.twitterImage.url;
+      image = (ogData.twitterImage as any).url;
     } else {
-      image = ogData.twitterImage;
+      image = ogData.twitterImage as string;
     }
   }
 
@@ -289,15 +289,15 @@ function parseMetadata(ogData: any, url: string): ExtractedMetadata {
 
   // Extract site name
   const siteName =
-    ogData.ogSiteName ||
-    ogData.twitterSite ||
-    ogData.applicationName ||
+    (ogData.ogSiteName as string) ||
+    (ogData.twitterSite as string) ||
+    (ogData.applicationName as string) ||
     urlObj.hostname.replace('www.', '');
 
   // Extract favicon
   let favicon: string | undefined;
   if (ogData.favicon) {
-    favicon = ogData.favicon;
+    favicon = ogData.favicon as string;
     if (favicon && !favicon.startsWith('http')) {
       try {
         const faviconUrl = new URL(favicon, url);
@@ -313,17 +313,17 @@ function parseMetadata(ogData: any, url: string): ExtractedMetadata {
   }
 
   // Extract author
-  const author = ogData.author || ogData.dcCreator || ogData.twitterCreator || ogData.articleAuthor;
+  const author = (ogData.author as string) || (ogData.dcCreator as string) || (ogData.twitterCreator as string) || (ogData.articleAuthor as string);
 
   // Extract published date
   const publishedDate =
-    ogData.ogArticlePublishedTime ||
-    ogData.articlePublishedTime ||
-    ogData.dcDate ||
-    ogData.publishedTime;
+    (ogData.ogArticlePublishedTime as string) ||
+    (ogData.articlePublishedTime as string) ||
+    (ogData.dcDate as string) ||
+    (ogData.publishedTime as string);
 
   // Extract locale
-  const locale = ogData.ogLocale || ogData.inLanguage || 'en_US';
+  const locale = (ogData.ogLocale as string) || (ogData.inLanguage as string) || 'en_US';
 
   return {
     title: cleanText(title),
@@ -356,6 +356,9 @@ function cleanText(text: string): string {
  */
 export async function fetchImage(imageUrl: string): Promise<Buffer> {
   try {
+    // Validate URL with SSRF protection before fetching
+    const validatedUrl = await validateUrl(imageUrl);
+    
     // Maximum allowed image size (15MB)
     const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
     
@@ -365,7 +368,7 @@ export async function fetchImage(imageUrl: string): Promise<Buffer> {
       'image/webp', 'image/svg+xml', 'image/bmp'
     ]);
 
-    const response = await axios.get(imageUrl, {
+    const response = await axios.get(validatedUrl, {
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
