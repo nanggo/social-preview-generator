@@ -665,6 +665,32 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
     }
   }
 
+  // Validate template type
+  if (sanitized.template !== undefined) {
+    if (!ALLOWED_TEMPLATES.includes(sanitized.template as any)) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Invalid template type: ${sanitized.template}. Allowed templates: ${ALLOWED_TEMPLATES.join(', ')}`
+      );
+    }
+  }
+
+  // Validate cache option
+  if (sanitized.cache !== undefined && typeof sanitized.cache !== 'boolean') {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `Cache option must be boolean, got: ${typeof sanitized.cache}`
+    );
+  }
+
+  // Validate text inputs from fallback
+  if (sanitized.fallback?.text) {
+    sanitized.fallback = {
+      ...sanitized.fallback,
+      text: validateTextInput(sanitized.fallback.text, 'fallback text'),
+    };
+  }
+
   return sanitized as SanitizedOptions;
 }
 
