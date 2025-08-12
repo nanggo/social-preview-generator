@@ -39,8 +39,9 @@ class SecureDNSCache {
   private cleanupInterval: NodeJS.Timeout;
 
   constructor() {
-    // Cleanup expired entries every minute
-    this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+    // Adaptive cleanup interval based on TTL (cleanup every TTL/10, min 10s, max 60s)
+    const cleanupIntervalMs = Math.max(10000, Math.min(60000, this.defaultTTL / 10));
+    this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs);
   }
 
   /**
@@ -82,11 +83,15 @@ class SecureDNSCache {
           hostname
         };
 
-        // Manage cache size
+        // Manage cache size with LRU eviction
         if (this.cache.size >= this.maxCacheSize) {
-          const oldestKey = this.cache.keys().next().value;
-          if (oldestKey) {
-            this.cache.delete(oldestKey);
+          // Remove multiple old entries if near capacity to prevent frequent evictions
+          const entriesToRemove = Math.max(1, Math.floor(this.maxCacheSize * 0.1)); // Remove 10%
+          let removed = 0;
+          for (const [key] of this.cache.entries()) {
+            if (removed >= entriesToRemove) break;
+            this.cache.delete(key);
+            removed++;
           }
         }
 
@@ -118,21 +123,37 @@ class SecureDNSCache {
   }
 
   /**
-   * Clean up expired entries
+   * Clean up expired entries and enforce size limits
    */
   private cleanup(): void {
     const now = Date.now();
     const toDelete: string[] = [];
 
+    // Find expired entries
     for (const [key, entry] of this.cache.entries()) {
       if (now - entry.timestamp >= entry.ttl) {
         toDelete.push(key);
       }
     }
 
+    // Remove expired entries
     toDelete.forEach(key => this.cache.delete(key));
 
-    logger.debug(`DNS cache cleanup: removed ${toDelete.length} expired entries, ${this.cache.size} remaining`);
+    // If still over capacity after expiry cleanup, perform LRU eviction
+    if (this.cache.size > this.maxCacheSize * 0.9) { // Start cleanup at 90% capacity
+      const excessEntries = this.cache.size - Math.floor(this.maxCacheSize * 0.8); // Target 80% capacity
+      let removed = 0;
+      
+      for (const [key] of this.cache.entries()) {
+        if (removed >= excessEntries) break;
+        this.cache.delete(key);
+        removed++;
+      }
+      
+      logger.debug(`DNS cache cleanup: removed ${toDelete.length} expired + ${removed} LRU entries, ${this.cache.size} remaining`);
+    } else {
+      logger.debug(`DNS cache cleanup: removed ${toDelete.length} expired entries, ${this.cache.size} remaining`);
+    }
   }
 
   /**

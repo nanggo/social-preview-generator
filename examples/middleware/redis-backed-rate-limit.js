@@ -7,7 +7,7 @@
 
 const crypto = require('crypto');
 
-// Lua script for atomic sliding window rate limiting with optimized cost tracking
+// Lua script for atomic sliding window rate limiting with race condition protection
 const slidingWindowScript = `
 local requestKey = KEYS[1]
 local totalKey = KEYS[2]  -- Separate key for total cost counter
@@ -17,8 +17,24 @@ local cost = tonumber(ARGV[3])
 local now = tonumber(ARGV[4])
 local requestId = ARGV[5]
 
--- Remove expired entries and update total
-local expiredMembers = redis.call('ZRANGEBYSCORE', requestKey, 0, now - window)
+-- Get expired timestamp for cleanup
+local expiredBefore = now - window
+
+-- First, get all current members before any modifications for validation
+local currentMembers = redis.call('ZRANGEBYSCORE', requestKey, expiredBefore, '+inf', 'WITHSCORES')
+
+-- Calculate actual total from current valid entries for verification
+local actualTotal = 0
+for i = 1, #currentMembers, 2 do
+    local member = currentMembers[i]
+    local member_cost = tonumber(string.match(member, '^%d+:(%d+):'))
+    if member_cost then
+        actualTotal = actualTotal + member_cost
+    end
+end
+
+-- Get expired entries that will be removed
+local expiredMembers = redis.call('ZRANGEBYSCORE', requestKey, 0, expiredBefore - 0.001)
 local expiredCost = 0
 for _, member in ipairs(expiredMembers) do
     local member_cost = tonumber(string.match(member, '^%d+:(%d+):'))
@@ -27,31 +43,26 @@ for _, member in ipairs(expiredMembers) do
     end
 end
 
--- Remove expired entries
-redis.call('ZREMRANGEBYSCORE', requestKey, 0, now - window)
+-- Remove expired entries atomically
+redis.call('ZREMRANGEBYSCORE', requestKey, 0, expiredBefore - 0.001)
 
--- Update total cost counter (subtract expired costs)
-if expiredCost > 0 then
-    redis.call('DECRBY', totalKey, expiredCost)
-end
-
--- Get current total cost
+-- Get current total cost counter
 local current_total_cost = tonumber(redis.call('GET', totalKey))
 
-if current_total_cost == nil then
-    -- Recalculate from sorted set to prevent bypass if counter key is missing
-    local members = redis.call('ZRANGE', requestKey, 0, -1)
-    current_total_cost = 0
-    for _, member in ipairs(members) do
-        local member_cost = tonumber(string.match(member, '^%d+:(%d+):'))
-        if member_cost then
-            current_total_cost = current_total_cost + member_cost
-        end
-    end
+-- Validate and recalculate if counter is inconsistent or missing
+if current_total_cost == nil or math.abs(current_total_cost - actualTotal) > 0.1 then
+    -- Counter is missing or inconsistent - recalculate from actual data
+    current_total_cost = actualTotal
     redis.call('SET', totalKey, current_total_cost)
+else
+    -- Counter exists and is consistent - just subtract expired costs
+    if expiredCost > 0 then
+        current_total_cost = math.max(0, current_total_cost - expiredCost)
+        redis.call('SET', totalKey, current_total_cost)
+    end
 end
 
--- Ensure total doesn't go negative due to race conditions
+-- Ensure total doesn't go negative (additional safety)
 if current_total_cost < 0 then
     current_total_cost = 0
     redis.call('SET', totalKey, 0)
@@ -68,18 +79,20 @@ if current_total_cost + cost > limit then
     return {0, current_total_cost, limit - current_total_cost, resetTime}
 end
 
--- Add current request with unique member
+-- Add current request with unique member atomically
 redis.call('ZADD', requestKey, now, now .. ':' .. cost .. ':' .. requestId)
 
--- Update total cost
-redis.call('INCRBY', totalKey, cost)
+-- Update total cost atomically
+local new_total = current_total_cost + cost
+redis.call('SET', totalKey, new_total)
 
--- Set expiration for both keys
-redis.call('EXPIRE', requestKey, math.ceil(window / 1000))
-redis.call('EXPIRE', totalKey, math.ceil(window / 1000))
+-- Set expiration for both keys (use higher value to prevent premature expiry)
+local expireTime = math.ceil(window / 1000) + 10
+redis.call('EXPIRE', requestKey, expireTime)
+redis.call('EXPIRE', totalKey, expireTime)
 
 -- Return success with updated counts
-return {1, current_total_cost + cost, limit - current_total_cost - cost, now + window}
+return {1, new_total, limit - new_total, now + window}
 `;
 
 // Lua script for atomic concurrent request management
@@ -328,6 +341,7 @@ class RedisRateLimiter {
   async waitForConcurrencySlot(requestData, timeout = 30000) {
     const requestId = crypto.randomUUID();
     const startTime = Date.now();
+    let originalQueueTimestamp = null;
     
     // Try to acquire immediately
     let slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
@@ -340,9 +354,10 @@ class RedisRateLimiter {
       };
     }
 
-    // For queued requests, implement adaptive backoff with better timeout handling
+    // Store original queue timestamp for fairness during re-queuing
     const key = this.options.keyGenerator(requestData);
     const queueKey = `${this.options.keyPrefix}queue:${key}`;
+    originalQueueTimestamp = Date.now();
     
     // Calculate adaptive retry parameters based on queue position
     const initialDelay = Math.min(500, timeout / 20); // Start with smaller delay
@@ -366,19 +381,27 @@ class RedisRateLimiter {
               waitTime: Date.now() - startTime
             };
           }
-          // If not acquired but not in queue, we might have been skipped
-          // Re-add to queue and continue
-        }
-        
-        // Try to acquire again 
-        slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
-        
-        if (slotStatus.allowed) {
-          return {
-            success: true,
-            requestId,
-            waitTime: Date.now() - startTime
-          };
+          // If not acquired but not in queue, we were skipped due to race condition
+          // Re-add to queue with original timestamp to maintain fairness
+          if (originalQueueTimestamp) {
+            try {
+              await this.redis.zadd(queueKey, originalQueueTimestamp, requestId);
+              await this.redis.expire(queueKey, this.options.concurrencyExpireSeconds);
+            } catch (error) {
+              console.warn('Failed to re-queue request after race condition:', error);
+            }
+          }
+        } else {
+          // Still in queue - try to acquire again in case slot became available
+          slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
+          
+          if (slotStatus.allowed) {
+            return {
+              success: true,
+              requestId,
+              waitTime: Date.now() - startTime
+            };
+          }
         }
         
         // Adaptive backoff: increase delay but cap it
