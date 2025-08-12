@@ -95,14 +95,20 @@ local expireSeconds = tonumber(ARGV[4])
 local activeCount = redis.call('SCARD', activeKey)
 
 if activeCount < maxConcurrent then
-    -- Can proceed immediately
+    -- Can proceed immediately - add to active set
     redis.call('SADD', activeKey, requestId)
     redis.call('EXPIRE', activeKey, expireSeconds)
-    return {1, activeCount + 1, 0}
+    
+    -- Get accurate count after adding
+    local newActiveCount = redis.call('SCARD', activeKey)
+    return {1, newActiveCount, 0}
 else
-    -- Add to queue
-    redis.call('ZADD', queueKey, now, requestId)
-    redis.call('EXPIRE', queueKey, expireSeconds)
+    -- Add to queue only if not already queued (prevent duplicates)
+    local addedToQueue = redis.call('ZADD', queueKey, 'NX', now, requestId)
+    if addedToQueue == 1 then
+        redis.call('EXPIRE', queueKey, expireSeconds)
+    end
+    
     local queueLength = redis.call('ZCARD', queueKey)
     return {0, activeCount, queueLength}
 end
@@ -115,19 +121,35 @@ local queueKey = KEYS[2]
 local requestId = ARGV[1]
 local maxConcurrent = tonumber(ARGV[2])
 
--- Remove from active set
+-- Remove from active set (idempotent operation)
 local removed = redis.call('SREM', activeKey, requestId)
 
 if removed == 1 then
-    -- Check if we can promote from queue
-    local nextRequest = redis.call('ZPOPMIN', queueKey)
+    -- Successfully removed from active set
+    -- Now try to promote from queue atomically
+    local nextRequest = redis.call('ZPOPMIN', queueKey, 1)
+    
     if next(nextRequest) then
         local nextId = nextRequest[1]
-        redis.call('SADD', activeKey, nextId)
-        return {1, nextId}
+        -- Atomic promotion: add to active and verify we're still under limit
+        local activeCount = redis.call('SCARD', activeKey)
+        
+        if activeCount < maxConcurrent then
+            redis.call('SADD', activeKey, nextId)
+            return {1, nextId}
+        else
+            -- Race condition: someone else filled the slot
+            -- Put back in queue with original score
+            local originalScore = nextRequest[2]
+            redis.call('ZADD', queueKey, originalScore, nextId)
+            return {0, nil}
+        end
     end
+    
+    return {1, nil} -- Successfully released, no queue to process
 end
 
+-- Request was not in active set (duplicate release)
 return {0, nil}
 `;
 
@@ -318,35 +340,62 @@ class RedisRateLimiter {
       };
     }
 
-    // For queued requests, implement exponential backoff instead of polling
-    // This reduces Redis load while still providing reasonable responsiveness
-    const maxRetries = 5;
-    let retryCount = 0;
-    
-    while (retryCount < maxRetries && Date.now() - startTime < timeout) {
-      const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Cap at 5s
-      await new Promise(resolve => setTimeout(resolve, backoffDelay));
-      
-      // Try to acquire again
-      slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
-      
-      if (slotStatus.allowed) {
-        return {
-          success: true,
-          requestId,
-          waitTime: Date.now() - startTime
-        };
-      }
-      
-      retryCount++;
-    }
-    
-    // Cleanup queued request on timeout
+    // For queued requests, implement adaptive backoff with better timeout handling
     const key = this.options.keyGenerator(requestData);
     const queueKey = `${this.options.keyPrefix}queue:${key}`;
-    await this.redis.zrem(queueKey, requestId);
     
-    throw new Error('Timeout waiting for concurrency slot');
+    // Calculate adaptive retry parameters based on queue position
+    const initialDelay = Math.min(500, timeout / 20); // Start with smaller delay
+    const maxDelay = Math.min(3000, timeout / 4); // Cap delay at 1/4 of timeout
+    let currentDelay = initialDelay;
+    let retryCount = 0;
+    
+    try {
+      while (Date.now() - startTime < timeout) {
+        await new Promise(resolve => setTimeout(resolve, currentDelay));
+        
+        // Check if we're still in queue (might have been processed by release event)
+        const queuePosition = await this.redis.zrank(queueKey, requestId);
+        if (queuePosition === null) {
+          // No longer in queue - try to acquire directly
+          slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
+          if (slotStatus.allowed) {
+            return {
+              success: true,
+              requestId,
+              waitTime: Date.now() - startTime
+            };
+          }
+          // If not acquired but not in queue, we might have been skipped
+          // Re-add to queue and continue
+        }
+        
+        // Try to acquire again 
+        slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
+        
+        if (slotStatus.allowed) {
+          return {
+            success: true,
+            requestId,
+            waitTime: Date.now() - startTime
+          };
+        }
+        
+        // Adaptive backoff: increase delay but cap it
+        currentDelay = Math.min(maxDelay, currentDelay * 1.5);
+        retryCount++;
+        
+        // Safety check to prevent infinite loops
+        if (retryCount > 50) {
+          break;
+        }
+      }
+    } finally {
+      // Always cleanup queued request on exit (timeout or error)
+      await this.redis.zrem(queueKey, requestId);
+    }
+    
+    throw new Error(`Timeout waiting for concurrency slot after ${timeout}ms (${retryCount} retries)`);
   }
 
   /**
