@@ -27,7 +27,9 @@ import {
   validateDimensions,
   validateColor,
   validateOptions,
+  sanitizeOptions,
 } from './utils/validators';
+import { SanitizedOptions } from './types';
 import sharp from 'sharp';
 import { initializeSharpSecurity, createSecureSharpInstance, secureResize } from './utils/image-security';
 
@@ -72,19 +74,19 @@ export async function generateImageWithTemplate(
   template: TemplateConfig,
   options: PreviewOptions
 ): Promise<Buffer> {
-  // Validate options first to prevent bypass when called directly
-  validateOptions(options);
+  // Use centralized validation gateway - returns sanitized options
+  const sanitizedOptions = sanitizeOptions(options);
   
-  const width = options.width || DEFAULT_DIMENSIONS.width;
-  const height = options.height || DEFAULT_DIMENSIONS.height;
-  const quality = options.quality || 90;
+  const width = sanitizedOptions.width || DEFAULT_DIMENSIONS.width;
+  const height = sanitizedOptions.height || DEFAULT_DIMENSIONS.height;
+  const quality = sanitizedOptions.quality || 90;
 
   try {
     // Validate dimensions once at the start
     validateDimensions(width, height);
 
     // Create base image with template-specific processing
-    const baseImage = await processImageForTemplate(metadata, template, width, height, options);
+    const baseImage = await processImageForTemplate(metadata, template, width, height, sanitizedOptions);
 
     // Generate overlay using template's overlay generator
     let overlayBuffer: Buffer;
@@ -226,7 +228,7 @@ async function processImageForTemplate(
   template: TemplateConfig,
   width: number,
   height: number,
-  options: PreviewOptions
+  options: SanitizedOptions
 ): Promise<sharp.Sharp> {
   // Check if template wants no background image
   if (template.layout.imagePosition === 'none') {

@@ -2,6 +2,19 @@
  * Type definitions for Social Preview Generator
  */
 
+// Brand types for type-safe validation
+declare const __brand: unique symbol;
+type Brand<K, T> = K & { [__brand]: T };
+
+/**
+ * Sanitized and validated types that can only be created through proper validation
+ */
+export type SanitizedText = Brand<string, 'SanitizedText'>;
+export type SanitizedColor = Brand<string, 'SanitizedColor'>;
+export type SafeUrl = Brand<string, 'SafeUrl'>;
+export type ValidatedDimension = Brand<number, 'ValidatedDimension'>;
+export type SanitizedOptions = Brand<PreviewOptions, 'SanitizedOptions'>;
+
 /**
  * Main options for generating preview images
  */

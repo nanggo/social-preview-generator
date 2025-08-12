@@ -2,7 +2,16 @@
  * Validation utilities for social preview generator
  */
 
-import { PreviewGeneratorError, ErrorType, PreviewOptions } from '../types';
+import { 
+  PreviewGeneratorError, 
+  ErrorType, 
+  PreviewOptions,
+  SanitizedText,
+  SanitizedColor,
+  SafeUrl,
+  ValidatedDimension,
+  SanitizedOptions
+} from '../types';
 import sharp from 'sharp';
 
 /**
@@ -10,7 +19,7 @@ import sharp from 'sharp';
  * Accepts: hex colors, rgb/rgba, hsl/hsla, and named colors
  * Enhanced security to prevent CSS injection attacks
  */
-export function validateColor(color: string): string {
+export function validateColor(color: string): SanitizedColor {
   const trimmedColor = color.trim();
 
   // Security checks - reject dangerous patterns
@@ -24,7 +33,7 @@ export function validateColor(color: string): string {
   // Hex color validation (#RGB, #RRGGBB, #RRGGBBAA)
   const hexPattern = /^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/;
   if (hexPattern.test(trimmedColor)) {
-    return trimmedColor;
+    return trimmedColor as SanitizedColor;
   }
 
   // RGB validation with proper range checking
@@ -36,7 +45,7 @@ export function validateColor(color: string): string {
     const blue = parseInt(b, 10);
 
     if (red <= 255 && green <= 255 && blue <= 255) {
-      return trimmedColor;
+      return trimmedColor as SanitizedColor;
     }
   }
 
@@ -52,7 +61,7 @@ export function validateColor(color: string): string {
     const alpha = parseFloat(a);
 
     if (red <= 255 && green <= 255 && blue <= 255 && alpha >= 0 && alpha <= 1) {
-      return trimmedColor;
+      return trimmedColor as SanitizedColor;
     }
   }
 
@@ -65,7 +74,7 @@ export function validateColor(color: string): string {
     const lightness = parseInt(l, 10);
 
     if (hue <= 360 && saturation <= 100 && lightness <= 100) {
-      return trimmedColor;
+      return trimmedColor as SanitizedColor;
     }
   }
 
@@ -81,7 +90,7 @@ export function validateColor(color: string): string {
     const alpha = parseFloat(a);
 
     if (hue <= 360 && saturation <= 100 && lightness <= 100 && alpha >= 0 && alpha <= 1) {
-      return trimmedColor;
+      return trimmedColor as SanitizedColor;
     }
   }
 
@@ -238,7 +247,7 @@ export function validateColor(color: string): string {
   ]);
 
   if (namedColors.has(trimmedColor.toLowerCase())) {
-    return trimmedColor.toLowerCase();
+    return trimmedColor.toLowerCase() as SanitizedColor;
   }
 
   // If validation fails, throw an error
@@ -352,6 +361,12 @@ export function createTransparentCanvas(width: number, height: number) {
  * Validates all preview options including dimensions, quality, and colors
  */
 export function validateOptions(options: PreviewOptions): void {
+  // Use the new centralized sanitization - this ensures all validation paths converge
+  sanitizeOptions(options);
+}
+
+// Legacy function maintained for backward compatibility
+export function validateOptionsLegacy(options: PreviewOptions): void {
   // Validate dimensions if provided
   if (options.width !== undefined || options.height !== undefined) {
     const width = options.width || 1200;
@@ -586,4 +601,92 @@ export function validateImageUrl(imageUrl: string): string {
   }
 
   return validatedUrl;
+}
+
+// =============================================================================
+// BRAND TYPE VALIDATORS - Phase 1.5 Advanced Security
+// =============================================================================
+
+/**
+ * Central validation gateway - all external input must pass through this
+ */
+export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
+  // Deep validation of all nested properties
+  const sanitized: PreviewOptions = {
+    ...options,
+  };
+
+  // Validate colors if present
+  if (sanitized.colors) {
+    if (sanitized.colors.background) {
+      // Note: validateColor now returns SanitizedColor, but we need to store as string
+      // This maintains type safety at validation boundaries while preserving runtime compatibility
+      sanitized.colors.background = validateColor(sanitized.colors.background);
+    }
+    if (sanitized.colors.text) {
+      sanitized.colors.text = validateColor(sanitized.colors.text);
+    }
+    if (sanitized.colors.accent) {
+      sanitized.colors.accent = validateColor(sanitized.colors.accent);
+    }
+  }
+
+  // Validate dimensions
+  if (sanitized.width !== undefined) {
+    sanitized.width = validateDimension(sanitized.width);
+  }
+  if (sanitized.height !== undefined) {
+    sanitized.height = validateDimension(sanitized.height);
+  }
+
+  // Validate quality
+  if (sanitized.quality !== undefined) {
+    if (sanitized.quality < 1 || sanitized.quality > 100) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        'Quality must be between 1 and 100'
+      );
+    }
+  }
+
+  return sanitized as SanitizedOptions;
+}
+
+/**
+ * Validate and sanitize text content
+ */
+export function sanitizeText(text: string): SanitizedText {
+  const validated = validateTextInput(text, 'text');
+  // Additional sanitization for advanced control characters will be added in next step
+  return validated as SanitizedText;
+}
+
+/**
+ * Validate and sanitize URL
+ */
+export function sanitizeUrl(url: string): SafeUrl {
+  const validated = validateImageUrl(url);
+  return validated as SafeUrl;
+}
+
+/**
+ * Validate dimension values
+ */
+export function validateDimension(value: number): ValidatedDimension {
+  if (typeof value !== 'number' || isNaN(value) || value <= 0) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'Dimension must be a positive number'
+    );
+  }
+
+  // Reasonable limits for image dimensions
+  if (value > 8192) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'Dimension exceeds maximum allowed size of 8192 pixels'
+    );
+  }
+
+  return value as ValidatedDimension;
 }
