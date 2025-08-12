@@ -235,6 +235,9 @@ function createRateLimiter(config = {}) {
   // Storage for token buckets and concurrency limiters
   const buckets = new Map();
   const concurrencyLimiters = new Map();
+  
+  // Track all active limiters for cleanup
+  const activeLimiters = new Set();
 
   // Cleanup interval to remove expired buckets
   const cleanupInterval = setInterval(() => {
@@ -250,13 +253,28 @@ function createRateLimiter(config = {}) {
     
     expiredKeys.forEach(key => {
       buckets.delete(key);
-      concurrencyLimiters.delete(key);
+      const limiter = concurrencyLimiters.get(key);
+      if (limiter) {
+        activeLimiters.delete(limiter);
+        limiter.destroy();
+        concurrencyLimiters.delete(key);
+      }
     });
   }, Math.max(options.windowMs, 60000)); // Clean up every minute minimum
 
   // Cleanup on process exit
-  process.on('SIGTERM', () => clearInterval(cleanupInterval));
-  process.on('SIGINT', () => clearInterval(cleanupInterval));
+  const cleanup = () => {
+    clearInterval(cleanupInterval);
+    // Destroy all active limiters to clear timeouts and reject pending requests
+    activeLimiters.forEach(limiter => limiter.destroy());
+    activeLimiters.clear();
+    buckets.clear();
+    concurrencyLimiters.clear();
+  };
+  
+  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', cleanup);
+  process.on('beforeExit', cleanup);
 
   return async (req, res, next) => {
     const key = typeof options.keyGenerator === 'function' 
@@ -282,7 +300,9 @@ function createRateLimiter(config = {}) {
         ? options.maxConcurrent(req)
         : options.maxConcurrent;
         
-      concurrencyLimiters.set(key, new ConcurrencyLimiter(maxConcurrent));
+      const limiter = new ConcurrencyLimiter(maxConcurrent);
+      concurrencyLimiters.set(key, limiter);
+      activeLimiters.add(limiter);
     }
 
     const bucket = buckets.get(key);
