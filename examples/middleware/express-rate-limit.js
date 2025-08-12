@@ -13,6 +13,7 @@
  */
 
 const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 
 class TokenBucket {
   constructor(capacity, refillRate, refillInterval = 1000) {
@@ -64,7 +65,7 @@ class ConcurrencyLimiter {
     this.queues = new Map(); // IP -> queue of pending requests
   }
 
-  async acquire(key, requestId = crypto.randomUUID()) {
+  async acquire(key, requestId = uuidv4()) {
     return new Promise((resolve, reject) => {
       const activeSet = this.active.get(key) || new Set();
       const currentActive = activeSet.size;

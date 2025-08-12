@@ -6,6 +6,7 @@
  */
 
 const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 
 // Lua script for atomic sliding window rate limiting with race condition protection
 const slidingWindowScript = `
@@ -209,7 +210,7 @@ class RedisRateLimiter {
     const totalKey = `${this.options.keyPrefix}total:${key}`;
     const cost = this.options.costFunction(requestData);
     const now = Date.now();
-    const requestId = crypto.randomUUID();
+    const requestId = uuidv4();
 
     const maxRequests = typeof this.options.maxRequests === 'function'
       ? this.options.maxRequests(requestData)
@@ -252,7 +253,7 @@ class RedisRateLimiter {
   /**
    * Acquire concurrency slot
    */
-  async acquireConcurrencySlot(requestData, requestId = crypto.randomUUID()) {
+  async acquireConcurrencySlot(requestData, requestId = uuidv4()) {
     const key = this.options.keyGenerator(requestData);
     const activeKey = `${this.options.keyPrefix}active:${key}`;
     const queueKey = `${this.options.keyPrefix}queue:${key}`;
@@ -339,7 +340,7 @@ class RedisRateLimiter {
    * These approaches eliminate polling entirely and provide better scalability.
    */
   async waitForConcurrencySlot(requestData, timeout = 30000) {
-    const requestId = crypto.randomUUID();
+    const requestId = uuidv4();
     const startTime = Date.now();
     let originalQueueTimestamp = null;
     
@@ -416,6 +417,20 @@ class RedisRateLimiter {
     } finally {
       // Always cleanup queued request on exit (timeout or error)
       await this.redis.zrem(queueKey, requestId);
+      
+      // Check if we were promoted to active set during timeout and clean up if needed
+      try {
+        const key = this.options.keyGenerator(requestData);
+        const activeKey = `${this.options.keyPrefix}active:${key}`;
+        const wasPromoted = await this.redis.sismember(activeKey, requestId);
+        
+        if (wasPromoted) {
+          // Release the slot if we were promoted but are timing out
+          await this.releaseConcurrencySlot(requestData, requestId);
+        }
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup promoted slot during timeout:', cleanupError);
+      }
     }
     
     throw new Error(`Timeout waiting for concurrency slot after ${timeout}ms (${retryCount} retries)`);

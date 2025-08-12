@@ -6,6 +6,7 @@
  */
 
 const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 
 class SlidingWindowRateLimiter {
   constructor(options = {}) {
@@ -213,7 +214,7 @@ class ConcurrentRequestLimiter {
     this.queues = new Map(); // key -> Array of pending promises
   }
 
-  async acquire(key, requestId = crypto.randomUUID(), timeout = 30000) {
+  async acquire(key, requestId = uuidv4(), timeout = 30000) {
     return new Promise((resolve, reject) => {
       // Initialize tracking for this key if needed
       if (!this.active.has(key)) {
