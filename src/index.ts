@@ -72,6 +72,9 @@ export async function generateImageWithTemplate(
   template: TemplateConfig,
   options: PreviewOptions
 ): Promise<Buffer> {
+  // Validate options first to prevent bypass when called directly
+  validateOptions(options);
+  
   const width = options.width || DEFAULT_DIMENSIONS.width;
   const height = options.height || DEFAULT_DIMENSIONS.height;
   const quality = options.quality || 90;
