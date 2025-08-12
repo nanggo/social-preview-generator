@@ -260,13 +260,23 @@ const enhancedSecureLookup = (
         ) as NodeJS.ErrnoException;
         securityError.code = 'ECONNREFUSED';
 
-        return actualCallback(securityError, validation.blockedIPs[0] || '', addresses[0]?.family || 4);
+        // Never return actual IPs in security errors - use placeholder values
+        return actualCallback(securityError, '0.0.0.0', 4);
       }
 
-      // Return first safe address
+      // Return first safe address - only from validated allowed IPs
       const firstSafeAddress = addresses.find(addr => 
         validation.allowedIPs.includes(addr.address)
-      ) || addresses[0];
+      );
+      
+      // If no safe address found, this is a critical error
+      if (!firstSafeAddress) {
+        const criticalError = new Error(
+          `Critical security error: No safe addresses found for ${hostname}`
+        ) as NodeJS.ErrnoException;
+        criticalError.code = 'ECONNREFUSED';
+        return actualCallback(criticalError, '0.0.0.0', 4);
+      }
 
       logger.debug('DNS lookup successful', {
         hostname,
@@ -279,7 +289,7 @@ const enhancedSecureLookup = (
     })
     .catch(err => {
       logger.error('DNS lookup failed', { hostname, error: err });
-      actualCallback(err as NodeJS.ErrnoException, '', 0);
+      actualCallback(err as NodeJS.ErrnoException, '0.0.0.0', 4);
     });
 };
 
@@ -297,7 +307,10 @@ function validateSocketIP(socket: net.Socket, hostname: string): boolean {
   // Get the cached IP addresses for this hostname
   const cachedIPs = dnsCache.getCachedIPs(hostname);
   if (!cachedIPs) {
-    logger.warn('Socket IP validation failed: no cached DNS results', { hostname, actualIP });
+    logger.warn('Socket IP validation failed: no cached DNS results', { 
+      hostname, 
+      actualIP 
+    });
     return false;
   }
 
