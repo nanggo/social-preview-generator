@@ -220,7 +220,7 @@ function createRateLimiter(config = {}) {
     maxRequests: 100, // per window
     maxConcurrent: 5, // concurrent requests
     costFunction: defaultCostFunction,
-    keyGenerator: (req) => req.ip || req.connection.remoteAddress || 'unknown',
+    keyGenerator: (req) => req.connection.remoteAddress || 'unknown',
     skipSuccessfulRequests: false,
     skipFailedRequests: false,
     onLimitReached: (key, bucket, concurrent) => {

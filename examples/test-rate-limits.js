@@ -51,10 +51,12 @@ async function testConcurrencyLimiter() {
   const limiter = new ConcurrencyLimiter(3);
   const activeRequests = [];
   
+  const testKey = 'test-concurrency-key'; // Use a single key for all requests
+  
   // Simulate 5 concurrent requests
   for (let i = 1; i <= 5; i++) {
-    const requestPromise = limiter.acquire(`request-${i}`).then(release => {
-      console.log(`Request ${i}: STARTED (${limiter.getStatus('key').active} active)`);
+    const requestPromise = limiter.acquire(testKey).then(release => { // Use the same key
+      console.log(`Request ${i}: STARTED (${limiter.getStatus(testKey).active} active)`); // Use the same key
       
       // Simulate work
       return sleep(2000).then(() => {

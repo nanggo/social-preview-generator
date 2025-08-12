@@ -5,40 +5,48 @@
  * Uses Lua scripts for atomic operations to prevent race conditions.
  */
 
-// Lua script for atomic sliding window rate limiting
+// Lua script for atomic sliding window rate limiting with proper cost calculation
 const slidingWindowScript = `
 local key = KEYS[1]
 local window = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2])
 local cost = tonumber(ARGV[3])
 local now = tonumber(ARGV[4])
+local requestId = ARGV[5]
 
 -- Remove expired entries
 redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
 
--- Count current requests
-local current = redis.call('ZCARD', key)
+-- Get all requests in the current window and sum their costs
+local members = redis.call('ZRANGE', key, 0, -1)
+local current_total_cost = 0
+for _, member in ipairs(members) do
+    -- Member format is "timestamp:cost:requestId"
+    local member_cost = tonumber(string.match(member, '^%d+:(%d+):'))
+    if member_cost then
+        current_total_cost = current_total_cost + member_cost
+    end
+end
 
 -- Check if adding this request would exceed limit
-if current + cost > limit then
-    -- Get the reset time (oldest entry + window)
+if current_total_cost + cost > limit then
     local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
     local resetTime = now + window
     if next(oldest) then
         resetTime = oldest[2] + window
     end
     
-    return {0, current, limit - current, resetTime}
+    return {0, current_total_cost, limit - current_total_cost, resetTime}
 end
 
--- Add current request
-redis.call('ZADD', key, now, now .. ':' .. cost)
+-- Add current request with unique member
+redis.call('ZADD', key, now, now .. ':' .. cost .. ':' .. requestId)
 
 -- Set expiration
 redis.call('EXPIRE', key, math.ceil(window / 1000))
 
 -- Return success with updated counts
-return {1, current + cost, limit - current - cost, now + window}
+return {1, current_total_cost + cost, limit - current_total_cost - cost, now + window}
 `;
 
 // Lua script for atomic concurrent request management
@@ -130,6 +138,7 @@ class RedisRateLimiter {
     const redisKey = `${this.options.keyPrefix}window:${key}`;
     const cost = this.options.costFunction(requestData);
     const now = Date.now();
+    const requestId = Math.random().toString(36);
 
     const maxRequests = typeof this.options.maxRequests === 'function'
       ? this.options.maxRequests(requestData)
@@ -143,7 +152,8 @@ class RedisRateLimiter {
         this.options.windowMs,
         maxRequests,
         cost,
-        now
+        now,
+        requestId
       );
 
       const [allowed, current, remaining, resetTime] = result;
