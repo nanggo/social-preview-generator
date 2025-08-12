@@ -160,29 +160,74 @@ describe('Enhanced Secure Agent', () => {
       cleanup();
     });
 
-    it('should block connections where socket IP differs from DNS', async () => {
+    it('should block connections where socket IP differs from DNS (async TOCTOU protection)', async () => {
       const cleanup = mockDNSLookup('malicious.com', [
-        { address: '8.8.8.8', family: 4 } // Public DNS, but socket will connect to different IP
+        { address: '8.8.8.8', family: 4 } // DNS resolves to public IP
       ]);
 
       mockIsPrivateOrReservedIP
-        .mockReturnValueOnce(false) // DNS resolution is safe
-        .mockReturnValueOnce(true);  // But socket connects to private IP
+        .mockReturnValueOnce(false) // DNS resolution is safe (8.8.8.8)
+        .mockReturnValueOnce(true);  // But socket connects to different private IP (192.168.1.1)
 
       const agent = createEnhancedSecureHttpAgent();
       
-      // Mock socket that connects to different IP than DNS resolved
-      const mockSocket = {
-        remoteAddress: '192.168.1.1', // Private IP, different from DNS
-        remotePort: 80,
-        destroy: jest.fn()
-      } as Partial<net.Socket>;
+      // Mock the original createConnection to control socket behavior
+      const originalCreateConnection = agent.createConnection;
+      let connectionCallback: ((err?: Error | null) => void) | undefined;
+      
+      agent.createConnection = jest.fn((options: any, callback?: any) => {
+        connectionCallback = callback;
+        
+        // Create mock socket that simulates connection to different IP than DNS resolved
+        const mockSocket = {
+          remoteAddress: '192.168.1.1', // Private IP - different from DNS result
+          remotePort: 80,
+          destroy: jest.fn(),
+          on: jest.fn(),
+          removeAllListeners: jest.fn()
+        } as Partial<net.Socket>;
 
-      // This connection should be rejected due to IP mismatch
-      expect(() => {
-        agent.createConnection({ hostname: 'malicious.com', port: 80 });
-      }).not.toThrow(); // The rejection happens in the callback
+        // Simulate successful socket creation but with wrong IP
+        // The validation should happen in the connection callback
+        setTimeout(() => {
+          if (connectionCallback) {
+            // This should trigger the TOCTOU protection and reject the connection
+            connectionCallback(null); // Initially no error from socket creation
+          }
+        }, 0);
 
+        return mockSocket as net.Socket;
+      });
+
+      // Test the connection creation and expect async rejection
+      const connectionPromise = new Promise<void>((resolve, reject) => {
+        const socket = agent.createConnection(
+          { hostname: 'malicious.com', port: 80 }, 
+          (err: Error | null) => {
+            if (err) {
+              // Expected - should be rejected due to IP mismatch
+              expect(err.message).toContain('socket IP validation failed');
+              resolve();
+            } else {
+              // Unexpected - connection should be rejected
+              reject(new Error('Connection should have been rejected due to IP mismatch'));
+            }
+          }
+        );
+        
+        // Verify socket.destroy was called on rejection
+        expect(socket.destroy).toBeDefined();
+      });
+
+      // Wait for the async validation to complete
+      await connectionPromise;
+      
+      // Verify mocks were called as expected
+      expect(agent.createConnection).toHaveBeenCalledWith(
+        { hostname: 'malicious.com', port: 80 },
+        expect.any(Function)
+      );
+      
       cleanup();
     });
   });

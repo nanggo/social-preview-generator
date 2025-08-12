@@ -209,16 +209,8 @@ class RedisRateLimiter {
       };
     } catch (error) {
       console.error('Rate limit check failed:', error);
-      // Fail open in case of Redis errors
-      return {
-        allowed: true,
-        current: 0,
-        remaining: maxRequests,
-        resetTime: now + this.options.windowMs,
-        limit: maxRequests,
-        cost,
-        error: error.message
-      };
+      // Fail-closed for security. Re-throw the error to be handled by the middleware.
+      throw error;
     }
   }
 
@@ -258,15 +250,8 @@ class RedisRateLimiter {
       };
     } catch (error) {
       console.error('Concurrency slot acquisition failed:', error);
-      // Fail open in case of Redis errors
-      return {
-        allowed: true,
-        activeCount: 0,
-        queueLength: 0,
-        maxConcurrent,
-        requestId,
-        error: error.message
-      };
+      // Fail-closed for security. Re-throw the error to be handled by the middleware.
+      throw error;
     }
   }
 

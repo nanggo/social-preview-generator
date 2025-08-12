@@ -59,11 +59,20 @@ class SlidingWindowRateLimiter {
     // Get existing requests for this key
     let requests = this.options.storage.get(key) || [];
     
-    // Remove expired requests
-    requests = requests.filter(entry => {
-      const timestamp = typeof entry === 'object' ? entry.timestamp : entry;
-      return timestamp > windowStart;
-    });
+    // Remove expired requests efficiently
+    requests = ((rs, ws) => {
+      const firstValidIndex = rs.findIndex(entry => {
+        const timestamp = typeof entry === 'object' ? entry.timestamp : entry;
+        return timestamp > ws;
+      });
+
+      if (firstValidIndex === -1) {
+        return [];
+      } else if (firstValidIndex > 0) {
+        return rs.slice(firstValidIndex);
+      }
+      return rs;
+    })(requests, windowStart);
 
     // Calculate current usage
     const currentRequests = requests.reduce((total, entry) => {
@@ -108,14 +117,24 @@ class SlidingWindowRateLimiter {
     const windowStart = now - this.options.windowMs;
 
     for (const [key, requests] of this.options.storage.entries()) {
-      const validRequests = requests.filter(entry => {
-        const timestamp = typeof entry === 'object' ? entry.timestamp : entry;
-        return timestamp > windowStart;
-      });
+      // Use efficient slice method instead of filter
+      const validRequests = ((rs, ws) => {
+        const firstValidIndex = rs.findIndex(entry => {
+          const timestamp = typeof entry === 'object' ? entry.timestamp : entry;
+          return timestamp > ws;
+        });
+
+        if (firstValidIndex === -1) {
+          return [];
+        } else if (firstValidIndex > 0) {
+          return rs.slice(firstValidIndex);
+        }
+        return rs;
+      })(requests, windowStart);
 
       if (validRequests.length === 0) {
         this.options.storage.delete(key);
-      } else {
+      } else if (validRequests.length !== requests.length) {
         this.options.storage.set(key, validRequests);
       }
     }

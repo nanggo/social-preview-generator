@@ -114,7 +114,7 @@ function getUserLimits(req) {
 function createAppRateLimiter() {
   if (redisClient) {
     console.log('Using Redis-backed distributed rate limiting');
-    return createRedisRateLimiter(redisClient, {
+    const middleware = createRedisRateLimiter(redisClient, {
       windowMs: 15 * 60 * 1000,
       maxRequests: (req) => getUserLimits(req).requests,
       maxConcurrent: (req) => getUserLimits(req).concurrent,
@@ -130,6 +130,15 @@ function createAppRateLimiter() {
         // metrics.increment('rate_limit.exceeded', { key });
       }
     });
+    
+    // Redis limiter returns just middleware, so create consistent interface
+    return {
+      middleware,
+      cleanup: () => {
+        // Redis cleanup is handled by connection close
+        console.log('Redis rate limiter cleanup - connection will be closed separately');
+      }
+    };
   } else {
     console.log('Using memory-based rate limiting');
     return createRateLimiter({
@@ -146,7 +155,7 @@ function createAppRateLimiter() {
 }
 
 // Create the rate limiter
-const rateLimiter = createAppRateLimiter();
+const { middleware: rateLimiter, cleanup: cleanupRateLimiter } = createAppRateLimiter();
 
 // Middleware for authentication (mock implementation)
 app.use((req, res, next) => {
@@ -328,6 +337,9 @@ app.listen(PORT, () => {
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
   
+  // Cleanup rate limiter resources
+  cleanupRateLimiter();
+  
   if (redisClient) {
     await redisClient.quit();
   }
@@ -337,6 +349,9 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
+  
+  // Cleanup rate limiter resources
+  cleanupRateLimiter();
   
   if (redisClient) {
     await redisClient.quit();
