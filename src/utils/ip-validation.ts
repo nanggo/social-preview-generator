@@ -62,10 +62,21 @@ function isPrivateOrReservedIPv6(ip: string): boolean {
     // Normalize IPv6 address - remove brackets if present
     const normalizedIP = ip.replace(/^\[|\]$/g, '').toLowerCase();
 
-    // IPv6 private and reserved ranges
+    // Exact match addresses (must be precise)
+    const exactMatches = [
+      '::', // Unspecified address (0:0:0:0:0:0:0:0)
+      '::1', // Loopback address (exact match only)
+    ];
+
+    // Check exact matches first
+    for (const exact of exactMatches) {
+      if (normalizedIP === exact) {
+        return true;
+      }
+    }
+
+    // IPv6 private and reserved prefixes
     const privatePrefixes = [
-      '::', // Unspecified address
-      '::1', // Loopback
       'fe80:', // Link-local
       'fec0:', // Site-local (deprecated but still reserved)
       'ff', // Multicast (ff00::/8)

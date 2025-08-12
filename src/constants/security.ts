@@ -311,6 +311,32 @@ export const SUSPICIOUS_URL_PARAMS = [
 ] as const;
 
 // =============================================================================
+// NETWORK/CONNECTION SECURITY CONSTANTS
+// =============================================================================
+
+/** HTTP/HTTPS connection timeouts */
+export const HTTP_TIMEOUT = 30_000; // 30 seconds
+
+/** Maximum concurrent connections per agent */
+export const MAX_CONCURRENT_CONNECTIONS = 50;
+
+/** DNS cache TTL in milliseconds */
+export const DNS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/** Maximum DNS cache size */
+export const MAX_DNS_CACHE_SIZE = 1000;
+
+/** Security configuration object */
+export const SECURITY_CONFIG = {
+  HTTP_TIMEOUT,
+  MAX_CONCURRENT_CONNECTIONS,
+  DNS_CACHE_TTL,
+  MAX_DNS_CACHE_SIZE,
+  PROCESSING_TIMEOUT,
+  MAX_INPUT_PIXELS,
+} as const;
+
+// =============================================================================
 // VALIDATION LIMITS
 // =============================================================================
 
