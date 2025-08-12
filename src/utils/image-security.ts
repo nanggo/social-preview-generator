@@ -47,16 +47,21 @@ export function initializeSharpSecurity(): void {
       );
     }
 
-    // Set strict memory limits for security
-    sharp.cache(SHARP_CACHE_CONFIG);
-
     // Set concurrency limit to prevent resource exhaustion
     // Lower concurrency for security (prevents DoS through resource exhaustion)
     sharp.concurrency(Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2))));
     
     // Set global Sharp settings for security
     sharp.simd(true); // Enable SIMD acceleration for performance
-    sharp.cache(false); // Disable file cache for security (prevent cache attacks)
+    
+    // Cache configuration: Balance security and performance
+    // - Use limited memory cache for performance (controlled memory usage)
+    // - Disable file cache for security (prevent cache-based attacks)
+    sharp.cache({ 
+      memory: SHARP_CACHE_CONFIG.memory,  // 150MB memory cache for performance
+      files: 0,   // Disable file cache for security
+      items: SHARP_CACHE_CONFIG.items     // 300 operations cache
+    });
   } catch (error) {
     // Silently fail if Sharp configuration is not supported
     // eslint-disable-next-line no-console

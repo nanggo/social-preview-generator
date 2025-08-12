@@ -622,7 +622,7 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
     ...options,
   };
 
-  // Validate colors if present
+  // Validate colors if present - ALL color properties must be validated
   if (sanitized.colors) {
     if (sanitized.colors.background) {
       // Note: validateColor now returns SanitizedColor, but we need to store as string
@@ -634,6 +634,16 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
     }
     if (sanitized.colors.accent) {
       sanitized.colors.accent = validateColor(sanitized.colors.accent);
+    }
+    // Critical security fix: validate previously missing color properties
+    if (sanitized.colors.primary) {
+      sanitized.colors.primary = validateColor(sanitized.colors.primary);
+    }
+    if (sanitized.colors.secondary) {
+      sanitized.colors.secondary = validateColor(sanitized.colors.secondary);
+    }
+    if (sanitized.colors.overlay) {
+      sanitized.colors.overlay = validateColor(sanitized.colors.overlay);
     }
   }
 
