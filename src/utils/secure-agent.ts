@@ -8,38 +8,49 @@ import https from 'https';
 import dns from 'dns';
 import { isPrivateOrReservedIP } from './ip-validation';
 
-
 /**
  * Secure DNS lookup function that blocks private/reserved IP addresses
  */
-const secureLookup = (hostname: string, options: unknown, callback?: unknown) => {
-  // Support both callback and options parameter patterns
-  let actualOptions = {};
-  let actualCallback: unknown;
+const secureLookup = (
+  hostname: string,
+  options: dns.LookupOneOptions | dns.LookupAllOptions | number | undefined,
+  callback?: (err: NodeJS.ErrnoException | null, address: string, family: number) => void
+): void => {
+  // Normalize parameters to support both (host, cb) and (host, opts, cb)
+  let actualOptions: dns.LookupOneOptions | dns.LookupAllOptions | number | undefined = {};
+  let actualCallback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
 
   if (typeof options === 'function') {
-    actualCallback = options;
+    actualCallback = options as unknown as (
+      err: NodeJS.ErrnoException | null,
+      address: string,
+      family: number
+    ) => void;
     actualOptions = {};
   } else {
-    actualOptions = options || {};
-    actualCallback = callback;
+    actualOptions = options ?? {};
+    actualCallback = (callback || (() => {})) as (
+      err: NodeJS.ErrnoException | null,
+      address: string,
+      family: number
+    ) => void;
   }
 
-  dns.lookup(hostname, actualOptions, (err, address, family) => {
+  dns.lookup(hostname, actualOptions as any, (err, address, family) => {
     if (err) {
-      return actualCallback(err, address, family);
+      return actualCallback(err, address as unknown as string, family as unknown as number);
     }
 
     // Check if the resolved address is in a private/reserved range
-    if (isPrivateOrReservedIP(address)) {
+    if (typeof address === 'string' && isPrivateOrReservedIP(address)) {
       const securityError = new Error(
         `Connection to private/reserved IP address blocked: ${address}`
       );
-      return actualCallback(securityError, address, family);
+      return actualCallback(securityError as NodeJS.ErrnoException, address, family as number);
     }
 
     // Address is safe, proceed
-    actualCallback(null, address, family);
+    actualCallback(null, address as string, family as number);
   });
 };
 
