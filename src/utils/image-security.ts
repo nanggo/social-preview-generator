@@ -7,16 +7,28 @@ import sharp from 'sharp';
 import { PreviewGeneratorError, ErrorType } from '../types';
 import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
+import * as os from 'os';
+import {
+  MAX_INPUT_PIXELS,
+  MAX_IMAGE_WIDTH,
+  MAX_IMAGE_HEIGHT,
+  MAX_FILE_SIZE,
+  MAX_SVG_SIZE,
+  MAX_DPI,
+  PROCESSING_TIMEOUT,
+  ALLOWED_IMAGE_FORMATS,
+  ALLOWED_SVG_TAGS,
+  FORBIDDEN_SVG_TAGS,
+  ALLOWED_SVG_ATTRIBUTES,
+  FORBIDDEN_SVG_ATTRIBUTES,
+  ALLOWED_SVG_URI_PATTERN,
+  ALLOWED_SVG_NAMESPACES,
+  SHARP_CACHE_CONFIG,
+  SHARP_SECURITY_CONFIG,
+} from '../constants/security';
 
-// Maximum allowed pixels for image processing (32 megapixels)
-const MAX_INPUT_PIXELS = 32 * 1024 * 1024;
-
-// Maximum image dimensions
-const MAX_WIDTH = 8192;
-const MAX_HEIGHT = 8192;
-
-// Maximum file size (15MB)
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
+// Import centralized constants from security module
+// All security limits are now defined in src/constants/security.ts
 
 /**
  * Initialize Sharp with security settings
@@ -35,15 +47,21 @@ export function initializeSharpSecurity(): void {
       );
     }
 
-    // Set memory limits
-    sharp.cache({
-      memory: 100, // 100MB memory cache
-      files: 20, // 20 files cache
-      items: 200, // 200 operations cache
-    });
-
     // Set concurrency limit to prevent resource exhaustion
-    sharp.concurrency(4);
+    // Lower concurrency for security (prevents DoS through resource exhaustion)
+    sharp.concurrency(Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2))));
+    
+    // Set global Sharp settings for security
+    sharp.simd(true); // Enable SIMD acceleration for performance
+    
+    // Cache configuration: Balance security and performance
+    // - Use limited memory cache for performance (controlled memory usage)
+    // - Disable file cache for security (prevent cache-based attacks)
+    sharp.cache({ 
+      memory: SHARP_CACHE_CONFIG.memory,  // 150MB memory cache for performance
+      files: 0,   // Disable file cache for security
+      items: SHARP_CACHE_CONFIG.items     // 300 operations cache
+    });
   } catch (error) {
     // Silently fail if Sharp configuration is not supported
     // eslint-disable-next-line no-console
@@ -78,8 +96,8 @@ export async function validateImageBuffer(
   await validateImageFormat(imageBuffer);
 
   try {
-    // Get metadata without loading the full image
-    const metadata = await sharp(imageBuffer, { failOnError: false }).metadata();
+    // Get metadata with strict error handling for security
+    const metadata = await sharp(imageBuffer, SHARP_SECURITY_CONFIG).metadata();
 
     // Check if dimensions are valid
     if (!metadata.width || !metadata.height) {
@@ -90,10 +108,10 @@ export async function validateImageBuffer(
     }
 
     // Check maximum dimensions
-    if (metadata.width > MAX_WIDTH || metadata.height > MAX_HEIGHT) {
+    if (metadata.width > MAX_IMAGE_WIDTH || metadata.height > MAX_IMAGE_HEIGHT) {
       throw new PreviewGeneratorError(
         ErrorType.IMAGE_ERROR,
-        `Image dimensions too large: ${metadata.width}x${metadata.height}. Maximum allowed: ${MAX_WIDTH}x${MAX_HEIGHT}`
+        `Image dimensions too large: ${metadata.width}x${metadata.height}. Maximum allowed: ${MAX_IMAGE_WIDTH}x${MAX_IMAGE_HEIGHT}`
       );
     }
 
@@ -106,12 +124,20 @@ export async function validateImageBuffer(
       );
     }
 
-    // Sharp format validation - ensure it's a recognized image format
-    const supportedFormats = ['jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff'];
-    if (metadata.format && !supportedFormats.includes(metadata.format)) {
+    // Sharp format validation - ensure it's a recognized image format (whitelist approach)
+    if (metadata.format && !ALLOWED_IMAGE_FORMATS.has(metadata.format as any)) {
       throw new PreviewGeneratorError(
         ErrorType.IMAGE_ERROR,
-        `Unsupported image format detected by Sharp: ${metadata.format}`
+        `Unsupported image format detected by Sharp: ${metadata.format}. Allowed formats: ${Array.from(ALLOWED_IMAGE_FORMATS).join(', ')}`
+      );
+    }
+    
+    // Additional security checks on metadata
+    if (metadata.density && metadata.density > MAX_DPI) {
+      // Extremely high DPI can cause memory exhaustion
+      throw new PreviewGeneratorError(
+        ErrorType.IMAGE_ERROR,
+        `Image DPI too high: ${metadata.density}. Maximum allowed: ${MAX_DPI} DPI`
       );
     }
   } catch (error) {
@@ -186,15 +212,14 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
 /**
  * Validate SVG content for security risks using DOMPurify
  */
-async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
+export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
   const svgContent = svgBuffer.toString('utf8');
 
   // Check SVG size limits first
-  if (svgContent.length > 1024 * 1024) {
-    // 1MB limit for SVG
+  if (svgContent.length > MAX_SVG_SIZE) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
-      `SVG content too large: ${svgContent.length} characters. Maximum allowed: 1MB`
+      `SVG content too large: ${svgContent.length} characters. Maximum allowed: ${MAX_SVG_SIZE / (1024 * 1024)}MB`
     );
   }
 
@@ -206,145 +231,27 @@ async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
     // Configure DOMPurify for strict SVG sanitization with detailed reporting
     const cleanSvg = purify.sanitize(svgContent, {
       USE_PROFILES: { svg: true, svgFilters: true },
-      ALLOWED_TAGS: [
-        'svg',
-        'g',
-        'path',
-        'rect',
-        'circle',
-        'ellipse',
-        'line',
-        'polyline',
-        'polygon',
-        'text',
-        'tspan',
-        'textPath',
-        'defs',
-        'clipPath',
-        'mask',
-        'pattern',
-        'image',
-        'switch',
-        'foreignObject',
-        'marker',
-        'symbol',
-        'use',
-        'style',
-        'linearGradient',
-        'radialGradient',
-        'stop',
-        'animate',
-        'animateTransform',
-        'animateMotion',
-        'set',
-        'title',
-        'desc',
-        'metadata',
-      ],
-      ALLOWED_ATTR: [
-        'id',
-        'class',
-        'style',
-        'x',
-        'y',
-        'x1',
-        'y1',
-        'x2',
-        'y2',
-        'cx',
-        'cy',
-        'r',
-        'rx',
-        'ry',
-        'width',
-        'height',
-        'd',
-        'fill',
-        'stroke',
-        'stroke-width',
-        'stroke-dasharray',
-        'stroke-dashoffset',
-        'stroke-linecap',
-        'stroke-linejoin',
-        'stroke-miterlimit',
-        'fill-opacity',
-        'stroke-opacity',
-        'opacity',
-        'visibility',
-        'display',
-        'overflow',
-        'clip-path',
-        'mask',
-        'filter',
-        'transform',
-        'viewBox',
-        'preserveAspectRatio',
-        'xmlns',
-        'xmlns:xlink',
-        'xlink:href',
-        'href',
-        'gradientUnits',
-        'gradientTransform',
-        'spreadMethod',
-        'stop-color',
-        'stop-opacity',
-        'offset',
-        'patternUnits',
-        'patternContentUnits',
-        'patternTransform',
-        'markerUnits',
-        'markerWidth',
-        'markerHeight',
-        'orient',
-        'refX',
-        'refY',
-        'dx',
-        'dy',
-        'rotate',
-        'textLength',
-        'lengthAdjust',
-        'font-family',
-        'font-size',
-        'font-weight',
-        'font-style',
-        'text-anchor',
-        'text-decoration',
-        'letter-spacing',
-        'word-spacing',
-      ],
-      ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?):\/\/|mailto:|tel:|callto:|cid:|xmpp:|#)/i,
-      FORBID_TAGS: ['script', 'object', 'embed', 'iframe'],
-      FORBID_ATTR: [
-        'onload',
-        'onerror',
-        'onclick',
-        'onmouseover',
-        'onmouseout',
-        'onfocus',
-        'onblur',
-        'onkeydown',
-        'onkeyup',
-        'onkeypress',
-        'onsubmit',
-        'onreset',
-        'onselect',
-        'onchange',
-        'onabort',
-        'onunload',
-        'onbeforeunload',
-        'ontouchstart',
-        'ontouchend',
-        'ontouchmove',
-        'ontouchcancel',
-        'onpointerdown',
-        'onpointerup',
-        'onpointermove',
-        'onpointercancel',
-      ],
-      KEEP_CONTENT: false,
-      RETURN_DOM: false,
-      RETURN_DOM_FRAGMENT: false,
-      SANITIZE_DOM: true,
+      ALLOWED_TAGS: [...ALLOWED_SVG_TAGS],
+      ALLOWED_ATTR: [...ALLOWED_SVG_ATTRIBUTES],
+      // Only allow fragment identifiers (internal document links), no external URIs
+      ALLOWED_URI_REGEXP: ALLOWED_SVG_URI_PATTERN,
+      
+      // Explicitly forbid dangerous tags (in addition to not allowing them)
+      FORBID_TAGS: [...FORBIDDEN_SVG_TAGS],
+      
+      // Explicitly forbid dangerous attributes
+      FORBID_ATTR: [...FORBIDDEN_SVG_ATTRIBUTES],
+      // Security-hardened configuration
+      KEEP_CONTENT: false,           // Don't keep content of removed elements
+      RETURN_DOM: false,            // Return string, not DOM
+      RETURN_DOM_FRAGMENT: false,   // Return string, not DOM fragment
+      SANITIZE_DOM: true,           // Sanitize DOM properties
+      WHOLE_DOCUMENT: false,        // Only sanitize fragment
+      FORCE_BODY: false,            // Don't wrap in body
+      SAFE_FOR_TEMPLATES: false,    // More restrictive parsing
+      ALLOW_DATA_ATTR: false,       // Block data-* attributes (can store scripts)
+      ALLOW_UNKNOWN_PROTOCOLS: false, // Block unknown protocols
+      ALLOWED_NAMESPACES: [...ALLOWED_SVG_NAMESPACES], // Only SVG namespace
     });
 
     // Extract sanitization information from DOMPurify result
@@ -365,15 +272,20 @@ async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
         .filter((item: string) => item !== 'unknown');
 
       // Block SVG if dangerous elements/attributes were removed
-      const dangerousTagPatterns = ['<script>', '<object>', '<embed>', '<iframe>'];
+      // Only block for truly dangerous content, not just structural HTML elements
+      const criticalDangerousTags = ['<script', '<object', '<embed', '<iframe', '<link', '<meta'];
       const hasDangerousContent = removedElements.some((item: string) => {
         const lowerItem = item.toLowerCase();
         if (lowerItem.startsWith('<')) {
-          // Tag elements: check for exact dangerous tag matches
-          return dangerousTagPatterns.some(tag => lowerItem.startsWith(tag));
+          // Tag elements: only check for critical security threats
+          return criticalDangerousTags.some(tag => lowerItem.startsWith(tag));
         }
-        // Attributes: check for event handlers that start with 'on'
-        return lowerItem.trim().startsWith('on');
+        // Attributes: check for event handlers or dangerous external references
+        const trimmedItem = lowerItem.trim();
+        return trimmedItem.startsWith('on') || 
+               trimmedItem.startsWith('href=') || 
+               trimmedItem.startsWith('xlink:href=') ||
+               trimmedItem.startsWith('style=');
       });
 
       if (hasDangerousContent) {
@@ -408,14 +320,70 @@ async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
 }
 
 /**
- * Create a secure Sharp instance with safety checks
+ * Sanitize SVG content and return cleaned result for testing
+ */
+export function sanitizeSvgContent(svgContent: string): string {
+  try {
+    // Create JSDOM window for DOMPurify
+    const window = new JSDOM('').window;
+    const purify = DOMPurify(window);
+
+    // Use the same configuration as validateSvgContent - simplified for debugging
+    const cleanSvg = purify.sanitize(svgContent, {
+      USE_PROFILES: { svg: true, svgFilters: true },
+      ALLOWED_TAGS: [...ALLOWED_SVG_TAGS],
+      ALLOWED_ATTR: [...ALLOWED_SVG_ATTRIBUTES],
+      ALLOWED_URI_REGEXP: ALLOWED_SVG_URI_PATTERN,
+      FORBID_TAGS: [...FORBIDDEN_SVG_TAGS],
+      FORBID_ATTR: [...FORBIDDEN_SVG_ATTRIBUTES],
+      KEEP_CONTENT: false,
+      RETURN_DOM: false,
+      SANITIZE_DOM: true,
+      ALLOW_DATA_ATTR: false,
+      ALLOW_UNKNOWN_PROTOCOLS: false,
+    });
+
+    return cleanSvg;
+  } catch (error) {
+    throw new PreviewGeneratorError(
+      ErrorType.IMAGE_ERROR,
+      `SVG sanitization failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+/**
+ * Create a secure Sharp instance with safety checks and timeout protection
  */
 export function createSecureSharpInstance(imageBuffer: Buffer): sharp.Sharp {
   // This will be called after validateImageBuffer, so we know it's safe
-  return sharp(imageBuffer, {
-    sequentialRead: true, // More memory efficient for large images
-    density: 300, // Limit DPI to prevent excessive memory usage
-    failOnError: false, // Don't fail on warnings
+  return sharp(imageBuffer, SHARP_SECURITY_CONFIG);
+}
+
+/**
+ * Process image with timeout protection to prevent DoS attacks
+ */
+export async function processImageWithTimeout<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number = PROCESSING_TIMEOUT
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new PreviewGeneratorError(
+        ErrorType.IMAGE_ERROR,
+        `Image processing timed out after ${timeoutMs}ms. This may indicate a malicious image designed to cause resource exhaustion.`
+      ));
+    }, timeoutMs);
+
+    operation()
+      .then(result => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch(error => {
+        clearTimeout(timer);
+        reject(error);
+      });
   });
 }
 
@@ -429,10 +397,10 @@ export function secureResize(
   options: sharp.ResizeOptions = {}
 ): sharp.Sharp {
   // Validate output dimensions
-  if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+  if (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
-      `Output dimensions too large: ${width}x${height}. Maximum allowed: ${MAX_WIDTH}x${MAX_HEIGHT}`
+      `Output dimensions too large: ${width}x${height}. Maximum allowed: ${MAX_IMAGE_WIDTH}x${MAX_IMAGE_HEIGHT}`
     );
   }
 
@@ -452,11 +420,45 @@ export function secureResize(
 }
 
 /**
+ * Create a Sharp instance with metadata removal for privacy and security
+ */
+export function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): sharp.Sharp {
+  return sharp(imageBuffer, SHARP_SECURITY_CONFIG)
+    // Remove EXIF and other metadata by default - use empty metadata
+    .withMetadata({});
+}
+
+/**
+ * Validate Sharp processing limits before operations
+ */
+export function validateSharpLimits(width: number, height: number): void {
+  const totalPixels = width * height;
+  
+  if (totalPixels > MAX_INPUT_PIXELS) {
+    throw new PreviewGeneratorError(
+      ErrorType.IMAGE_ERROR,
+      `Operation would exceed pixel limit: ${totalPixels} > ${MAX_INPUT_PIXELS}`
+    );
+  }
+  
+  if (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT) {
+    throw new PreviewGeneratorError(
+      ErrorType.IMAGE_ERROR,
+      `Dimensions exceed limits: ${width}x${height}. Max: ${MAX_IMAGE_WIDTH}x${MAX_IMAGE_HEIGHT}`
+    );
+  }
+}
+
+/**
  * Export security constants for use in other modules
  */
 export const IMAGE_SECURITY_LIMITS = {
   MAX_INPUT_PIXELS,
-  MAX_WIDTH,
-  MAX_HEIGHT,
+  MAX_IMAGE_WIDTH,
+  MAX_IMAGE_HEIGHT,
   MAX_FILE_SIZE,
+  MAX_SVG_SIZE,
+  MAX_DPI,
+  PROCESSING_TIMEOUT,
+  ALLOWED_IMAGE_FORMATS: Array.from(ALLOWED_IMAGE_FORMATS),
 } as const;

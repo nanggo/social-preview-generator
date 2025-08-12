@@ -14,7 +14,7 @@ import {
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
 import { fetchImage } from './metadata-extractor';
-import { createTransparentCanvas } from '../utils/validators';
+import { createTransparentCanvas, validateColor } from '../utils/validators';
 
 /**
  * Default dimensions for social media preview images
@@ -144,8 +144,9 @@ export async function createBlankCanvas(
   height: number,
   options: PreviewOptions
 ): Promise<sharp.Sharp> {
-  const backgroundColor = options.colors?.background || '#1a1a2e';
-  const accentColor = options.colors?.accent || '#16213e';
+  // Validate colors before using them in SVG
+  const backgroundColor = validateColor(options.colors?.background || '#1a1a2e');
+  const accentColor = validateColor(options.colors?.accent || '#16213e');
 
   // Create gradient SVG
   const gradientSvg = `
@@ -178,7 +179,7 @@ async function generateTextOverlay(
   options: PreviewOptions
 ): Promise<Buffer> {
   const padding = template.layout.padding || 60;
-  const textColor = options.colors?.text || '#ffffff';
+  const textColor = validateColor(options.colors?.text || '#ffffff');
 
   // Calculate text dimensions
   const maxTitleWidth = width - padding * 2;
@@ -290,7 +291,7 @@ async function generateTextOverlay(
       }
       
       <!-- Decorative elements -->
-      <rect x="${padding}" y="${titleY - titleFontSize - 10}" width="60" height="4" fill="${options.colors?.accent || '#4a9eff'}" rx="2"/>
+      <rect x="${padding}" y="${titleY - titleFontSize - 10}" width="60" height="4" fill="${validateColor(options.colors?.accent || '#4a9eff')}" rx="2"/>
     </svg>
   `;
 
