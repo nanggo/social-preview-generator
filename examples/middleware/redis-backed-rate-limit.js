@@ -5,32 +5,48 @@
  * Uses Lua scripts for atomic operations to prevent race conditions.
  */
 
-// Lua script for atomic sliding window rate limiting with proper cost calculation
+const crypto = require('crypto');
+
+// Lua script for atomic sliding window rate limiting with optimized cost tracking
 const slidingWindowScript = `
-local key = KEYS[1]
+local requestKey = KEYS[1]
+local totalKey = KEYS[2]  -- Separate key for total cost counter
 local window = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2])
 local cost = tonumber(ARGV[3])
 local now = tonumber(ARGV[4])
 local requestId = ARGV[5]
 
--- Remove expired entries
-redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
-
--- Get all requests in the current window and sum their costs
-local members = redis.call('ZRANGE', key, 0, -1)
-local current_total_cost = 0
-for _, member in ipairs(members) do
-    -- Member format is "timestamp:cost:requestId"
+-- Remove expired entries and update total
+local expiredMembers = redis.call('ZRANGEBYSCORE', requestKey, 0, now - window)
+local expiredCost = 0
+for _, member in ipairs(expiredMembers) do
     local member_cost = tonumber(string.match(member, '^%d+:(%d+):'))
     if member_cost then
-        current_total_cost = current_total_cost + member_cost
+        expiredCost = expiredCost + member_cost
     end
+end
+
+-- Remove expired entries
+redis.call('ZREMRANGEBYSCORE', requestKey, 0, now - window)
+
+-- Update total cost counter (subtract expired costs)
+if expiredCost > 0 then
+    redis.call('DECRBY', totalKey, expiredCost)
+end
+
+-- Get current total cost
+local current_total_cost = tonumber(redis.call('GET', totalKey)) or 0
+
+-- Ensure total doesn't go negative due to race conditions
+if current_total_cost < 0 then
+    current_total_cost = 0
+    redis.call('SET', totalKey, 0)
 end
 
 -- Check if adding this request would exceed limit
 if current_total_cost + cost > limit then
-    local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+    local oldest = redis.call('ZRANGE', requestKey, 0, 0, 'WITHSCORES')
     local resetTime = now + window
     if next(oldest) then
         resetTime = oldest[2] + window
@@ -40,10 +56,14 @@ if current_total_cost + cost > limit then
 end
 
 -- Add current request with unique member
-redis.call('ZADD', key, now, now .. ':' .. cost .. ':' .. requestId)
+redis.call('ZADD', requestKey, now, now .. ':' .. cost .. ':' .. requestId)
 
--- Set expiration
-redis.call('EXPIRE', key, math.ceil(window / 1000))
+-- Update total cost
+redis.call('INCRBY', totalKey, cost)
+
+-- Set expiration for both keys
+redis.call('EXPIRE', requestKey, math.ceil(window / 1000))
+redis.call('EXPIRE', totalKey, math.ceil(window / 1000))
 
 -- Return success with updated counts
 return {1, current_total_cost + cost, limit - current_total_cost - cost, now + window}
@@ -135,10 +155,11 @@ class RedisRateLimiter {
    */
   async checkRateLimit(requestData) {
     const key = this.options.keyGenerator(requestData);
-    const redisKey = `${this.options.keyPrefix}window:${key}`;
+    const requestKey = `${this.options.keyPrefix}window:${key}`;
+    const totalKey = `${this.options.keyPrefix}total:${key}`;
     const cost = this.options.costFunction(requestData);
     const now = Date.now();
-    const requestId = Math.random().toString(36);
+    const requestId = crypto.randomUUID();
 
     const maxRequests = typeof this.options.maxRequests === 'function'
       ? this.options.maxRequests(requestData)
@@ -147,8 +168,9 @@ class RedisRateLimiter {
     try {
       const result = await this.redis.evalsha(
         this.slidingWindowSHA,
-        1,
-        redisKey,
+        2,
+        requestKey,
+        totalKey,
         this.options.windowMs,
         maxRequests,
         cost,
@@ -188,7 +210,7 @@ class RedisRateLimiter {
   /**
    * Acquire concurrency slot
    */
-  async acquireConcurrencySlot(requestData, requestId = Math.random().toString(36)) {
+  async acquireConcurrencySlot(requestData, requestId = crypto.randomUUID()) {
     const key = this.options.keyGenerator(requestData);
     const activeKey = `${this.options.keyPrefix}active:${key}`;
     const queueKey = `${this.options.keyPrefix}queue:${key}`;
@@ -271,10 +293,12 @@ class RedisRateLimiter {
   }
 
   /**
-   * Wait for concurrency slot with timeout
+   * Wait for concurrency slot with timeout (non-polling approach)
+   * Note: For production use, consider implementing Redis Pub/Sub or blocking commands
+   * for better performance with high concurrency.
    */
   async waitForConcurrencySlot(requestData, timeout = 30000) {
-    const requestId = Math.random().toString(36);
+    const requestId = crypto.randomUUID();
     const startTime = Date.now();
     
     // Try to acquire immediately
@@ -288,39 +312,35 @@ class RedisRateLimiter {
       };
     }
 
-    // Set up polling for queue promotion
-    const pollInterval = Math.min(1000, timeout / 10); // Poll every second or 1/10th of timeout
-    const key = this.options.keyGenerator(requestData);
-    const activeKey = `${this.options.keyPrefix}active:${key}`;
+    // For queued requests, implement exponential backoff instead of polling
+    // This reduces Redis load while still providing reasonable responsiveness
+    const maxRetries = 5;
+    let retryCount = 0;
     
-    return new Promise((resolve, reject) => {
-      const pollTimer = setInterval(async () => {
-        try {
-          const now = Date.now();
-          
-          if (now - startTime >= timeout) {
-            clearInterval(pollTimer);
-            reject(new Error('Timeout waiting for concurrency slot'));
-            return;
-          }
-
-          // Check if we've been promoted to active
-          const isActive = await this.redis.sismember(activeKey, requestId);
-          
-          if (isActive) {
-            clearInterval(pollTimer);
-            resolve({
-              success: true,
-              requestId,
-              waitTime: now - startTime
-            });
-          }
-        } catch (error) {
-          clearInterval(pollTimer);
-          reject(error);
-        }
-      }, pollInterval);
-    });
+    while (retryCount < maxRetries && Date.now() - startTime < timeout) {
+      const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Cap at 5s
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      
+      // Try to acquire again
+      slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
+      
+      if (slotStatus.allowed) {
+        return {
+          success: true,
+          requestId,
+          waitTime: Date.now() - startTime
+        };
+      }
+      
+      retryCount++;
+    }
+    
+    // Cleanup queued request on timeout
+    const key = this.options.keyGenerator(requestData);
+    const queueKey = `${this.options.keyPrefix}queue:${key}`;
+    await this.redis.zrem(queueKey, requestId);
+    
+    throw new Error('Timeout waiting for concurrency slot');
   }
 
   /**
@@ -523,9 +543,12 @@ function createRedisRateLimiter(redisClient, options = {}) {
         });
       }
       
-      // Unknown error - log and fail open
+      // Fail-closed for any other errors (security-critical)
       console.error('Rate limiter error:', error);
-      next();
+      return res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Could not process request due to a rate limiting system error.'
+      });
     }
   };
 }

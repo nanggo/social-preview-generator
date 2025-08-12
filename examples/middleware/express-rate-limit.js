@@ -12,6 +12,8 @@
  * - Memory-based storage (use redis-backed-rate-limit.js for distributed systems)
  */
 
+const crypto = require('crypto');
+
 class TokenBucket {
   constructor(capacity, refillRate, refillInterval = 1000) {
     this.capacity = capacity;
@@ -62,7 +64,7 @@ class ConcurrencyLimiter {
     this.queues = new Map(); // IP -> queue of pending requests
   }
 
-  async acquire(key, requestId = Math.random().toString(36)) {
+  async acquire(key, requestId = crypto.randomUUID()) {
     return new Promise((resolve, reject) => {
       const currentActive = this.active.get(key) || 0;
       
@@ -220,7 +222,7 @@ function createRateLimiter(config = {}) {
     maxRequests: 100, // per window
     maxConcurrent: 5, // concurrent requests
     costFunction: defaultCostFunction,
-    keyGenerator: (req) => req.connection.remoteAddress || 'unknown',
+    keyGenerator: (req) => req.ip || req.connection.remoteAddress || 'unknown',
     skipSuccessfulRequests: false,
     skipFailedRequests: false,
     onLimitReached: (key, bucket, concurrent) => {
