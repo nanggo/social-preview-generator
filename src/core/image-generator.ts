@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
 import { fetchImage } from './metadata-extractor';
+import { createTransparentCanvas } from '../utils/validators';
 
 /**
  * Default dimensions for social media preview images
@@ -41,10 +42,14 @@ export async function generateImage(
     if (metadata.image) {
       // Use existing image as background
       const imageBuffer = await fetchImage(metadata.image);
-      baseImage = await processBackgroundImage(imageBuffer, width, height);
+      baseImage = await processBackgroundImage(imageBuffer, width, height, template);
     } else {
-      // Create blank canvas with gradient background
-      baseImage = await createBlankCanvas(width, height, options);
+      // Create blank canvas with gradient background or transparent canvas based on template settings
+      if (template.imageProcessing?.requiresTransparentCanvas) {
+        baseImage = createTransparentCanvas(width, height);
+      } else {
+        baseImage = await createBlankCanvas(width, height, options);
+      }
     }
 
     // Generate text overlay SVG
@@ -72,27 +77,50 @@ export async function generateImage(
 }
 
 /**
- * Process background image to fit dimensions
+ * Process background image to fit dimensions with template-specific processing
  */
 async function processBackgroundImage(
   imageBuffer: Buffer,
   width: number,
-  height: number
+  height: number,
+  template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
     const image = sharp(imageBuffer);
     await image.metadata();
 
-    // Resize and crop to fit exact dimensions
-    return image
-      .resize(width, height, {
-        fit: 'cover',
-        position: 'center',
-      })
-      .blur(2) // Slight blur for better text readability
-      .modulate({
-        brightness: 0.7, // Darken slightly for better text contrast
+    // Apply template-specific image processing settings
+    const imageProcessing = template.imageProcessing || {};
+    
+    let processedImage = image.resize(width, height, {
+      fit: 'cover',
+      position: 'center',
+    });
+
+    // Apply template-specific blur if specified
+    const blurRadius = imageProcessing.blur || template.effects?.blur?.radius || 2;
+    if (blurRadius > 0) {
+      processedImage = processedImage.blur(blurRadius);
+    }
+
+    // Apply template-specific brightness if specified
+    const brightness = imageProcessing.brightness !== undefined 
+      ? imageProcessing.brightness 
+      : 0.7;
+    
+    if (brightness !== 1) {
+      processedImage = processedImage.modulate({ brightness });
+    }
+
+    // Apply template-specific saturation if specified
+    if (imageProcessing.saturation !== undefined) {
+      processedImage = processedImage.modulate({ 
+        brightness: brightness,
+        saturation: imageProcessing.saturation 
       });
+    }
+
+    return processedImage;
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,

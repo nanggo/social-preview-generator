@@ -46,70 +46,8 @@ const templates: Record<string, TemplateConfig> = {
  * @returns Buffer containing the generated image
  */
 export async function generatePreview(url: string, options: PreviewOptions = {}): Promise<Buffer> {
-  try {
-    // Validate options first
-    validateOptions(options);
-
-    // Set default options
-    const finalOptions: PreviewOptions = {
-      template: 'modern',
-      width: DEFAULT_DIMENSIONS.width,
-      height: DEFAULT_DIMENSIONS.height,
-      quality: 90,
-      cache: false, // Set to false until caching is properly implemented
-      ...options,
-    };
-
-    // Extract metadata from URL
-    let metadata: ExtractedMetadata;
-    try {
-      metadata = await extractMetadata(url);
-
-      // Validate metadata
-      if (!validateMetadata(metadata)) {
-        // Apply fallbacks if metadata is incomplete
-        metadata = applyFallbacks(metadata, url);
-      }
-    } catch (error) {
-      // If metadata extraction fails completely, use fallback
-      if (
-        finalOptions.fallback?.strategy === 'generate' ||
-        finalOptions.fallback?.strategy === 'auto'
-      ) {
-        return await createFallbackImage(url, finalOptions);
-      }
-      throw error;
-    }
-
-    // Get template configuration
-    const templateName = finalOptions.template || 'modern';
-    const template = templates[templateName];
-
-    if (!template && templateName !== 'custom') {
-      throw new PreviewGeneratorError(
-        ErrorType.TEMPLATE_ERROR,
-        `Template "${templateName}" not found`
-      );
-    }
-
-    // Generate image based on template
-    const imageBuffer = await generateImageWithTemplate(
-      metadata,
-      template || modernTemplate,
-      finalOptions
-    );
-
-    return imageBuffer;
-  } catch (error) {
-    if (error instanceof PreviewGeneratorError) {
-      throw error;
-    }
-    throw new PreviewGeneratorError(
-      ErrorType.IMAGE_ERROR,
-      `Failed to generate preview for ${url}: ${error instanceof Error ? error.message : String(error)}`,
-      error
-    );
-  }
+  const result = await generatePreviewWithDetails(url, options);
+  return result.buffer;
 }
 
 /**

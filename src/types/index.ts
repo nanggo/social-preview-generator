@@ -130,6 +130,12 @@ export interface TemplateConfig {
   imageProcessing?: {
     /** Brightness adjustment for background images (0.0 - 1.0, where 1.0 is original) */
     brightness?: number;
+    /** Blur radius for background images */
+    blur?: number;
+    /** Contrast adjustment for background images (0.0 - 2.0, where 1.0 is original) */
+    contrast?: number;
+    /** Saturation adjustment for background images (0.0 - 2.0, where 1.0 is original) */
+    saturation?: number;
     /** Whether template requires transparent canvas when no image available */
     requiresTransparentCanvas?: boolean;
   };

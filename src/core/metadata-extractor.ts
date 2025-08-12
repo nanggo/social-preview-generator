@@ -12,10 +12,22 @@ import { ExtractedMetadata, ErrorType, PreviewGeneratorError } from '../types';
 const dnsLookup = promisify(lookup);
 
 /**
- * Check if an IPv4 address is in a private or reserved range
- * Note: This function only handles IPv4 addresses. IPv6 support will be added in the future.
+ * Check if an IP address (IPv4 or IPv6) is in a private or reserved range
  */
 function isPrivateOrReservedIP(ip: string): boolean {
+  // IPv6 address detection
+  if (ip.includes(':')) {
+    return isPrivateOrReservedIPv6(ip);
+  }
+  
+  // IPv4 address validation
+  return isPrivateOrReservedIPv4(ip);
+}
+
+/**
+ * Check if an IPv4 address is in a private or reserved range
+ */
+function isPrivateOrReservedIPv4(ip: string): boolean {
   const octets = ip.split('.').map(Number);
   
   if (octets.length !== 4 || octets.some(isNaN) || octets.some(octet => octet < 0 || octet > 255)) {
@@ -40,6 +52,52 @@ function isPrivateOrReservedIP(ip: string): boolean {
   if (a >= 224) return true; // 224.0.0.0/3
   
   return false;
+}
+
+/**
+ * Check if an IPv6 address is in a private or reserved range
+ */
+function isPrivateOrReservedIPv6(ip: string): boolean {
+  try {
+    // Normalize IPv6 address - remove brackets if present
+    const normalizedIP = ip.replace(/^\[|\]$/g, '').toLowerCase();
+    
+    // IPv6 private and reserved ranges
+    const privatePrefixes = [
+      '::', // Unspecified address
+      '::1', // Loopback
+      'fe80:', // Link-local
+      'fec0:', // Site-local (deprecated but still reserved)
+      'ff', // Multicast (ff00::/8)
+      'fc', // Unique local addresses (fc00::/7)
+      'fd', // Unique local addresses (fd00::/8)
+      '2001:db8:', // Documentation prefix
+      '2002:', // 6to4 addresses
+      '::ffff:', // IPv4-mapped IPv6 addresses
+    ];
+    
+    // Check against known private/reserved prefixes
+    for (const prefix of privatePrefixes) {
+      if (normalizedIP.startsWith(prefix)) {
+        return true;
+      }
+    }
+    
+    // Additional checks for specific ranges
+    // Check for IPv4-mapped addresses that might contain private IPv4
+    if (normalizedIP.startsWith('::ffff:')) {
+      const ipv4Part = normalizedIP.replace('::ffff:', '');
+      // Convert hex to decimal if needed, or check dot notation
+      if (ipv4Part.includes('.')) {
+        return isPrivateOrReservedIPv4(ipv4Part);
+      }
+    }
+    
+    return false;
+  } catch {
+    // If parsing fails, treat as blocked for security
+    return true;
+  }
 }
 
 /**
@@ -99,22 +157,33 @@ async function validateUrl(url: string): Promise<string> {
 
     if (!isWellKnown) {
       try {
-        // Resolve hostname to IPv4 address only
-        // We explicitly request IPv4 (family: 4) to avoid issues with IPv6 addresses
-        // which would be incorrectly blocked by our current IP validation logic
-        const { address } = await dnsLookup(urlObj.hostname, 4);
+        // Try IPv4 first, then IPv6 if IPv4 fails
+        let resolvedAddress: string;
         
-        // Check if the resolved IPv4 address is in a private/reserved range
-        if (isPrivateOrReservedIP(address)) {
-          throw new Error(`Access to private/reserved IP address is not allowed: ${address}`);
+        try {
+          // Resolve hostname to IPv4 address
+          const { address } = await dnsLookup(urlObj.hostname, 4);
+          resolvedAddress = address;
+        } catch (ipv4Error) {
+          // If IPv4 resolution fails, try IPv6
+          try {
+            const { address } = await dnsLookup(urlObj.hostname, 6);
+            resolvedAddress = address;
+          } catch (ipv6Error) {
+            throw new Error(`DNS lookup failed for both IPv4 and IPv6 for host: ${urlObj.hostname}. Request blocked to prevent SSRF vulnerabilities.`);
+          }
+        }
+        
+        // Check if the resolved address (IPv4 or IPv6) is in a private/reserved range
+        if (isPrivateOrReservedIP(resolvedAddress)) {
+          throw new Error(`Access to private/reserved IP address is not allowed: ${resolvedAddress}`);
         }
       } catch (dnsError) {
-        if (dnsError instanceof Error && dnsError.message.includes('private/reserved')) {
-          throw dnsError; // Re-throw our custom error
+        if (dnsError instanceof Error && (dnsError.message.includes('private/reserved') || dnsError.message.includes('DNS lookup failed'))) {
+          throw dnsError; // Re-throw our custom errors
         }
-        // DNS resolution failed or the host might be IPv6-only.
-        // To prevent potential SSRF attacks via IPv6, we must block the request.
-        throw new Error(`DNS lookup for IPv4 address failed for host: ${urlObj.hostname}. Request blocked to prevent SSRF vulnerabilities.`);
+        // Other DNS errors - block for security
+        throw new Error(`DNS resolution failed for host: ${urlObj.hostname}. Request blocked to prevent SSRF vulnerabilities.`);
       }
     }
 
@@ -311,12 +380,12 @@ export async function fetchImage(imageUrl: string): Promise<Buffer> {
     }
 
     // Check actual content length
-    const contentLength = Buffer.from(response.data).length;
+    const contentLength = response.data.length;
     if (contentLength > MAX_IMAGE_SIZE) {
       throw new Error(`Image too large: ${contentLength} bytes. Maximum allowed: ${MAX_IMAGE_SIZE} bytes.`);
     }
 
-    return Buffer.from(response.data);
+    return response.data;
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
