@@ -10,6 +10,7 @@ import { isPrivateOrReservedIP } from './ip-validation';
 
 /**
  * Secure DNS lookup function that blocks private/reserved IP addresses
+ * Validates ALL resolved IP addresses to prevent SSRF bypass attacks
  */
 const secureLookup = (
   hostname: string,
@@ -36,21 +37,53 @@ const secureLookup = (
     ) => void;
   }
 
-  dns.lookup(hostname, actualOptions as any, (err, address, family) => {
+  // Force 'all' option to get all IP addresses for comprehensive validation
+  const lookupOptions: dns.LookupAllOptions = {
+    ...(typeof actualOptions === 'object' ? actualOptions : {}),
+    all: true
+  };
+
+  dns.lookup(hostname, lookupOptions, (err, addresses) => {
     if (err) {
-      return actualCallback(err, address as unknown as string, family as unknown as number);
+      return actualCallback(err, '' as string, 0 as number);
     }
 
-    // Check if the resolved address is in a private/reserved range
-    if (typeof address === 'string' && isPrivateOrReservedIP(address)) {
+    // Ensure addresses is always an array
+    const addressList = Array.isArray(addresses) ? addresses : [addresses as dns.LookupAddress];
+    
+    if (addressList.length === 0) {
+      const noAddressError = new Error(`No IP addresses resolved for hostname: ${hostname}`);
+      return actualCallback(noAddressError as NodeJS.ErrnoException, '', 0);
+    }
+
+    // Check ALL resolved addresses for security violations
+    const blockedAddresses: string[] = [];
+    const safeAddresses: dns.LookupAddress[] = [];
+
+    for (const addr of addressList) {
+      if (isPrivateOrReservedIP(addr.address)) {
+        blockedAddresses.push(addr.address);
+      } else {
+        safeAddresses.push(addr);
+      }
+    }
+
+    // If ANY address is private/reserved, block the entire lookup
+    if (blockedAddresses.length > 0) {
       const securityError = new Error(
-        `Connection to private/reserved IP address blocked: ${address}`
+        `Connection blocked due to private/reserved IP addresses: ${blockedAddresses.join(', ')}. ` +
+        `Total resolved: ${addressList.length}, blocked: ${blockedAddresses.length}`
       );
-      return actualCallback(securityError as NodeJS.ErrnoException, address, family as number);
+      return actualCallback(
+        securityError as NodeJS.ErrnoException, 
+        blockedAddresses[0], 
+        addressList[0]?.family || 4
+      );
     }
 
-    // Address is safe, proceed
-    actualCallback(null, address as string, family as number);
+    // All addresses are safe, return the first safe address (Node.js standard behavior)
+    const firstSafeAddress = safeAddresses[0];
+    actualCallback(null, firstSafeAddress.address, firstSafeAddress.family);
   });
 };
 

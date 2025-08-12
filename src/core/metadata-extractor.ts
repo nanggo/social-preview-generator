@@ -341,7 +341,7 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
     // Maximum allowed image size (15MB)
     const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 
-    // Allowed MIME types for images (SVG removed for security)
+    // Allowed MIME types for images (SVG conditionally allowed based on security settings)
     const ALLOWED_MIME_TYPES = new Set([
       'image/jpeg',
       'image/jpg',
@@ -351,6 +351,11 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       'image/bmp',
       'image/tiff',
     ]);
+
+    // Add SVG to allowed types only if explicitly permitted
+    if (securityOptions?.allowSvg) {
+      ALLOWED_MIME_TYPES.add('image/svg+xml');
+    }
 
     const response = await axios.get(validatedUrl, {
       responseType: 'arraybuffer',

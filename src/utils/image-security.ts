@@ -203,7 +203,7 @@ async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
     const window = new JSDOM('').window;
     const purify = DOMPurify(window);
 
-    // Configure DOMPurify for strict SVG sanitization
+    // Configure DOMPurify for strict SVG sanitization with detailed reporting
     const cleanSvg = purify.sanitize(svgContent, {
       USE_PROFILES: { svg: true, svgFilters: true },
       ALLOWED_TAGS: [
@@ -347,12 +347,38 @@ async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
       SANITIZE_DOM: true,
     });
 
-    // Check if DOMPurify removed any content (indicates potentially malicious SVG)
-    if (cleanSvg.length < svgContent.length * 0.8) {
-      throw new PreviewGeneratorError(
-        ErrorType.IMAGE_ERROR,
-        'SVG content contains potentially malicious elements that were removed during sanitization'
+    // Extract sanitization information from DOMPurify result
+    const sanitizationInfo = purify.removed;
+    
+    // Check if DOMPurify removed any potentially malicious content
+    if (sanitizationInfo && sanitizationInfo.length > 0) {
+      // Log what was removed for security monitoring
+      const removedElements = sanitizationInfo
+        .map((item: any) => {
+          if (item.element) {
+            return `<${item.element.tagName.toLowerCase()}>`;
+          } else if (item.attribute) {
+            return `${item.attribute.name}="${item.attribute.value}"`;
+          }
+          return 'unknown';
+        })
+        .filter((item: string) => item !== 'unknown');
+
+      // Block SVG if dangerous elements/attributes were removed
+      const dangerousPatterns = ['script', 'object', 'embed', 'iframe', 'on'];
+      const hasDangerousContent = removedElements.some((item: string) => 
+        dangerousPatterns.some(pattern => item.toLowerCase().includes(pattern))
       );
+
+      if (hasDangerousContent) {
+        throw new PreviewGeneratorError(
+          ErrorType.IMAGE_ERROR,
+          `SVG blocked: potentially malicious content removed - ${removedElements.join(', ')}`
+        );
+      }
+
+      // Log warning for other removed content (might be overly strict filtering)
+      console.warn(`SVG sanitization removed elements: ${removedElements.join(', ')}`);
     }
 
     // Validate that the result is still a valid SVG
