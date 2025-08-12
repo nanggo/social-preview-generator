@@ -515,6 +515,6 @@ export async function validateRequestSecurity(url: string): Promise<SecurityVali
   }
 }
 
-// Cleanup on process exit
-process.on('SIGTERM', () => dnsCache.destroy());
-process.on('SIGINT', () => dnsCache.destroy());
+// Export cleanup function for application-level resource management
+// Applications should call this during graceful shutdown
+export const cleanup = () => dnsCache.destroy();

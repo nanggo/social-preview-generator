@@ -273,12 +273,8 @@ function createRateLimiter(config = {}) {
     buckets.clear();
     concurrencyLimiters.clear();
   };
-  
-  process.on('SIGTERM', cleanup);
-  process.on('SIGINT', cleanup);
-  process.on('beforeExit', cleanup);
 
-  return async (req, res, next) => {
+  const middleware = async (req, res, next) => {
     const key = typeof options.keyGenerator === 'function' 
       ? options.keyGenerator(req) 
       : options.keyGenerator;
@@ -396,6 +392,10 @@ function createRateLimiter(config = {}) {
 
     next();
   };
+
+  // Return both middleware and cleanup function
+  // Applications should call cleanup during graceful shutdown
+  return { middleware, cleanup };
 }
 
 module.exports = {

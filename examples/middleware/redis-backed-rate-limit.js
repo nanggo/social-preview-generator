@@ -89,6 +89,7 @@ local queueKey = KEYS[2]
 local maxConcurrent = tonumber(ARGV[1])
 local requestId = ARGV[2]
 local now = tonumber(ARGV[3])
+local expireSeconds = tonumber(ARGV[4])
 
 -- Get current active count
 local activeCount = redis.call('SCARD', activeKey)
@@ -96,12 +97,12 @@ local activeCount = redis.call('SCARD', activeKey)
 if activeCount < maxConcurrent then
     -- Can proceed immediately
     redis.call('SADD', activeKey, requestId)
-    redis.call('EXPIRE', activeKey, 300) -- 5 minutes
+    redis.call('EXPIRE', activeKey, expireSeconds)
     return {1, activeCount + 1, 0}
 else
     -- Add to queue
     redis.call('ZADD', queueKey, now, requestId)
-    redis.call('EXPIRE', queueKey, 300) -- 5 minutes
+    redis.call('EXPIRE', queueKey, expireSeconds)
     local queueLength = redis.call('ZCARD', queueKey)
     return {0, activeCount, queueLength}
 end
@@ -138,6 +139,7 @@ class RedisRateLimiter {
       maxRequests: 100,
       maxConcurrent: 5,
       keyPrefix: 'spg:rate_limit:',
+      concurrencyExpireSeconds: 600, // 10 minutes - should be longer than max expected request time
       costFunction: (requestData) => 1,
       keyGenerator: (requestData) => requestData.ip || 'unknown',
       onLimitReached: (key, current, limit, resetTime) => {
@@ -241,7 +243,8 @@ class RedisRateLimiter {
         queueKey,
         maxConcurrent,
         requestId,
-        now
+        now,
+        this.options.concurrencyExpireSeconds
       );
 
       const [allowed, activeCount, queueLength] = result;
