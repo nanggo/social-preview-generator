@@ -29,7 +29,7 @@ import {
   validateOptions,
 } from './utils/validators';
 import sharp from 'sharp';
-import { initializeSharpSecurity } from './utils/image-security';
+import { initializeSharpSecurity, createSecureSharpInstance, secureResize } from './utils/image-security';
 
 // Initialize Sharp security settings
 initializeSharpSecurity();
@@ -249,7 +249,8 @@ async function processImageForTemplate(
   // Process background image with template-specific effects
   try {
     const imageBuffer = await fetchImage(metadata.image, options.security);
-    let processedImage = sharp(imageBuffer).resize(width, height, {
+    const secureImage = createSecureSharpInstance(imageBuffer);
+    let processedImage = secureResize(secureImage, width, height, {
       fit: 'cover',
       position: 'center',
     });
