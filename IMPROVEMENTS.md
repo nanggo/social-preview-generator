@@ -83,7 +83,7 @@
 ### 6. ✅ Rate Limiting 부재
 - **파일**: `examples/middleware/` 디렉토리
 - **상태**: ✅ 완료 (2025-08-12)
-- **커밋**: [PHASE2-1] feat(security): implement comprehensive rate limiting middleware
+- **커밋**: [87e5308] feat(security): implement comprehensive Phase 2 security enhancements
 - **문제**: DoS 공격 방어 메커니즘 없음
 - **적용 구현**:
   - **Express 미들웨어**: Token bucket 알고리즘 기반 (`express-rate-limit.js`)
@@ -101,7 +101,7 @@
 ### 7. ✅ DNS Rebinding 방어 미흡
 - **파일**: `src/utils/enhanced-secure-agent.ts`
 - **상태**: ✅ 완료 (2025-08-12)
-- **커밋**: [PHASE2-2] feat(security): enhance DNS rebinding defense with TOCTOU protection
+- **커밋**: [87e5308] feat(security): implement comprehensive Phase 2 security enhancements
 - **문제**: Time-of-check-time-of-use (TOCTOU) 취약점으로 SSRF 우회 가능
 - **적용 구현**:
   - **DNS 캐시 시스템**: TTL 기반 DNS 결과 캐싱으로 일관된 IP 해결
