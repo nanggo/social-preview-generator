@@ -225,7 +225,6 @@ async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
         'pattern',
         'image',
         'switch',
-        'foreignObject',
         'marker',
         'symbol',
         'use',
