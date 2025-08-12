@@ -91,7 +91,7 @@ async function processBackgroundImage(
 
     // Apply template-specific image processing settings
     const imageProcessing = template.imageProcessing || {};
-    
+
     let processedImage = image.resize(width, height, {
       fit: 'cover',
       position: 'center',
@@ -103,21 +103,24 @@ async function processBackgroundImage(
       processedImage = processedImage.blur(blurRadius);
     }
 
-    // Apply template-specific brightness if specified
-    const brightness = imageProcessing.brightness !== undefined 
-      ? imageProcessing.brightness 
-      : 0.7;
-    
-    if (brightness !== 1) {
-      processedImage = processedImage.modulate({ brightness });
-    }
+    // Apply template-specific brightness and saturation together for efficiency
+    const brightness = imageProcessing.brightness !== undefined ? imageProcessing.brightness : 0.7;
 
-    // Apply template-specific saturation if specified
-    if (imageProcessing.saturation !== undefined) {
-      processedImage = processedImage.modulate({ 
-        brightness: brightness,
-        saturation: imageProcessing.saturation 
-      });
+    const saturation = imageProcessing.saturation;
+
+    // Apply modulation only once with all necessary changes
+    if (brightness !== 1 || saturation !== undefined) {
+      const modulateOptions: { brightness?: number; saturation?: number } = {};
+
+      if (brightness !== 1) {
+        modulateOptions.brightness = brightness;
+      }
+
+      if (saturation !== undefined) {
+        modulateOptions.saturation = saturation;
+      }
+
+      processedImage = processedImage.modulate(modulateOptions);
     }
 
     return processedImage;
@@ -133,7 +136,7 @@ async function processBackgroundImage(
 /**
  * Create blank canvas with gradient background
  */
-async function createBlankCanvas(
+export async function createBlankCanvas(
   width: number,
   height: number,
   options: PreviewOptions

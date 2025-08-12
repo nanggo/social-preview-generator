@@ -34,21 +34,23 @@ export function validateColor(color: string): string {
     const red = parseInt(r, 10);
     const green = parseInt(g, 10);
     const blue = parseInt(b, 10);
-    
+
     if (red <= 255 && green <= 255 && blue <= 255) {
       return trimmedColor;
     }
   }
 
   // RGBA validation with proper range checking
-  const rgbaMatch = trimmedColor.match(/^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|1|0?\.\d+)\s*\)$/);
+  const rgbaMatch = trimmedColor.match(
+    /^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|1|0?\.\d+)\s*\)$/
+  );
   if (rgbaMatch) {
     const [, r, g, b, a] = rgbaMatch;
     const red = parseInt(r, 10);
     const green = parseInt(g, 10);
     const blue = parseInt(b, 10);
     const alpha = parseFloat(a);
-    
+
     if (red <= 255 && green <= 255 && blue <= 255 && alpha >= 0 && alpha <= 1) {
       return trimmedColor;
     }
@@ -61,21 +63,23 @@ export function validateColor(color: string): string {
     const hue = parseInt(h, 10);
     const saturation = parseInt(s, 10);
     const lightness = parseInt(l, 10);
-    
+
     if (hue <= 360 && saturation <= 100 && lightness <= 100) {
       return trimmedColor;
     }
   }
 
   // HSLA validation with proper range checking
-  const hslaMatch = trimmedColor.match(/^hsla\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*,\s*(0|1|0?\.\d+)\s*\)$/);
+  const hslaMatch = trimmedColor.match(
+    /^hsla\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*,\s*(0|1|0?\.\d+)\s*\)$/
+  );
   if (hslaMatch) {
     const [, h, s, l, a] = hslaMatch;
     const hue = parseInt(h, 10);
     const saturation = parseInt(s, 10);
     const lightness = parseInt(l, 10);
     const alpha = parseFloat(a);
-    
+
     if (hue <= 360 && saturation <= 100 && lightness <= 100 && alpha >= 0 && alpha <= 1) {
       return trimmedColor;
     }
@@ -83,32 +87,154 @@ export function validateColor(color: string): string {
 
   // Named colors (CSS standard colors) - using Set for O(1) lookup
   const namedColors = new Set([
-    'black', 'silver', 'gray', 'white', 'maroon', 'red', 'purple', 'fuchsia',
-    'green', 'lime', 'olive', 'yellow', 'navy', 'blue', 'teal', 'aqua',
-    'orange', 'aliceblue', 'antiquewhite', 'aquamarine', 'azure', 'beige',
-    'bisque', 'blanchedalmond', 'blueviolet', 'brown', 'burlywood', 'cadetblue',
-    'chartreuse', 'chocolate', 'coral', 'cornflowerblue', 'cornsilk', 'crimson',
-    'cyan', 'darkblue', 'darkcyan', 'darkgoldenrod', 'darkgray', 'darkgreen',
-    'darkgrey', 'darkkhaki', 'darkmagenta', 'darkolivegreen', 'darkorange',
-    'darkorchid', 'darkred', 'darksalmon', 'darkseagreen', 'darkslateblue',
-    'darkslategray', 'darkslategrey', 'darkturquoise', 'darkviolet', 'deeppink',
-    'deepskyblue', 'dimgray', 'dimgrey', 'dodgerblue', 'firebrick', 'floralwhite',
-    'forestgreen', 'gainsboro', 'ghostwhite', 'gold', 'goldenrod', 'greenyellow',
-    'grey', 'honeydew', 'hotpink', 'indianred', 'indigo', 'ivory', 'khaki',
-    'lavender', 'lavenderblush', 'lawngreen', 'lemonchiffon', 'lightblue',
-    'lightcoral', 'lightcyan', 'lightgoldenrodyellow', 'lightgray', 'lightgreen',
-    'lightgrey', 'lightpink', 'lightsalmon', 'lightseagreen', 'lightskyblue',
-    'lightslategray', 'lightslategrey', 'lightsteelblue', 'lightyellow',
-    'limegreen', 'linen', 'magenta', 'mediumaquamarine', 'mediumblue',
-    'mediumorchid', 'mediumpurple', 'mediumseagreen', 'mediumslateblue',
-    'mediumspringgreen', 'mediumturquoise', 'mediumvioletred', 'midnightblue',
-    'mintcream', 'mistyrose', 'moccasin', 'navajowhite', 'oldlace', 'olivedrab',
-    'orangered', 'orchid', 'palegoldenrod', 'palegreen', 'paleturquoise',
-    'palevioletred', 'papayawhip', 'peachpuff', 'peru', 'pink', 'plum',
-    'powderblue', 'rosybrown', 'royalblue', 'saddlebrown', 'salmon', 'sandybrown',
-    'seagreen', 'seashell', 'sienna', 'skyblue', 'slateblue', 'slategray',
-    'slategrey', 'snow', 'springgreen', 'steelblue', 'tan', 'thistle', 'tomato',
-    'turquoise', 'violet', 'wheat', 'whitesmoke', 'yellowgreen', 'transparent'
+    'black',
+    'silver',
+    'gray',
+    'white',
+    'maroon',
+    'red',
+    'purple',
+    'fuchsia',
+    'green',
+    'lime',
+    'olive',
+    'yellow',
+    'navy',
+    'blue',
+    'teal',
+    'aqua',
+    'orange',
+    'aliceblue',
+    'antiquewhite',
+    'aquamarine',
+    'azure',
+    'beige',
+    'bisque',
+    'blanchedalmond',
+    'blueviolet',
+    'brown',
+    'burlywood',
+    'cadetblue',
+    'chartreuse',
+    'chocolate',
+    'coral',
+    'cornflowerblue',
+    'cornsilk',
+    'crimson',
+    'cyan',
+    'darkblue',
+    'darkcyan',
+    'darkgoldenrod',
+    'darkgray',
+    'darkgreen',
+    'darkgrey',
+    'darkkhaki',
+    'darkmagenta',
+    'darkolivegreen',
+    'darkorange',
+    'darkorchid',
+    'darkred',
+    'darksalmon',
+    'darkseagreen',
+    'darkslateblue',
+    'darkslategray',
+    'darkslategrey',
+    'darkturquoise',
+    'darkviolet',
+    'deeppink',
+    'deepskyblue',
+    'dimgray',
+    'dimgrey',
+    'dodgerblue',
+    'firebrick',
+    'floralwhite',
+    'forestgreen',
+    'gainsboro',
+    'ghostwhite',
+    'gold',
+    'goldenrod',
+    'greenyellow',
+    'grey',
+    'honeydew',
+    'hotpink',
+    'indianred',
+    'indigo',
+    'ivory',
+    'khaki',
+    'lavender',
+    'lavenderblush',
+    'lawngreen',
+    'lemonchiffon',
+    'lightblue',
+    'lightcoral',
+    'lightcyan',
+    'lightgoldenrodyellow',
+    'lightgray',
+    'lightgreen',
+    'lightgrey',
+    'lightpink',
+    'lightsalmon',
+    'lightseagreen',
+    'lightskyblue',
+    'lightslategray',
+    'lightslategrey',
+    'lightsteelblue',
+    'lightyellow',
+    'limegreen',
+    'linen',
+    'magenta',
+    'mediumaquamarine',
+    'mediumblue',
+    'mediumorchid',
+    'mediumpurple',
+    'mediumseagreen',
+    'mediumslateblue',
+    'mediumspringgreen',
+    'mediumturquoise',
+    'mediumvioletred',
+    'midnightblue',
+    'mintcream',
+    'mistyrose',
+    'moccasin',
+    'navajowhite',
+    'oldlace',
+    'olivedrab',
+    'orangered',
+    'orchid',
+    'palegoldenrod',
+    'palegreen',
+    'paleturquoise',
+    'palevioletred',
+    'papayawhip',
+    'peachpuff',
+    'peru',
+    'pink',
+    'plum',
+    'powderblue',
+    'rosybrown',
+    'royalblue',
+    'saddlebrown',
+    'salmon',
+    'sandybrown',
+    'seagreen',
+    'seashell',
+    'sienna',
+    'skyblue',
+    'slateblue',
+    'slategray',
+    'slategrey',
+    'snow',
+    'springgreen',
+    'steelblue',
+    'tan',
+    'thistle',
+    'tomato',
+    'turquoise',
+    'violet',
+    'wheat',
+    'whitesmoke',
+    'yellowgreen',
+    'transparent',
   ]);
 
   if (namedColors.has(trimmedColor.toLowerCase())) {
@@ -134,23 +260,23 @@ function isSafeColorInput(color: string): boolean {
   // Reject dangerous characters and patterns
   const dangerousPatterns = [
     // CSS injection patterns
-    /[<>]/g,                    // HTML tags
-    /javascript:/gi,            // JavaScript protocol
-    /expression\(/gi,           // CSS expressions (IE)
-    /data:/gi,                  // Data URIs
-    /url\(/gi,                  // URL functions
-    /import/gi,                 // CSS imports
-    /@/g,                       // CSS at-rules
-    /\/\*/g,                    // CSS comments
-    /\*\//g,                    // CSS comment ends
-    /;/g,                       // CSS statement terminators
-    /\}/g,                      // CSS block terminators
-    /\{/g,                      // CSS block starters
-    /\\/g,                      // Escape sequences
+    /[<>]/g, // HTML tags
+    /javascript:/gi, // JavaScript protocol
+    /expression\(/gi, // CSS expressions (IE)
+    /data:/gi, // Data URIs
+    /url\(/gi, // URL functions
+    /import/gi, // CSS imports
+    /@/g, // CSS at-rules
+    /\/\*/g, // CSS comments
+    /\*\//g, // CSS comment ends
+    /;/g, // CSS statement terminators
+    /\}/g, // CSS block terminators
+    /\{/g, // CSS block starters
+    /\\/g, // Escape sequences
     // eslint-disable-next-line no-control-regex
-    /\x00-\x1f/g,              // Control characters
-    /\x7f-\x9f/g,              // Extended control characters
-    /[\n\r\t\f\v]/g,           // Whitespace that shouldn't be in color values
+    /\x00-\x1f/g, // Control characters
+    /\x7f-\x9f/g, // Extended control characters
+    /[\n\r\t\f\v]/g, // Whitespace that shouldn't be in color values
   ];
 
   // Check against dangerous patterns
@@ -162,18 +288,18 @@ function isSafeColorInput(color: string): boolean {
 
   // Additional checks for suspicious combinations
   const suspiciousPatterns = [
-    /script/gi,                 // Script references
-    /eval/gi,                   // Eval functions
-    /function/gi,               // Function declarations
-    /return/gi,                 // Return statements
-    /alert/gi,                  // Alert calls
-    /prompt/gi,                 // Prompt calls
-    /confirm/gi,                // Confirm calls
-    /document/gi,               // Document object
-    /window/gi,                 // Window object
-    /console/gi,                // Console object
-    /xhr/gi,                    // XMLHttpRequest
-    /fetch/gi,                  // Fetch API
+    /script/gi, // Script references
+    /eval/gi, // Eval functions
+    /function/gi, // Function declarations
+    /return/gi, // Return statements
+    /alert/gi, // Alert calls
+    /prompt/gi, // Prompt calls
+    /confirm/gi, // Confirm calls
+    /document/gi, // Document object
+    /window/gi, // Window object
+    /console/gi, // Console object
+    /xhr/gi, // XMLHttpRequest
+    /fetch/gi, // Fetch API
   ];
 
   for (const pattern of suspiciousPatterns) {
@@ -197,10 +323,7 @@ export function validateDimensions(width: number, height: number): void {
   }
 
   if (width < 100 || height < 100) {
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      'Minimum dimensions: 100x100'
-    );
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Minimum dimensions: 100x100');
   }
 
   if (width > 4096 || height > 4096) {
@@ -249,7 +372,7 @@ export function validateOptions(options: PreviewOptions): void {
   // Validate colors if provided
   if (options.colors) {
     const colors = options.colors;
-    
+
     // Validate each color property if it exists
     if (colors.primary) validateColor(colors.primary);
     if (colors.secondary) validateColor(colors.secondary);
@@ -289,10 +412,7 @@ export function validateOptions(options: PreviewOptions): void {
  */
 export function validateUrlInput(url: string): string {
   if (!url || typeof url !== 'string') {
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      'URL must be a non-empty string'
-    );
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL must be a non-empty string');
   }
 
   const trimmedUrl = url.trim();
@@ -326,10 +446,7 @@ export function validateUrlInput(url: string): string {
 
     // Hostname validation
     if (!urlObj.hostname || urlObj.hostname.length === 0) {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
-        'URL must have a valid hostname'
-      );
+      throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL must have a valid hostname');
     }
 
     return urlObj.toString();
@@ -337,10 +454,7 @@ export function validateUrlInput(url: string): string {
     if (error instanceof PreviewGeneratorError) {
       throw error;
     }
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      `Invalid URL format: ${url}`
-    );
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `Invalid URL format: ${url}`);
   }
 }
 
@@ -350,23 +464,23 @@ export function validateUrlInput(url: string): string {
 function isSafeUrlInput(url: string): boolean {
   const dangerousPatterns = [
     // Injection patterns
-    /javascript:/gi,            // JavaScript protocol
-    /data:/gi,                  // Data URIs (can be dangerous)
-    /vbscript:/gi,              // VBScript protocol
-    /file:/gi,                  // File protocol
-    /ftp:/gi,                   // FTP protocol (not supported)
-    
+    /javascript:/gi, // JavaScript protocol
+    /data:/gi, // Data URIs (can be dangerous)
+    /vbscript:/gi, // VBScript protocol
+    /file:/gi, // File protocol
+    /ftp:/gi, // FTP protocol (not supported)
+
     // Control characters
     // eslint-disable-next-line no-control-regex
-    /[\x00-\x1f\x7f-\x9f]/g,   // Control characters
-    /[\n\r\t]/g,               // Line breaks and tabs
-    
+    /[\x00-\x1f\x7f-\x9f]/g, // Control characters
+    /[\n\r\t]/g, // Line breaks and tabs
+
     // Potential XSS patterns
-    /<script/gi,               // Script tags
-    /%3Cscript/gi,             // URL encoded script tags
-    /javascript%3A/gi,         // URL encoded javascript protocol
-    /eval\(/gi,                // Eval functions
-    /expression\(/gi,          // CSS expressions
+    /<script/gi, // Script tags
+    /%3Cscript/gi, // URL encoded script tags
+    /javascript%3A/gi, // URL encoded javascript protocol
+    /eval\(/gi, // Eval functions
+    /expression\(/gi, // CSS expressions
   ];
 
   for (const pattern of dangerousPatterns) {
@@ -383,10 +497,7 @@ function isSafeUrlInput(url: string): boolean {
  */
 export function validateTextInput(text: string, fieldName: string = 'text'): string {
   if (typeof text !== 'string') {
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      `${fieldName} must be a string`
-    );
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `${fieldName} must be a string`);
   }
 
   // Length check - reasonable limits for text content
@@ -414,32 +525,32 @@ export function validateTextInput(text: string, fieldName: string = 'text'): str
 function isSafeTextInput(text: string): boolean {
   const dangerousPatterns = [
     // Script injection patterns
-    /<script/gi,               // Script tags
-    /<\/script>/gi,            // Script closing tags
-    /javascript:/gi,           // JavaScript protocol
-    /data:/gi,                 // Data URIs
-    /vbscript:/gi,             // VBScript protocol
-    
-    // HTML injection patterns  
-    /<iframe/gi,               // Iframe tags
-    /<object/gi,               // Object tags
-    /<embed/gi,                // Embed tags
-    /<applet/gi,               // Applet tags
-    /<meta/gi,                 // Meta tags
-    /<link/gi,                 // Link tags
-    /<style/gi,                // Style tags
-    
+    /<script/gi, // Script tags
+    /<\/script>/gi, // Script closing tags
+    /javascript:/gi, // JavaScript protocol
+    /data:/gi, // Data URIs
+    /vbscript:/gi, // VBScript protocol
+
+    // HTML injection patterns
+    /<iframe/gi, // Iframe tags
+    /<object/gi, // Object tags
+    /<embed/gi, // Embed tags
+    /<applet/gi, // Applet tags
+    /<meta/gi, // Meta tags
+    /<link/gi, // Link tags
+    /<style/gi, // Style tags
+
     // Event handlers
-    /on\w+\s*=/gi,             // Event handlers (onclick, onload, etc.)
-    
+    /on\w+\s*=/gi, // Event handlers (onclick, onload, etc.)
+
     // Expression patterns
-    /expression\(/gi,          // CSS expressions
-    /eval\(/gi,                // Eval functions
-    /function\s*\(/gi,         // Function declarations
-    
+    /expression\(/gi, // CSS expressions
+    /eval\(/gi, // Eval functions
+    /function\s*\(/gi, // Function declarations
+
     // Control characters that shouldn't be in normal text
     // eslint-disable-next-line no-control-regex
-    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,  // Control characters (except \n, \r, \t)
+    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, // Control characters (except \n, \r, \t)
   ];
 
   for (const pattern of dangerousPatterns) {

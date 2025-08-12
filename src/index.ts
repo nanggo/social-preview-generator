@@ -11,13 +11,23 @@ import {
   ErrorType,
   PreviewGeneratorError,
 } from './types';
-import { extractMetadata, validateMetadata, applyFallbacks, fetchImage } from './core/metadata-extractor';
-import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
+import {
+  extractMetadata,
+  validateMetadata,
+  applyFallbacks,
+  fetchImage,
+} from './core/metadata-extractor';
+import { createFallbackImage, DEFAULT_DIMENSIONS, createBlankCanvas } from './core/image-generator';
 import { modernTemplate } from './templates/modern';
 import { classicTemplate } from './templates/classic';
 import { minimalTemplate } from './templates/minimal';
 import { escapeXml, logImageFetchError, wrapText } from './utils';
-import { createTransparentCanvas, validateDimensions, validateColor, validateOptions } from './utils/validators';
+import {
+  createTransparentCanvas,
+  validateDimensions,
+  validateColor,
+  validateOptions,
+} from './utils/validators';
 import sharp from 'sharp';
 
 // Re-export types
@@ -100,36 +110,6 @@ export async function generateImageWithTemplate(
       error
     );
   }
-}
-
-/**
- * Create blank canvas with gradient background
- */
-async function createBlankCanvas(
-  width: number,
-  height: number,
-  options: PreviewOptions
-): Promise<sharp.Sharp> {
-  const backgroundColor = validateColor(options.colors?.background || '#1a1a2e');
-  const accentColor = validateColor(options.colors?.accent || '#16213e');
-
-  const gradientSvg = `
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:${backgroundColor};stop-opacity:1" />
-          <stop offset="100%" style="stop-color:${accentColor};stop-opacity:1" />
-        </linearGradient>
-        <pattern id="pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
-          <circle cx="2" cy="2" r="1" fill="white" opacity="0.05"/>
-        </pattern>
-      </defs>
-      <rect width="${width}" height="${height}" fill="url(#bgGradient)"/>
-      <rect width="${width}" height="${height}" fill="url(#pattern)"/>
-    </svg>
-  `;
-
-  return sharp(Buffer.from(gradientSvg));
 }
 
 /**
@@ -296,7 +276,6 @@ async function processImageForTemplate(
     return await createBlankCanvas(width, height, options);
   }
 }
-
 
 /**
  * Generate preview with full result details

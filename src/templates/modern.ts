@@ -71,7 +71,6 @@ export function generateModernOverlay(
   options: PreviewOptions = {},
   template: TemplateConfig = modernTemplate
 ): string {
-
   const padding = template.layout.padding;
   const textColor = validateColor(options.colors?.text || '#ffffff');
   const accentColor = validateColor(options.colors?.accent || '#4a9eff');
