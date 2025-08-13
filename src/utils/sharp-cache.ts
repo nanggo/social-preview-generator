@@ -188,18 +188,12 @@ class MetadataCache extends LRUCache<sharp.Metadata> {
   }
 
   private generateBufferKey(buffer: Buffer): string {
-    // Generate hash from first and last chunks for performance
-    const start = buffer.subarray(0, Math.min(1024, buffer.length));
-    const end = buffer.length > 1024 
-      ? buffer.subarray(buffer.length - 1024) 
-      : Buffer.alloc(0);
-    
-    return crypto.createHash('sha1')
-      .update(start)
-      .update(end)
-      .update(buffer.length.toString())
-      .digest('hex')
-      .substring(0, 16);
+    // Use full SHA-256 hash of entire buffer for security
+    // Prevents collision attacks where malicious images could bypass validation
+    // by matching cache keys of safe images
+    return crypto.createHash('sha256')
+      .update(buffer)
+      .digest('hex');
   }
 }
 
