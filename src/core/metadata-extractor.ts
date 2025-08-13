@@ -54,23 +54,35 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
     }
 
     // Check if there's already an in-flight request for this cache key
-    const existingRequest = inflightRequests.get(cacheKey);
-    if (existingRequest) {
-      // Wait for the existing request to complete and return its result
-      return await existingRequest;
+    let metadataPromise = inflightRequests.get(cacheKey);
+
+    if (!metadataPromise) {
+      // If no request is in-flight, create one and store it in the map.
+      // This ensures that even if multiple requests arrive concurrently,
+      // only one will create the promise.
+      metadataPromise = extractMetadataInternal(url, cacheKey, securityOptions);
+      inflightRequests.set(cacheKey, metadataPromise);
+
+      // The creator of the promise is responsible for cleaning it up from the map
+      // once it settles (resolves or rejects).
+      metadataPromise.finally(() => {
+        try {
+          // To avoid race conditions, only delete if the promise in the map is still this one.
+          if (inflightRequests.get(cacheKey) === metadataPromise) {
+            inflightRequests.delete(cacheKey);
+          }
+        } catch (cleanupError) {
+          // Silently handle cleanup errors to prevent unhandled promise rejections
+          console.warn('Error during in-flight request cleanup:', cleanupError);
+        }
+      }).catch(() => {
+        // Prevent unhandled promise rejection warnings
+        // The actual error will be handled by the caller
+      });
     }
 
-    // Create a new request and store it in the in-flight map
-    const metadataPromise = extractMetadataInternal(url, cacheKey, securityOptions);
-    inflightRequests.set(cacheKey, metadataPromise);
-
-    try {
-      const metadata = await metadataPromise;
-      return metadata;
-    } finally {
-      // Always remove from in-flight requests when done (success or failure)
-      inflightRequests.delete(cacheKey);
-    }
+    // Wait for the (either existing or new) request to complete and return its result.
+    return metadataPromise;
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;
