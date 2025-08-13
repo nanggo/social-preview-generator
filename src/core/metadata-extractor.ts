@@ -87,7 +87,10 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       // only one will create the promise.
       const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions);
       // Prevent unhandled rejection if timeout occurs before original promise settles
-      originalPromise.catch(() => {});
+      originalPromise.catch((error) => {
+        // Log the original error to aid in debugging timeouts
+        console.warn(`Original metadata promise rejected after timeout for ${url}:`, error);
+      });
       
       // Add timeout protection to prevent stuck promises from blocking the map indefinitely
       let timeoutId: NodeJS.Timeout;
