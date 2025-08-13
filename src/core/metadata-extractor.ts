@@ -11,6 +11,30 @@ import { getEnhancedSecureAgentForUrl, validateRequestSecurity } from '../utils/
 import { validateImageBuffer } from '../utils/image-security';
 import { metadataCache } from '../utils/cache';
 
+// In-flight request management to prevent cache stampede
+const inflightRequests = new Map<string, Promise<ExtractedMetadata>>();
+
+/**
+ * Get statistics about in-flight requests for monitoring/debugging
+ * @returns Object containing in-flight request statistics
+ */
+export function getInflightRequestStats(): { 
+  count: number; 
+  keys: string[];
+} {
+  return {
+    count: inflightRequests.size,
+    keys: Array.from(inflightRequests.keys())
+  };
+}
+
+/**
+ * Clear all in-flight requests (useful for testing or cleanup)
+ * WARNING: This will cause pending requests to potentially duplicate work
+ */
+export function clearInflightRequests(): void {
+  inflightRequests.clear();
+}
 
 /**
  * Extract metadata from a given URL
@@ -29,19 +53,24 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       return cachedMetadata;
     }
 
-    // Validate URL with SSRF protection and security options
-    const validatedUrl = await validateUrl(url, securityOptions);
+    // Check if there's already an in-flight request for this cache key
+    const existingRequest = inflightRequests.get(cacheKey);
+    if (existingRequest) {
+      // Wait for the existing request to complete and return its result
+      return await existingRequest;
+    }
 
-    // Extract Open Graph data
-    const ogData = await fetchOpenGraphData(validatedUrl, securityOptions);
+    // Create a new request and store it in the in-flight map
+    const metadataPromise = extractMetadataInternal(url, cacheKey, securityOptions);
+    inflightRequests.set(cacheKey, metadataPromise);
 
-    // Parse and normalize metadata
-    const metadata = parseMetadata(ogData, validatedUrl);
-
-    // Cache the result
-    metadataCache.set(cacheKey, metadata);
-
-    return metadata;
+    try {
+      const metadata = await metadataPromise;
+      return metadata;
+    } finally {
+      // Always remove from in-flight requests when done (success or failure)
+      inflightRequests.delete(cacheKey);
+    }
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;
@@ -52,6 +81,30 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       error
     );
   }
+}
+
+/**
+ * Internal metadata extraction function
+ * Separated to handle in-flight request management properly
+ */
+async function extractMetadataInternal(
+  url: string,
+  cacheKey: string,
+  securityOptions?: SecurityOptions
+): Promise<ExtractedMetadata> {
+  // Validate URL with SSRF protection and security options
+  const validatedUrl = await validateUrl(url, securityOptions);
+
+  // Extract Open Graph data
+  const ogData = await fetchOpenGraphData(validatedUrl, securityOptions);
+
+  // Parse and normalize metadata
+  const metadata = parseMetadata(ogData, validatedUrl);
+
+  // Cache the result
+  metadataCache.set(cacheKey, metadata);
+
+  return metadata;
 }
 
 /**

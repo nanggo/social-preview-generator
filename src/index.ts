@@ -53,6 +53,12 @@ export {
   isCacheCleanupRunning,
 } from './utils/cache';
 
+// Re-export metadata extraction utilities
+export {
+  getInflightRequestStats,
+  clearInflightRequests,
+} from './core/metadata-extractor';
+
 /**
  * Template registry
  */
