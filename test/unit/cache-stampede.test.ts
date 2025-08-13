@@ -313,4 +313,41 @@ describe('Cache Stampede Prevention', () => {
       expect(getInflightRequestStats().count).toBe(0);
     }, 5000);
   });
+
+  describe('Cache Key Determinism', () => {
+    it('should generate identical cache keys for equivalent security options', async () => {
+      // Mock successful metadata response
+      mockedAxios.get.mockImplementation(async () => ({
+        data: '<html><head><title>Test</title></head></html>',
+        headers: { 'content-type': 'text/html' }
+      }));
+
+      mockedOgs.mockImplementation(async () => ({
+        error: false,
+        result: { ogTitle: 'Test Title' },
+        html: '<html></html>',
+        response: {} as any
+      } as any));
+
+      const testUrl = 'https://cache-key-test.com';
+      
+      // Create equivalent security options with different property order
+      const options1 = { httpsOnly: true, timeout: 5000, maxRedirects: 3 };
+      const options2 = { maxRedirects: 3, httpsOnly: true, timeout: 5000 };
+      const options3 = { timeout: 5000, maxRedirects: 3, httpsOnly: true };
+
+      // All requests should hit the same cache entry due to deterministic key generation
+      const result1 = await extractMetadata(testUrl, options1);
+      const result2 = await extractMetadata(testUrl, options2);  
+      const result3 = await extractMetadata(testUrl, options3);
+
+      // All should return the same result
+      expect(result1.title).toBe('Test Title');
+      expect(result2.title).toBe('Test Title');  
+      expect(result3.title).toBe('Test Title');
+
+      // Should have only called axios once due to cache hit
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+    });
+  });
 });

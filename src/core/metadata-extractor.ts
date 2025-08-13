@@ -59,7 +59,10 @@ export const __test_inflightRequests = process.env.NODE_ENV === 'test' ? infligh
 export async function extractMetadata(url: string, securityOptions?: SecurityOptions): Promise<ExtractedMetadata> {
   try {
     // Create cache key based on URL and security options
-    const cacheKey = `${url}:${JSON.stringify(securityOptions || {})}`;
+    // Sort object entries to ensure deterministic cache key generation
+    const options = securityOptions || {};
+    const sortedOptions = Object.fromEntries(Object.entries(options).sort());
+    const cacheKey = `${url}:${JSON.stringify(sortedOptions)}`;
     
     // Check cache first
     const cachedMetadata = metadataCache.get(cacheKey);
