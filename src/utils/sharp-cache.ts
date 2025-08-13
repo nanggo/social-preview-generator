@@ -387,5 +387,8 @@ export function unregisterCacheShutdownHandlers(): void {
   }
 }
 
-// Auto-register by default but allow opt-out
-registerCacheShutdownHandlers();
+// Auto-register disabled by default to prevent side-effects in library usage
+// registerCacheShutdownHandlers(); // Opt-in: call manually if needed
+
+// Export for manual registration if needed
+export { registerCacheShutdownHandlers as enableCacheShutdownHandlers };

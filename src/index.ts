@@ -69,10 +69,17 @@ export {
   shutdownSharpCaches,
 } from './utils/sharp-cache';
 
-// Re-export modern Sharp API (recommended for new code)
+// Re-export Sharp APIs (pooling removed, caching recommended)
 export {
+  // Modern caching API (recommended)
   createCachedSharp,
   withCachedSharp,
+  // Legacy pooling API (now safe no-ops for backward compatibility)
+  createPooledSharp,
+  withPooledSharp,
+  releasePooledSharp,
+  getSharpPoolStats,
+  shutdownSharpPool,
 } from './utils/sharp-pool';
 
 /**
