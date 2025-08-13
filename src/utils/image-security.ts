@@ -10,8 +10,9 @@ import DOMPurify from 'dompurify';
 import * as os from 'os';
 
 // Cache file-type module to avoid repeated dynamic imports
-let fileTypeModule: any = null;
-let fileTypeImportPromise: Promise<any> | null = null;
+// Use typeof import to ensure type safety with actual module structure
+let fileTypeModule: typeof import('file-type') | null = null;
+let fileTypeImportPromise: Promise<typeof import('file-type')> | null = null;
 import {
   MAX_INPUT_PIXELS,
   MAX_IMAGE_WIDTH,

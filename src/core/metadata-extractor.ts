@@ -11,6 +11,44 @@ import { getEnhancedSecureAgentForUrl, validateRequestSecurity } from '../utils/
 import { validateImageBuffer } from '../utils/image-security';
 import { metadataCache } from '../utils/cache';
 
+// In-flight request management to prevent cache stampede
+// Limit the size to prevent memory exhaustion DoS attacks
+const MAX_INFLIGHT_REQUESTS = 1000;
+// Timeout for in-flight requests to prevent stuck promises from blocking the map indefinitely
+const INFLIGHT_REQUEST_TIMEOUT = process.env.NODE_ENV === 'test' ? 1000 : 30000; // 1s for tests, 30s for production
+const inflightRequests = new Map<string, Promise<ExtractedMetadata>>();
+
+/**
+ * Get statistics about in-flight requests for monitoring/debugging
+ * @returns Object containing in-flight request statistics
+ */
+export function getInflightRequestStats(): { 
+  count: number; 
+  keys: string[];
+  maxLimit: number;
+  utilizationPercent: number;
+} {
+  return {
+    count: inflightRequests.size,
+    keys: Array.from(inflightRequests.keys()),
+    maxLimit: MAX_INFLIGHT_REQUESTS,
+    utilizationPercent: Math.round((inflightRequests.size / MAX_INFLIGHT_REQUESTS) * 100)
+  };
+}
+
+/**
+ * Clear all in-flight requests (useful for testing or cleanup)
+ * WARNING: This will cause pending requests to potentially duplicate work
+ */
+export function clearInflightRequests(): void {
+  inflightRequests.clear();
+}
+
+/**
+ * Test helper to access internal inflightRequests map
+ * WARNING: Only for testing purposes
+ */
+export const __test_inflightRequests = process.env.NODE_ENV === 'test' ? inflightRequests : undefined;
 
 /**
  * Extract metadata from a given URL
@@ -21,27 +59,90 @@ import { metadataCache } from '../utils/cache';
 export async function extractMetadata(url: string, securityOptions?: SecurityOptions): Promise<ExtractedMetadata> {
   try {
     // Create cache key based on URL and security options
-    const cacheKey = `${url}:${JSON.stringify(securityOptions || {})}`;
+    // Sort object entries to ensure deterministic cache key generation
+    const options = securityOptions || {};
+    const sortedOptions = Object.fromEntries(Object.entries(options).sort());
+    const cacheKey = `${url}:${JSON.stringify(sortedOptions)}`;
     
     // Check cache first
     const cachedMetadata = metadataCache.get(cacheKey);
     if (cachedMetadata) {
-      return cachedMetadata as ExtractedMetadata;
+      return cachedMetadata;
     }
 
-    // Validate URL with SSRF protection and security options
-    const validatedUrl = await validateUrl(url, securityOptions);
+    // Check if there's already an in-flight request for this cache key
+    let metadataPromise = inflightRequests.get(cacheKey);
 
-    // Extract Open Graph data
-    const ogData = await fetchOpenGraphData(validatedUrl, securityOptions);
+    if (!metadataPromise) {
+      // Check if we've reached the maximum number of in-flight requests (DoS protection)
+      if (inflightRequests.size >= MAX_INFLIGHT_REQUESTS) {
+        throw new PreviewGeneratorError(
+          ErrorType.FETCH_ERROR,
+          `In-flight requests limit reached (${MAX_INFLIGHT_REQUESTS}). Server is busy, please try again later.`
+        );
+      }
 
-    // Parse and normalize metadata
-    const metadata = parseMetadata(ogData, validatedUrl);
+      // Create AbortController for request cancellation
+      const abortController = new AbortController();
 
-    // Cache the result
-    metadataCache.set(cacheKey, metadata);
+      // If no request is in-flight, create one and store it in the map.
+      // This ensures that even if multiple requests arrive concurrently,
+      // only one will create the promise.
+      const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions, abortController.signal);
 
-    return metadata;
+      let timedOut = false;
+
+      // Add timeout protection to prevent stuck promises from blocking the map indefinitely
+      let timeoutId: NodeJS.Timeout;
+      const timeoutPromise = new Promise<ExtractedMetadata>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true; // Mark that timeout has occurred
+          // Cancel the ongoing request to prevent resource waste
+          abortController.abort();
+          reject(new PreviewGeneratorError(
+            ErrorType.FETCH_ERROR,
+            `In-flight request timeout after ${INFLIGHT_REQUEST_TIMEOUT}ms for URL: ${url}`
+          ));
+        }, INFLIGHT_REQUEST_TIMEOUT);
+      });
+      
+      // Prevent unhandled rejection if timeout occurs before original promise settles
+      originalPromise.catch((error) => {
+        // Only log the warning if the timeout has already happened.
+        // Otherwise, the main promise race will handle the rejection.
+        if (timedOut) {
+          console.warn(`Original metadata promise rejected after timeout for ${url}:`, error);
+        }
+      });
+      
+      // Race the original promise against the timeout.
+      // We attach .finally() to the race itself to ensure the timeout is cleared
+      // as soon as the race is decided, preventing a memory leak from lingering timers.
+      metadataPromise = Promise.race([originalPromise, timeoutPromise]).finally(() => {
+        clearTimeout(timeoutId!);
+      });
+      inflightRequests.set(cacheKey, metadataPromise);
+
+      // The creator of the promise is responsible for cleaning it up from the map
+      // once it settles (resolves or rejects).
+      metadataPromise.finally(() => {
+        try {
+          // To avoid race conditions, only delete if the promise in the map is still this one.
+          if (inflightRequests.get(cacheKey) === metadataPromise) {
+            inflightRequests.delete(cacheKey);
+          }
+        } catch (cleanupError) {
+          // Silently handle cleanup errors to prevent unhandled promise rejections
+          console.warn('Error during in-flight request cleanup:', cleanupError);
+        }
+      }).catch(() => {
+        // Prevent unhandled promise rejection warnings
+        // The actual error will be handled by the caller
+      });
+    }
+
+    // Wait for the (either existing or new) request to complete and return its result.
+    return metadataPromise;
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;
@@ -52,6 +153,31 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       error
     );
   }
+}
+
+/**
+ * Internal metadata extraction function
+ * Separated to handle in-flight request management properly
+ */
+async function extractMetadataInternal(
+  url: string,
+  cacheKey: string,
+  securityOptions?: SecurityOptions,
+  abortSignal?: AbortSignal
+): Promise<ExtractedMetadata> {
+  // Validate URL with SSRF protection and security options
+  const validatedUrl = await validateUrl(url, securityOptions);
+
+  // Extract Open Graph data
+  const ogData = await fetchOpenGraphData(validatedUrl, securityOptions, abortSignal);
+
+  // Parse and normalize metadata
+  const metadata = parseMetadata(ogData, validatedUrl);
+
+  // Cache the result
+  metadataCache.set(cacheKey, metadata);
+
+  return metadata;
 }
 
 /**
@@ -94,7 +220,7 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
 /**
  * Fetch Open Graph data using open-graph-scraper
  */
-async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions): Promise<Record<string, unknown>> {
+async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Record<string, unknown>> {
   try {
     // Create secure axios config with redirect validation and secure agent
     const axiosConfig = {
@@ -108,6 +234,7 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
       httpAgent: getEnhancedSecureAgentForUrl(url),
       httpsAgent: getEnhancedSecureAgentForUrl(url),
+      signal: abortSignal, // Add abort signal for request cancellation
       beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as RedirectOptions;
@@ -287,9 +414,10 @@ function cleanText(text: string): string {
  * Fetch image from URL and return as buffer with size and type validation
  * @param imageUrl - URL of the image to fetch
  * @param securityOptions - Security configuration options
+ * @param abortSignal - Optional abort signal for request cancellation
  * @returns Image buffer
  */
-export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions): Promise<Buffer> {
+export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Buffer> {
   try {
     // Validate URL with SSRF protection before fetching
     const validatedUrl = await validateUrl(imageUrl, securityOptions);
@@ -324,6 +452,7 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       maxBodyLength: MAX_IMAGE_SIZE,
       httpAgent: getEnhancedSecureAgentForUrl(validatedUrl),
       httpsAgent: getEnhancedSecureAgentForUrl(validatedUrl),
+      signal: abortSignal, // Add abort signal for request cancellation
       beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as RedirectOptions;

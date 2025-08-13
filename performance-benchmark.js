@@ -54,8 +54,8 @@ async function runBenchmark() {
   const averageTime = totalTime / iterations;
   console.log(`  Average time: ${averageTime.toFixed(2)}ms\n`);
 
-  // Test Sharp instance pooling
-  console.log('🎱 Testing Sharp Instance Pooling...');
+  // Test concurrent processing (Sharp pooling removed)
+  console.log('⚡ Testing Concurrent Processing...');
   const poolTestPromises = testUrls.slice(0, 3).map(async (url, index) => {
     const start = Date.now();
     try {
@@ -85,7 +85,7 @@ async function runBenchmark() {
   console.log('✅ Image processing pipeline: Optimized modulate operations');
   console.log('✅ file-type caching: Dynamic import cached');
   console.log('✅ Metadata caching: LRU cache with 5min TTL');
-  console.log('✅ Sharp pooling: Instance reuse implemented');
+  console.log('✅ Sharp processing: Direct instances (pooling removed per review)');
   console.log('\n🎉 Phase 3 Performance Optimizations Complete!');
 }
 
