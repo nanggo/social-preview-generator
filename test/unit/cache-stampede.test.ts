@@ -9,21 +9,28 @@ import {
   clearInflightRequests 
 } from '../../src/core/metadata-extractor';
 import { metadataCache } from '../../src/utils/cache';
+import axios from 'axios';
+import ogs from 'open-graph-scraper';
 
-// Mock the actual metadata fetching to control timing
-jest.mock('../../src/core/metadata-extractor', () => {
-  const actual = jest.requireActual('../../src/core/metadata-extractor');
-  return {
-    ...actual,
-    // We'll override extractMetadata in individual tests
-  };
-});
+// Mock external dependencies to control timing and behavior
+jest.mock('axios');
+jest.mock('open-graph-scraper');
+jest.mock('../../src/utils/enhanced-secure-agent', () => ({
+  getEnhancedSecureAgentForUrl: jest.fn(() => null),
+  validateRequestSecurity: jest.fn(() => Promise.resolve({ allowed: true }))
+}));
+
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+const mockedOgs = ogs as jest.MockedFunction<typeof ogs>;
 
 describe('Cache Stampede Prevention', () => {
   beforeEach(() => {
     // Clear cache and in-flight requests before each test
     metadataCache.clear();
     clearInflightRequests();
+    
+    // Reset all mocks
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -33,141 +40,162 @@ describe('Cache Stampede Prevention', () => {
   describe('In-flight request management', () => {
     it('should prevent multiple concurrent requests for the same URL', async () => {
       const testUrl = 'https://example.com';
-      let callCount = 0;
+      let axiosCallCount = 0;
+      let ogsCallCount = 0;
       
-      // Mock a slow metadata extraction
-      const originalExtractMetadata = jest.requireActual('../../src/core/metadata-extractor').extractMetadata;
-      const mockExtractMetadata = jest.fn().mockImplementation(async (url: string) => {
-        callCount++;
+      // Mock axios.get to simulate slow network request
+      mockedAxios.get.mockImplementation(async () => {
+        axiosCallCount++;
         // Simulate slow network request
         await new Promise(resolve => setTimeout(resolve, 100));
         return {
-          title: 'Test Title',
-          url: testUrl,
-          domain: 'example.com'
+          data: '<html><head><title>Test Title</title></head></html>',
+          headers: { 'content-type': 'text/html' }
         };
       });
 
-      // Replace the function temporarily
-      const metadataExtractor = require('../../src/core/metadata-extractor');
-      const originalFn = metadataExtractor.extractMetadata;
-      metadataExtractor.extractMetadata = mockExtractMetadata;
+      // Mock ogs to return successful metadata
+      mockedOgs.mockImplementation(async () => {
+        ogsCallCount++;
+        return {
+          error: false,
+          result: {
+            ogTitle: 'Test Title',
+            ogDescription: 'Test Description',
+            url: testUrl
+          },
+          html: '<html></html>',
+          response: {} as any
+        } as any;
+      });
 
-      try {
-        // Start multiple concurrent requests
-        const promises = Array(5).fill(null).map(() => 
-          metadataExtractor.extractMetadata(testUrl)
-        );
+      // Start multiple concurrent requests
+      const promises = Array(5).fill(null).map(() => 
+        extractMetadata(testUrl)
+      );
 
-        // Check in-flight requests during execution
-        expect(getInflightRequestStats().count).toBe(1);
-        expect(getInflightRequestStats().keys).toContain(`${testUrl}:{}`);
+      // Check in-flight requests during execution
+      // Wait a bit to let the first request start
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(getInflightRequestStats().count).toBe(1);
+      expect(getInflightRequestStats().keys).toContain(`${testUrl}:{}`);
 
-        // Wait for all requests to complete
-        const results = await Promise.all(promises);
+      // Wait for all requests to complete
+      const results = await Promise.all(promises);
 
-        // All requests should return the same result
-        results.forEach(result => {
-          expect(result.title).toBe('Test Title');
-          expect(result.url).toBe(testUrl);
-        });
+      // All requests should return the same result
+      results.forEach(result => {
+        expect(result.title).toBe('Test Title');
+        expect(result.url).toBe('https://example.com/'); // URL gets normalized
+        expect(result.domain).toBe('example.com');
+      });
 
-        // But the actual extraction should only happen once
-        expect(callCount).toBe(1);
+      // But the actual network requests should only happen once
+      expect(axiosCallCount).toBe(1);
+      expect(ogsCallCount).toBe(1);
 
-        // In-flight requests should be cleared
-        expect(getInflightRequestStats().count).toBe(0);
-      } finally {
-        // Restore original function
-        metadataExtractor.extractMetadata = originalFn;
-      }
+      // In-flight requests should be cleared
+      expect(getInflightRequestStats().count).toBe(0);
     });
 
     it('should handle different URLs independently', async () => {
       const url1 = 'https://example1.com';
       const url2 = 'https://example2.com';
-      let callCount = 0;
+      let axiosCallCount = 0;
 
-      const mockExtractMetadata = jest.fn().mockImplementation(async (url: string) => {
-        callCount++;
+      // Mock axios.get to track calls per URL
+      mockedAxios.get.mockImplementation(async (url) => {
+        axiosCallCount++;
         await new Promise(resolve => setTimeout(resolve, 50));
+        const hostname = new URL(url).hostname;
         return {
-          title: `Title for ${url}`,
-          url,
-          domain: new URL(url).hostname
+          data: `<html><head><title>Title for ${hostname}</title></head></html>`,
+          headers: { 'content-type': 'text/html' }
         };
       });
 
-      const metadataExtractor = require('../../src/core/metadata-extractor');
-      const originalFn = metadataExtractor.extractMetadata;
-      metadataExtractor.extractMetadata = mockExtractMetadata;
+      // Mock ogs to return URL-specific metadata
+      mockedOgs.mockImplementation(async (options: any) => {
+        const hostname = new URL(options.url).hostname;
+        return {
+          error: false,
+          result: {
+            ogTitle: `Title for ${hostname}`,
+            url: options.url
+          },
+          html: '<html></html>',
+          response: {} as any
+        } as any;
+      });
 
-      try {
-        // Start concurrent requests for different URLs
-        const promises = [
-          metadataExtractor.extractMetadata(url1),
-          metadataExtractor.extractMetadata(url1), // Same as first
-          metadataExtractor.extractMetadata(url2),
-          metadataExtractor.extractMetadata(url2), // Same as third
-        ];
+      // Start concurrent requests for different URLs
+      const promises = [
+        extractMetadata(url1),
+        extractMetadata(url1), // Same as first
+        extractMetadata(url2),
+        extractMetadata(url2), // Same as third
+      ];
 
-        // Should have 2 in-flight requests (one per unique URL)
-        expect(getInflightRequestStats().count).toBe(2);
+      // Wait a bit to let requests start
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Should have 2 in-flight requests (one per unique URL)
+      expect(getInflightRequestStats().count).toBe(2);
 
-        const results = await Promise.all(promises);
+      const results = await Promise.all(promises);
 
-        // Should have called extraction twice (once per unique URL)
-        expect(callCount).toBe(2);
+      // Should have called axios twice (once per unique URL)
+      expect(axiosCallCount).toBe(2);
 
-        // Results should match URLs
-        expect(results[0].url).toBe(url1);
-        expect(results[1].url).toBe(url1);
-        expect(results[2].url).toBe(url2);
-        expect(results[3].url).toBe(url2);
-      } finally {
-        metadataExtractor.extractMetadata = originalFn;
-      }
+      // Results should match URLs (normalized)
+      expect(results[0].url).toBe('https://example1.com/');
+      expect(results[1].url).toBe('https://example1.com/');
+      expect(results[2].url).toBe('https://example2.com/');
+      expect(results[3].url).toBe('https://example2.com/');
+      
+      // Domain should be extracted correctly
+      expect(results[0].domain).toBe('example1.com');
+      expect(results[2].domain).toBe('example2.com');
     });
 
     it('should handle failures properly without blocking future requests', async () => {
       const testUrl = 'https://failing-example.com';
-      let callCount = 0;
+      let axiosCallCount = 0;
 
-      const mockExtractMetadata = jest.fn().mockImplementation(async () => {
-        callCount++;
+      // Mock axios.get to simulate network failure
+      mockedAxios.get.mockImplementation(async () => {
+        axiosCallCount++;
         await new Promise(resolve => setTimeout(resolve, 50));
         throw new Error('Network error');
       });
 
-      const metadataExtractor = require('../../src/core/metadata-extractor');
-      const originalFn = metadataExtractor.extractMetadata;
-      metadataExtractor.extractMetadata = mockExtractMetadata;
+      // Mock ogs to also fail (to prevent fallback)
+      mockedOgs.mockImplementation(async () => {
+        throw new Error('OGS also failed');
+      });
 
-      try {
-        // Start multiple concurrent requests that will fail
-        const promises = Array(3).fill(null).map(() =>
-          metadataExtractor.extractMetadata(testUrl).catch((e: Error) => e.message)
-        );
+      // Start multiple concurrent requests that will fail
+      const promises = Array(3).fill(null).map(() =>
+        extractMetadata(testUrl).catch((e: Error) => e)
+      );
 
-        const results = await Promise.all(promises);
+      const results = await Promise.all(promises);
 
-        // All should have failed with the same error
-        results.forEach(result => {
-          expect(result).toBe('Network error');
-        });
+      // All should have failed with similar error messages (wrapped in PreviewGeneratorError)
+      results.forEach(result => {
+        expect(result).toBeInstanceOf(Error);
+        expect((result as Error).message).toMatch(/Network error|Failed to fetch data|OGS also failed/);
+      });
 
-        // Should have called extraction only once
-        expect(callCount).toBe(1);
+      // Should have called axios only once (all requests shared the same promise)
+      expect(axiosCallCount).toBe(1);
 
-        // In-flight requests should be cleared after failure
-        expect(getInflightRequestStats().count).toBe(0);
+      // In-flight requests should be cleared after failure
+      expect(getInflightRequestStats().count).toBe(0);
 
-        // Subsequent request should work (not blocked by previous failure)
-        await expect(metadataExtractor.extractMetadata(testUrl)).rejects.toThrow();
-        expect(callCount).toBe(2); // Called again
-      } finally {
-        metadataExtractor.extractMetadata = originalFn;
-      }
+      // Subsequent request should work (not blocked by previous failure)
+      await expect(extractMetadata(testUrl)).rejects.toThrow();
+      expect(axiosCallCount).toBe(2); // Called again
     });
   });
 
