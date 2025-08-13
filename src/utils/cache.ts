@@ -108,9 +108,14 @@ export class LRUCache<T> {
 }
 
 // Global metadata cache instance
-export const metadataCache = new LRUCache(100, 5 * 60 * 1000); // 100 entries, 5 minutes TTL
+import { ExtractedMetadata } from '../types';
+
+export const metadataCache = new LRUCache<ExtractedMetadata>(100, 5 * 60 * 1000); // 100 entries, 5 minutes TTL
 
 // Automatic cleanup every 10 minutes
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
   metadataCache.cleanup();
 }, 10 * 60 * 1000);
+
+// Don't prevent Node.js process from exiting
+cleanupInterval.unref();

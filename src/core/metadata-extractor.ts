@@ -26,7 +26,7 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
     // Check cache first
     const cachedMetadata = metadataCache.get(cacheKey);
     if (cachedMetadata) {
-      return cachedMetadata as ExtractedMetadata;
+      return cachedMetadata;
     }
 
     // Validate URL with SSRF protection and security options
