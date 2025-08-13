@@ -62,6 +62,19 @@ export {
   clearInflightRequests,
 } from './core/metadata-extractor';
 
+// Re-export Sharp caching utilities
+export {
+  getCacheStats,
+  clearAllCaches,
+  shutdownSharpCaches,
+} from './utils/sharp-cache';
+
+// Re-export modern Sharp API (recommended for new code)
+export {
+  createCachedSharp,
+  withCachedSharp,
+} from './utils/sharp-pool';
+
 /**
  * Template registry
  */
@@ -237,7 +250,10 @@ async function generateDefaultOverlay(
     </svg>
   `;
 
-  return Buffer.from(overlaySvg);
+  // Use cached SVG creation for better performance
+  const { createCachedSVG } = await import('./utils/sharp-cache');
+  const cachedSVG = await createCachedSVG(overlaySvg);
+  return cachedSVG.toBuffer();
 }
 
 /**

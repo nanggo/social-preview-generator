@@ -147,6 +147,7 @@ async function processBackgroundImage(
 
 /**
  * Create blank canvas with gradient background
+ * Uses caching for better performance with repeated requests
  */
 export async function createBlankCanvas(
   width: number,
@@ -157,24 +158,14 @@ export async function createBlankCanvas(
   const backgroundColor = validateColor(options.colors?.background || '#1a1a2e');
   const accentColor = validateColor(options.colors?.accent || '#16213e');
 
-  // Create gradient SVG
-  const gradientSvg = `
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:${backgroundColor};stop-opacity:1" />
-          <stop offset="100%" style="stop-color:${accentColor};stop-opacity:1" />
-        </linearGradient>
-        <pattern id="pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
-          <circle cx="2" cy="2" r="1" fill="white" opacity="0.05"/>
-        </pattern>
-      </defs>
-      <rect width="${width}" height="${height}" fill="url(#bgGradient)"/>
-      <rect width="${width}" height="${height}" fill="url(#pattern)"/>
-    </svg>
-  `;
-
-  return sharp(Buffer.from(gradientSvg));
+  // Use cached canvas creation for performance
+  const { createCachedCanvas } = await import('../utils/sharp-cache');
+  return createCachedCanvas(width, height, {
+    colors: {
+      background: backgroundColor,
+      accent: accentColor
+    }
+  });
 }
 
 /**
@@ -304,7 +295,10 @@ async function generateTextOverlay(
     </svg>
   `;
 
-  return Buffer.from(overlaySvg);
+  // Use cached SVG creation for better performance
+  const { createCachedSVG } = await import('../utils/sharp-cache');
+  const cachedSVG = await createCachedSVG(overlaySvg);
+  return cachedSVG.toBuffer();
 }
 
 /**

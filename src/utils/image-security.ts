@@ -101,8 +101,9 @@ export async function validateImageBuffer(
   await validateImageFormat(imageBuffer);
 
   try {
-    // Get metadata with strict error handling for security
-    const metadata = await sharp(imageBuffer, SHARP_SECURITY_CONFIG).metadata();
+    // Get metadata with strict error handling for security - use cached version for performance
+    const { getCachedMetadata } = await import('./sharp-cache');
+    const metadata = await getCachedMetadata(imageBuffer);
 
     // Check if dimensions are valid
     if (!metadata.width || !metadata.height) {
