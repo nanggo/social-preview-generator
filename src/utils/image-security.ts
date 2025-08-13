@@ -10,12 +10,9 @@ import DOMPurify from 'dompurify';
 import * as os from 'os';
 
 // Cache file-type module to avoid repeated dynamic imports
-interface FileTypeModule {
-  fileTypeFromBuffer: (buffer: Uint8Array) => Promise<{ ext: string; mime: string } | undefined>;
-}
-
-let fileTypeModule: FileTypeModule | null = null;
-let fileTypeImportPromise: Promise<FileTypeModule> | null = null;
+// Use typeof import to ensure type safety with actual module structure
+let fileTypeModule: typeof import('file-type') | null = null;
+let fileTypeImportPromise: Promise<typeof import('file-type')> | null = null;
 import {
   MAX_INPUT_PIXELS,
   MAX_IMAGE_WIDTH,
@@ -179,7 +176,7 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
     // Use cached module or import if not cached
     if (!fileTypeModule) {
       if (!fileTypeImportPromise) {
-        fileTypeImportPromise = import('file-type') as Promise<FileTypeModule>;
+        fileTypeImportPromise = import('file-type');
       }
       fileTypeModule = await fileTypeImportPromise;
     }
