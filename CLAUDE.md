@@ -65,3 +65,54 @@
 - Write clear commit messages describing the change
 - Only commit after all tests pass
 - Push to feature branches, create PRs for review
+
+## GitHub PR Review Queries
+
+### Query Latest Review Comments
+Use this GitHub CLI command to fetch all comments from the most recent PR review:
+
+```bash
+# Get the latest review ID and its comments (replace PR_NUMBER)
+gh api /repos/nanggo/social-preview-generator/pulls/PR_NUMBER/reviews | jq '.[0].id' | xargs -I {} gh api /repos/nanggo/social-preview-generator/pulls/reviews/{}/comments
+
+# Alternative: Get specific review comments (replace REVIEW_ID)
+gh api /repos/nanggo/social-preview-generator/pulls/reviews/REVIEW_ID/comments
+```
+
+### GraphQL Query for PR Reviews
+For more detailed review information including discussion threads:
+
+```bash
+gh api graphql -f query='
+{
+  repository(owner: "nanggo", name: "social-preview-generator") {
+    pullRequest(number: PR_NUMBER) {
+      reviews(last: 1) {
+        nodes {
+          id
+          body
+          state
+          author { login }
+          createdAt
+          comments(first: 50) {
+            nodes {
+              id
+              body
+              path
+              line
+              diffHunk
+              author { login }
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+```
+
+### Usage Examples
+- Replace `PR_NUMBER` with actual PR number (e.g., 6)
+- Replace `REVIEW_ID` with actual review ID (e.g., 3114484133)
+- Use when addressing code review feedback or analyzing discussion threads

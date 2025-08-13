@@ -87,8 +87,9 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       originalPromise.catch(() => {});
       
       // Add timeout protection to prevent stuck promises from blocking the map indefinitely
+      let timeoutId: NodeJS.Timeout;
       const timeoutPromise = new Promise<ExtractedMetadata>((_, reject) => {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           reject(new PreviewGeneratorError(
             ErrorType.FETCH_ERROR,
             `In-flight request timeout after ${INFLIGHT_REQUEST_TIMEOUT}ms for URL: ${url}`
@@ -96,8 +97,12 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
         }, INFLIGHT_REQUEST_TIMEOUT);
       });
       
-      // Race the original promise against the timeout
-      metadataPromise = Promise.race([originalPromise, timeoutPromise]);
+      // Race the original promise against the timeout.
+      // We attach .finally() to the race itself to ensure the timeout is cleared
+      // as soon as the race is decided, preventing a memory leak from lingering timers.
+      metadataPromise = Promise.race([originalPromise, timeoutPromise]).finally(() => {
+        clearTimeout(timeoutId!);
+      });
       inflightRequests.set(cacheKey, metadataPromise);
 
       // The creator of the promise is responsible for cleaning it up from the map
