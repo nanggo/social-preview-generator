@@ -54,26 +54,23 @@ export class SharpPool {
    * Waits for available instance if pool is full
    */
   async acquire(input?: string | Buffer, options?: SharpOptions): Promise<Sharp> {
-    // Try to get an available instance from pool
+    // If input is provided, create directly without pooling
+    // Sharp instances with input are not reusable
+    if (input) {
+      return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
+    }
+
+    // Try to get an available instance from pool (only for no-input instances)
     const pooledInstance = this.findAvailableInstance();
     if (pooledInstance) {
       pooledInstance.inUse = true;
       pooledInstance.lastUsed = Date.now();
-      
-      // Configure existing pooled instance with new input
-      if (input) {
-        // For input-based instances, create new configured instance 
-        // but keep pool instance marked as in use for proper tracking
-        return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
-      } else {
-        // Return the actual pooled instance for reuse (no input case)
-        return pooledInstance.instance;
-      }
+      return pooledInstance.instance;
     }
 
-    // If pool is not full, create new instance
+    // If pool is not full, create new instance (no input for pooled instances)
     if (this.pool.length < this.maxSize) {
-      const instance = this.createInstance(input, options);
+      const instance = this.createInstance();
       const pooledInstance: PooledSharpInstance = {
         instance,
         inUse: true,
@@ -138,12 +135,9 @@ export class SharpPool {
   /**
    * Create a properly configured Sharp instance
    */
-  private createInstance(input?: string | Buffer, options?: SharpOptions): Sharp {
-    if (input) {
-      return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
-    } else {
-      return sharp({ ...SHARP_SECURITY_CONFIG, ...options });
-    }
+  private createInstance(): Sharp {
+    // Pool only manages instances without input
+    return sharp({ ...SHARP_SECURITY_CONFIG });
   }
 
   /**
@@ -172,18 +166,8 @@ export class SharpPool {
       }
     }
     
-    // Safely destroy idle instances
-    for (const pooledInstance of toRemove) {
-      try {
-        // Sharp instances don't have explicit cleanup, but we can destroy them
-        pooledInstance.instance.destroy();
-      } catch (error) {
-        logger?.warn?.('Error destroying idle Sharp instance:', { 
-          error: error instanceof Error ? error : String(error)
-        });
-      }
-    }
-    
+    // Sharp instances are automatically garbage collected
+    // No explicit cleanup needed - just remove references
     this.pool = toKeep;
 
     const removedCount = initialSize - this.pool.length;
@@ -239,14 +223,8 @@ export class SharpPool {
       waiter.reject(new Error('Sharp pool is being drained'));
     });
 
-    // Destroy all instances
-    for (const pooledInstance of this.pool) {
-      try {
-        pooledInstance.instance.destroy();
-      } catch (error) {
-        logger?.warn?.('Error destroying Sharp instance during drain:', { error: error instanceof Error ? error : String(error) });
-      }
-    }
+    // Sharp instances are automatically garbage collected
+    // No explicit cleanup needed - just remove references
     
     this.pool = [];
     logger?.info?.('Sharp pool drained');
@@ -281,7 +259,11 @@ export async function withPooledSharp<T>(
   try {
     return await operation(sharpInstance);
   } finally {
-    sharpPool.release(sharpInstance);
+    // Only release if it's a pooled instance (no input)
+    if (!input) {
+      sharpPool.release(sharpInstance);
+    }
+    // Input-based instances are not pooled and will be garbage collected
   }
 }
 

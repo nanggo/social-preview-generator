@@ -36,6 +36,9 @@ import { initializeSharpSecurity, secureResize } from './utils/image-security';
 // Initialize Sharp security settings
 initializeSharpSecurity();
 
+// Pre-load image security module at module level for performance
+const imageSecurityPromise = import('./utils/image-security');
+
 // Re-export types
 export {
   PreviewOptions,
@@ -270,7 +273,7 @@ async function processImageForTemplate(
     const imageBuffer = await fetchImage(metadata.image, options.security);
     
     // Use withSecureSharp for automatic pool management
-    const { withSecureSharp } = await import('./utils/image-security');
+    const { withSecureSharp } = await imageSecurityPromise;
     return await withSecureSharp(imageBuffer, async (secureImage) => {
       let processedImage = secureResize(secureImage, width, height, {
         fit: 'cover',

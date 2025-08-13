@@ -13,6 +13,9 @@ import {
   PreviewGeneratorError,
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
+
+// Pre-load image security module at module level for performance
+const imageSecurityPromise = import('../utils/image-security');
 import { fetchImage } from './metadata-extractor';
 import { createTransparentCanvas, validateColor } from '../utils/validators';
 
@@ -91,8 +94,8 @@ async function processBackgroundImage(
   template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
-    // Use withSecureSharp for automatic pool management
-    const { withSecureSharp } = await import('../utils/image-security');
+    // Use withSecureSharp for automatic pool management  
+    const { withSecureSharp } = await imageSecurityPromise;
     return await withSecureSharp(imageBuffer, async (image) => {
       await image.metadata();
 
