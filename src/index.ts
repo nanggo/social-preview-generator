@@ -70,18 +70,8 @@ export {
   shutdownSharpCaches,
 } from './utils/sharp-cache';
 
-// Re-export Sharp APIs (pooling removed, caching recommended)
-export {
-  // Modern caching API (recommended)
-  createCachedSharp,
-  withCachedSharp,
-  // Legacy pooling API (now safe no-ops for backward compatibility)
-  createPooledSharp,
-  withPooledSharp,
-  releasePooledSharp,
-  getSharpPoolStats,
-  shutdownSharpPool,
-} from './utils/sharp-pool';
+// Note: Sharp caching utilities (createCachedSVG, createCachedCanvas) are used internally
+// Direct Sharp instance creation is now recommended over pooling for better reliability
 
 /**
  * Template registry
@@ -277,7 +267,7 @@ async function processImageForTemplate(
   if (template.layout.imagePosition === 'none') {
     // Use transparent canvas if template requires it, otherwise use blank canvas
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return await createTransparentCanvas(width, height);
+      return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -286,7 +276,7 @@ async function processImageForTemplate(
   if (!metadata.image) {
     // Use transparent canvas if template requires it for custom backgrounds
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return await createTransparentCanvas(width, height);
+      return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -339,7 +329,7 @@ async function processImageForTemplate(
 
     // Use transparent canvas if template requires it for custom backgrounds
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return await createTransparentCanvas(width, height);
+      return createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }

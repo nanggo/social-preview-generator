@@ -9,7 +9,7 @@ import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import * as os from 'os';
 import { getCachedMetadata } from './sharp-cache';
-import { createPooledSharp, withPooledSharp } from './sharp-pool';
+// Sharp pooling removed - use direct instantiation for better reliability
 
 // Cache file-type module to avoid repeated dynamic imports
 // Use typeof import to ensure type safety with actual module structure
@@ -369,26 +369,23 @@ export function sanitizeSvgContent(svgContent: string): string {
 }
 
 /**
- * Create a secure Sharp instance with safety checks and timeout protection
- * Uses pooled instances for better performance
- * Note: Caller is responsible for releasing the instance back to the pool
+ * Create a secure Sharp instance with safety checks
  */
-export async function createSecureSharpInstance(imageBuffer: Buffer): Promise<sharp.Sharp> {
-  // Use imported createPooledSharp function
+export function createSecureSharpInstance(imageBuffer: Buffer): sharp.Sharp {
   // This will be called after validateImageBuffer, so we know it's safe
-  return createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG);
+  return sharp(imageBuffer, SHARP_SECURITY_CONFIG);
 }
 
 /**
- * Execute a Sharp operation with automatic pool management
- * Use this for one-shot operations that need automatic cleanup
+ * Execute a Sharp operation with direct instance creation
+ * Use this for one-shot operations
  */
 export async function withSecureSharp<T>(
   imageBuffer: Buffer,
   operation: (sharp: sharp.Sharp) => Promise<T>
 ): Promise<T> {
-  // Use imported withPooledSharp function
-  return withPooledSharp(operation, imageBuffer, SHARP_SECURITY_CONFIG);
+  const sharpInstance = sharp(imageBuffer, SHARP_SECURITY_CONFIG);
+  return await operation(sharpInstance);
 }
 
 /**
@@ -452,30 +449,23 @@ export function secureResize(
 
 /**
  * Create a Sharp instance with metadata removal for privacy and security
- * Uses pooled instances for better performance
- * Note: Caller is responsible for releasing the instance back to the pool
  */
-export async function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): Promise<sharp.Sharp> {
-  // Use imported createPooledSharp function
-  return (await createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG))
+export function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): sharp.Sharp {
+  return sharp(imageBuffer, SHARP_SECURITY_CONFIG)
     // Remove EXIF and other metadata by default - use empty metadata
     .withMetadata({});
 }
 
 /**
- * Execute a Sharp operation with automatic pool management and clean metadata
+ * Execute a Sharp operation with direct instance creation and clean metadata
  * Use this for one-shot operations that need automatic cleanup
  */
 export async function withSecureSharpCleanMetadata<T>(
   imageBuffer: Buffer,
   operation: (sharp: sharp.Sharp) => Promise<T>
 ): Promise<T> {
-  // Use imported withPooledSharp function
-  return withPooledSharp(
-    async (sharpInstance) => operation(sharpInstance.withMetadata({})),
-    imageBuffer, 
-    SHARP_SECURITY_CONFIG
-  );
+  const sharpInstance = sharp(imageBuffer, SHARP_SECURITY_CONFIG).withMetadata({});
+  return await operation(sharpInstance);
 }
 
 /**
