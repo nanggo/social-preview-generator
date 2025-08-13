@@ -8,7 +8,7 @@
  * - Canvas cache reuses common background patterns
  */
 
-import sharp, { Sharp, SharpOptions } from 'sharp';
+import sharp, { Sharp } from 'sharp';
 import crypto from 'crypto';
 import { SHARP_SECURITY_CONFIG } from '../constants/security';
 import { logger } from './logger';

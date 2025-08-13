@@ -2,10 +2,22 @@
  * Sharp Instance Pool
  * Provides pooled Sharp instances for better performance and memory management
  * 
- * Benefits:
- * - Reduces instance creation overhead
+ * IMPORTANT NOTE: This pooling system is largely ineffective for real usage patterns
+ * because all actual Sharp operations require input data (buffers, file paths, etc.).
+ * Sharp instances with input cannot be reused/pooled effectively.
+ * 
+ * RECOMMENDED: Use the new caching system in sharp-cache.ts instead, which targets
+ * actual performance bottlenecks (SVG parsing, metadata extraction, canvas generation).
+ * 
+ * Benefits of pooling (theoretical):
+ * - Reduces instance creation overhead for no-input instances
  * - Better memory management through reuse
  * - Configurable pool size and timeout
+ * 
+ * Limitations:
+ * - Input-based instances (99% of real usage) cannot be pooled
+ * - Only empty Sharp instances can be pooled (rarely used)
+ * - Caching system provides better real-world performance gains
  */
 
 import sharp, { Sharp, SharpOptions } from 'sharp';
@@ -52,12 +64,19 @@ export class SharpPool {
    * Acquire a Sharp instance from the pool
    * Creates new instance if pool is empty and under maxSize
    * Waits for available instance if pool is full
+   * 
+   * @param input Should be undefined for pooled instances
+   * @param options Sharp options (create option not supported for pooled instances)
    */
   async acquire(input?: string | Buffer, options?: SharpOptions): Promise<Sharp> {
-    // If input or create options are provided, create a new instance directly without pooling
-    // These instances are not statefully reusable in the pool
-    if (input || options?.create) {
-      return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
+    // Following Gemini Code Assist recommendation:
+    // To enforce correct usage, pooled instances should not have input
+    if (input !== undefined) {
+      throw new Error('SharpPool.acquire must not be called with an input. Use createPooledSharp() instead.');
+    }
+    
+    if (options?.create) {
+      throw new Error('SharpPool.acquire does not support create options. Use createPooledSharp() instead.');
     }
 
     // Try to get an available instance from pool (only for no-input instances)
@@ -247,15 +266,15 @@ export const sharpPool = new SharpPool({
  * The new system is more effective for actual usage patterns.
  */
 export async function createPooledSharp(input?: string | Buffer, options?: SharpOptions): Promise<Sharp> {
-  // Use new caching system for better performance
+  // Following Gemini Code Assist recommendation:
+  // Input-based instances are not reusable and should not use pooling
   if (input || options?.create) {
-    // Input-based instances cannot be pooled - create directly
+    // Not poolable, create a new instance directly
     return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
   }
   
-  // For reusable instances, this would use pooling but in practice this case never happens
-  // Legacy fallback to pool for backward compatibility
-  return sharpPool.acquire(input, options);
+  // Only pool instances without input (though this case rarely happens in practice)
+  return sharpPool.acquire(undefined, options);
 }
 
 /**
@@ -323,8 +342,11 @@ export function unregisterShutdownHandlers(): void {
   }
 }
 
-// Auto-register by default but allow opt-out
-registerShutdownHandlers();
+// Auto-register by default but allow opt-out (following Gemini suggestion to make this opt-in)
+// registerShutdownHandlers(); // Commented out to make opt-in
+
+// Export for manual registration if needed
+export { registerShutdownHandlers as enableShutdownHandlers };
 
 /**
  * Modern Sharp caching API - recommended for new code
@@ -332,7 +354,7 @@ registerShutdownHandlers();
  */
 export async function createCachedSharp(input?: string | Buffer, options?: SharpOptions): Promise<Sharp> {
   // Import modern caching system
-  const { createCachedSVG, getCachedMetadata } = await import('./sharp-cache');
+  const { createCachedSVG } = await import('./sharp-cache');
   
   // For SVG content, use SVG caching
   if (input && Buffer.isBuffer(input) && input.length > 0) {
