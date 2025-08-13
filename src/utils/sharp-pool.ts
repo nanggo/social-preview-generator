@@ -38,9 +38,10 @@ export class SharpPool {
   }> = [];
 
   constructor(options: SharpPoolOptions = {}) {
-    this.maxSize = options.maxSize || 10;
-    this.maxIdleTime = options.maxIdleTime || 5 * 60 * 1000; // 5 minutes
-    this.acquireTimeout = options.acquireTimeout || 10000; // 10 seconds
+    // Validate and constrain pool parameters for security
+    this.maxSize = Math.max(1, Math.min(options.maxSize || 10, 100)); // 1-100 instances
+    this.maxIdleTime = Math.max(1000, Math.min(options.maxIdleTime || 5 * 60 * 1000, 30 * 60 * 1000)); // 1s-30min
+    this.acquireTimeout = Math.max(1000, Math.min(options.acquireTimeout || 10000, 60000)); // 1s-60s
 
     // Start cleanup interval to remove idle instances
     this.cleanupInterval = setInterval(() => this.cleanup(), 60000); // cleanup every minute
@@ -59,11 +60,13 @@ export class SharpPool {
       pooledInstance.inUse = true;
       pooledInstance.lastUsed = Date.now();
       
-      // Configure the instance with new input if provided
+      // Configure existing pooled instance with new input
       if (input) {
+        // For input-based instances, create new instance (pooling less effective but necessary)
         return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
       } else {
-        return sharp({ ...SHARP_SECURITY_CONFIG, ...options });
+        // Return the actual pooled instance for reuse
+        return pooledInstance.instance;
       }
     }
 
@@ -115,16 +118,20 @@ export class SharpPool {
       pooledInstance.inUse = false;
       pooledInstance.lastUsed = Date.now();
 
-      // Process wait queue if any
-      const waiter = this.waitQueue.shift();
-      if (waiter) {
-        pooledInstance.inUse = true;
-        // Create new configured instance for the waiter
-        try {
-          const newInstance = sharp({ ...SHARP_SECURITY_CONFIG });
-          waiter.resolve(newInstance);
-        } catch (error) {
-          waiter.reject(error instanceof Error ? error : new Error('Failed to create Sharp instance'));
+      // Process wait queue if any (atomic operation)
+      if (this.waitQueue.length > 0) {
+        const waiter = this.waitQueue.shift();
+        if (waiter) {
+          pooledInstance.inUse = true;
+          // Create new configured instance for the waiter
+          try {
+            const newInstance = sharp({ ...SHARP_SECURITY_CONFIG });
+            waiter.resolve(newInstance);
+          } catch (error) {
+            // Reset pooled instance state on error
+            pooledInstance.inUse = false;
+            waiter.reject(error instanceof Error ? error : new Error('Failed to create Sharp instance'));
+          }
         }
       }
     } else {
@@ -158,18 +165,31 @@ export class SharpPool {
     const now = Date.now();
     const initialSize = this.pool.length;
     
-    this.pool = this.pool.filter(pooledInstance => {
+    const toRemove: PooledSharpInstance[] = [];
+    const toKeep: PooledSharpInstance[] = [];
+    
+    for (const pooledInstance of this.pool) {
       const isIdle = !pooledInstance.inUse && (now - pooledInstance.lastUsed) > this.maxIdleTime;
       if (isIdle) {
-        try {
-          // Sharp instances don't have explicit cleanup, but we can destroy them
-          pooledInstance.instance.destroy();
-        } catch (error) {
-          logger?.warn?.('Error destroying idle Sharp instance:', { error: error instanceof Error ? error : String(error) });
-        }
+        toRemove.push(pooledInstance);
+      } else {
+        toKeep.push(pooledInstance);
       }
-      return !isIdle;
-    });
+    }
+    
+    // Safely destroy idle instances
+    for (const pooledInstance of toRemove) {
+      try {
+        // Sharp instances don't have explicit cleanup, but we can destroy them
+        pooledInstance.instance.destroy();
+      } catch (error) {
+        logger?.warn?.('Error destroying idle Sharp instance:', { 
+          error: error instanceof Error ? error : String(error)
+        });
+      }
+    }
+    
+    this.pool = toKeep;
 
     const removedCount = initialSize - this.pool.length;
     if (removedCount > 0) {
@@ -274,9 +294,26 @@ export async function shutdownSharpPool(): Promise<void> {
   await sharpPool.drain();
 }
 
-// Register cleanup handlers
-if (typeof process !== 'undefined') {
-  process.on('SIGTERM', shutdownSharpPool);
-  process.on('SIGINT', shutdownSharpPool);
-  process.on('exit', shutdownSharpPool);
+// Register cleanup handlers (can be disabled if needed)
+let shutdownHandlersRegistered = false;
+
+export function registerShutdownHandlers(): void {
+  if (typeof process !== 'undefined' && !shutdownHandlersRegistered) {
+    process.on('SIGTERM', shutdownSharpPool);
+    process.on('SIGINT', shutdownSharpPool);
+    process.on('exit', shutdownSharpPool);
+    shutdownHandlersRegistered = true;
+  }
 }
+
+export function unregisterShutdownHandlers(): void {
+  if (typeof process !== 'undefined' && shutdownHandlersRegistered) {
+    process.removeListener('SIGTERM', shutdownSharpPool);
+    process.removeListener('SIGINT', shutdownSharpPool);
+    process.removeListener('exit', shutdownSharpPool);
+    shutdownHandlersRegistered = false;
+  }
+}
+
+// Auto-register by default but allow opt-out
+registerShutdownHandlers();
