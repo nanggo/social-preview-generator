@@ -6,7 +6,8 @@
 import { 
   extractMetadata,
   getInflightRequestStats,
-  clearInflightRequests 
+  clearInflightRequests,
+  __test_inflightRequests
 } from '../../src/core/metadata-extractor';
 import { metadataCache } from '../../src/utils/cache';
 import axios from 'axios';
@@ -204,13 +205,71 @@ describe('Cache Stampede Prevention', () => {
       const stats = getInflightRequestStats();
       expect(stats).toHaveProperty('count');
       expect(stats).toHaveProperty('keys');
+      expect(stats).toHaveProperty('maxLimit');
+      expect(stats).toHaveProperty('utilizationPercent');
       expect(Array.isArray(stats.keys)).toBe(true);
       expect(typeof stats.count).toBe('number');
+      expect(typeof stats.maxLimit).toBe('number');
+      expect(typeof stats.utilizationPercent).toBe('number');
+      expect(stats.maxLimit).toBe(1000);
     });
 
     it('should clear in-flight requests when requested', () => {
       // This is tested indirectly in other tests through beforeEach/afterEach
       expect(() => clearInflightRequests()).not.toThrow();
+    });
+  });
+
+  describe('DoS Protection', () => {
+    it('should bypass stampede prevention when at capacity limit', async () => {
+      // Mock axios to create slow requests that fill up the map
+      mockedAxios.get.mockImplementation(async () => {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return {
+          data: '<html><head><title>Test</title></head></html>',
+          headers: { 'content-type': 'text/html' }
+        };
+      });
+
+      mockedOgs.mockImplementation(async () => ({
+        error: false,
+        result: { ogTitle: 'Test Title' },
+        html: '<html></html>',
+        response: {} as any
+      } as any));
+
+      // Clear any existing requests
+      clearInflightRequests();
+
+      // Simulate reaching capacity by directly setting requests in the map
+      // This is a bit hacky but allows us to test the limit without creating 1000 real requests
+      const mockPromise = new Promise<any>(resolve => 
+        setTimeout(() => resolve({ title: 'Mock', url: 'mock', domain: 'mock' }), 200)
+      );
+
+      // Fill up to just under the limit
+      for (let i = 0; i < 999; i++) {
+        const fakeKey = `fake-url-${i}:{}`;
+        __test_inflightRequests!.set(fakeKey, mockPromise);
+      }
+
+      // This request should still use stampede prevention (at 999/1000)
+      const promise1 = extractMetadata('https://test1.com');
+      
+      // Add one more to reach exactly 1000
+      __test_inflightRequests!.set('fake-url-999:{}', mockPromise);
+
+      // This request should bypass stampede prevention (at 1000/1000)
+      const promise2 = extractMetadata('https://test2.com');
+
+      const results = await Promise.all([promise1, promise2]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0].title).toBe('Test Title');
+      expect(results[1].title).toBe('Test Title');
+
+      // Clean up
+      clearInflightRequests();
     });
   });
 });

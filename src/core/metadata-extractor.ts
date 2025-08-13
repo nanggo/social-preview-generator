@@ -12,6 +12,8 @@ import { validateImageBuffer } from '../utils/image-security';
 import { metadataCache } from '../utils/cache';
 
 // In-flight request management to prevent cache stampede
+// Limit the size to prevent memory exhaustion DoS attacks
+const MAX_INFLIGHT_REQUESTS = 1000;
 const inflightRequests = new Map<string, Promise<ExtractedMetadata>>();
 
 /**
@@ -21,10 +23,14 @@ const inflightRequests = new Map<string, Promise<ExtractedMetadata>>();
 export function getInflightRequestStats(): { 
   count: number; 
   keys: string[];
+  maxLimit: number;
+  utilizationPercent: number;
 } {
   return {
     count: inflightRequests.size,
-    keys: Array.from(inflightRequests.keys())
+    keys: Array.from(inflightRequests.keys()),
+    maxLimit: MAX_INFLIGHT_REQUESTS,
+    utilizationPercent: Math.round((inflightRequests.size / MAX_INFLIGHT_REQUESTS) * 100)
   };
 }
 
@@ -35,6 +41,12 @@ export function getInflightRequestStats(): {
 export function clearInflightRequests(): void {
   inflightRequests.clear();
 }
+
+/**
+ * Test helper to access internal inflightRequests map
+ * WARNING: Only for testing purposes
+ */
+export const __test_inflightRequests = process.env.NODE_ENV === 'test' ? inflightRequests : undefined;
 
 /**
  * Extract metadata from a given URL
@@ -57,6 +69,14 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
     let metadataPromise = inflightRequests.get(cacheKey);
 
     if (!metadataPromise) {
+      // Check if we've reached the maximum number of in-flight requests (DoS protection)
+      if (inflightRequests.size >= MAX_INFLIGHT_REQUESTS) {
+        // When at capacity, bypass stampede prevention and process directly
+        // This ensures service continues to work even under potential DoS attacks
+        console.warn(`In-flight requests limit reached (${MAX_INFLIGHT_REQUESTS}). Bypassing stampede prevention for: ${url}`);
+        return extractMetadataInternal(url, cacheKey, securityOptions);
+      }
+
       // If no request is in-flight, create one and store it in the map.
       // This ensures that even if multiple requests arrive concurrently,
       // only one will create the promise.
