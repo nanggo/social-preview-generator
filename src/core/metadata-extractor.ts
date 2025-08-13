@@ -71,10 +71,10 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
     if (!metadataPromise) {
       // Check if we've reached the maximum number of in-flight requests (DoS protection)
       if (inflightRequests.size >= MAX_INFLIGHT_REQUESTS) {
-        // When at capacity, bypass stampede prevention and process directly
-        // This ensures service continues to work even under potential DoS attacks
-        console.warn(`In-flight requests limit reached (${MAX_INFLIGHT_REQUESTS}). Bypassing stampede prevention for: ${url}`);
-        return extractMetadataInternal(url, cacheKey, securityOptions);
+        throw new PreviewGeneratorError(
+          ErrorType.FETCH_ERROR,
+          `In-flight requests limit reached (${MAX_INFLIGHT_REQUESTS}). Server is busy, please try again later.`
+        );
       }
 
       // If no request is in-flight, create one and store it in the map.

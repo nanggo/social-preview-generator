@@ -221,8 +221,8 @@ describe('Cache Stampede Prevention', () => {
   });
 
   describe('DoS Protection', () => {
-    it('should bypass stampede prevention when at capacity limit', async () => {
-      // Mock axios to create slow requests that fill up the map
+    it('should reject requests when at capacity limit', async () => {
+      // Mock axios for the one request that should succeed
       mockedAxios.get.mockImplementation(async () => {
         await new Promise(resolve => setTimeout(resolve, 100));
         return {
@@ -242,7 +242,6 @@ describe('Cache Stampede Prevention', () => {
       clearInflightRequests();
 
       // Simulate reaching capacity by directly setting requests in the map
-      // This is a bit hacky but allows us to test the limit without creating 1000 real requests
       const mockPromise = new Promise<any>(resolve => 
         setTimeout(() => resolve({ title: 'Mock', url: 'mock', domain: 'mock' }), 200)
       );
@@ -253,20 +252,17 @@ describe('Cache Stampede Prevention', () => {
         __test_inflightRequests!.set(fakeKey, mockPromise);
       }
 
-      // This request should still use stampede prevention (at 999/1000)
-      const promise1 = extractMetadata('https://test1.com');
+      // This request should still work (at 999/1000)
+      const result1 = await extractMetadata('https://test1.com');
+      expect(result1.title).toBe('Test Title');
       
       // Add one more to reach exactly 1000
       __test_inflightRequests!.set('fake-url-999:{}', mockPromise);
 
-      // This request should bypass stampede prevention (at 1000/1000)
-      const promise2 = extractMetadata('https://test2.com');
-
-      const results = await Promise.all([promise1, promise2]);
-
-      expect(results).toHaveLength(2);
-      expect(results[0].title).toBe('Test Title');
-      expect(results[1].title).toBe('Test Title');
+      // This request should be rejected (at 1000/1000)
+      await expect(extractMetadata('https://test2.com')).rejects.toThrow(
+        'In-flight requests limit reached (1000). Server is busy, please try again later.'
+      );
 
       // Clean up
       clearInflightRequests();
