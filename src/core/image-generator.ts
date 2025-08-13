@@ -47,7 +47,7 @@ export async function generateImage(
     } else {
       // Create blank canvas with gradient background or transparent canvas based on template settings
       if (template.imageProcessing?.requiresTransparentCanvas) {
-        baseImage = createTransparentCanvas(width, height);
+        baseImage = await createTransparentCanvas(width, height);
       } else {
         baseImage = await createBlankCanvas(width, height, options);
       }
@@ -92,7 +92,7 @@ async function processBackgroundImage(
 ): Promise<sharp.Sharp> {
   try {
     // Use secure Sharp instance
-    const image = createSecureSharpInstance(imageBuffer);
+    const image = await createSecureSharpInstance(imageBuffer);
     await image.metadata();
 
     // Apply template-specific image processing settings

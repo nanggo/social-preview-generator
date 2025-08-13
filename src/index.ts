@@ -251,7 +251,7 @@ async function processImageForTemplate(
   if (template.layout.imagePosition === 'none') {
     // Use transparent canvas if template requires it, otherwise use blank canvas
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
+      return await createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -260,7 +260,7 @@ async function processImageForTemplate(
   if (!metadata.image) {
     // Use transparent canvas if template requires it for custom backgrounds
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
+      return await createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -268,7 +268,7 @@ async function processImageForTemplate(
   // Process background image with template-specific effects
   try {
     const imageBuffer = await fetchImage(metadata.image, options.security);
-    const secureImage = createSecureSharpInstance(imageBuffer);
+    const secureImage = await createSecureSharpInstance(imageBuffer);
     let processedImage = secureResize(secureImage, width, height, {
       fit: 'cover',
       position: 'center',
@@ -309,7 +309,7 @@ async function processImageForTemplate(
 
     // Use transparent canvas if template requires it for custom backgrounds
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
+      return await createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }

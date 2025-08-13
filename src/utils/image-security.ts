@@ -367,10 +367,12 @@ export function sanitizeSvgContent(svgContent: string): string {
 
 /**
  * Create a secure Sharp instance with safety checks and timeout protection
+ * Uses pooled instances for better performance
  */
-export function createSecureSharpInstance(imageBuffer: Buffer): sharp.Sharp {
+export async function createSecureSharpInstance(imageBuffer: Buffer): Promise<sharp.Sharp> {
+  const { createPooledSharp } = await import('./sharp-pool');
   // This will be called after validateImageBuffer, so we know it's safe
-  return sharp(imageBuffer, SHARP_SECURITY_CONFIG);
+  return createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG);
 }
 
 /**
@@ -434,9 +436,11 @@ export function secureResize(
 
 /**
  * Create a Sharp instance with metadata removal for privacy and security
+ * Uses pooled instances for better performance
  */
-export function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): sharp.Sharp {
-  return sharp(imageBuffer, SHARP_SECURITY_CONFIG)
+export async function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): Promise<sharp.Sharp> {
+  const { createPooledSharp } = await import('./sharp-pool');
+  return (await createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG))
     // Remove EXIF and other metadata by default - use empty metadata
     .withMetadata({});
 }
