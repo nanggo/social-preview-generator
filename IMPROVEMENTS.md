@@ -421,7 +421,13 @@
   - ✅ `createTransparentCanvas()` → async 함수로 변경
   - ✅ 호출부 모두 await 패턴으로 업데이트
 - **품질 확인**: 빌드 성공, 린트 에러 수정, 대부분 테스트 통과
-- **브랜치 관리**: `perf/optimization` 브랜치 생성 및 원격 푸시
+- **보안 리뷰**: `/security-review` 실행 후 critical 취약점 수정
+  - ✅ Sharp 인스턴스 재사용 버그 수정 (HIGH 위험도)
+  - ✅ 대기열 레이스 컨디션 개선 (MEDIUM-HIGH 위험도)
+  - ✅ 풀 파라미터 입력 검증 추가 (DoS 방지)
+  - ✅ 에러 처리 및 정리 안전성 향상
+  - ✅ 전역 이벤트 핸들러 lifecycle 관리 개선
+- **브랜치 관리**: `perf/optimization` 브랜치 생성 및 원격 푸시 ([6ce6796])
 
 ---
 
