@@ -31,10 +31,14 @@ import {
 } from './utils/validators';
 import { SanitizedOptions } from './types';
 import sharp from 'sharp';
-import { initializeSharpSecurity, createSecureSharpInstance, secureResize } from './utils/image-security';
+import { initializeSharpSecurity, secureResize } from './utils/image-security';
+import { createCachedSVG } from './utils/sharp-cache';
 
 // Initialize Sharp security settings
 initializeSharpSecurity();
+
+// Pre-load image security module at module level for performance
+const imageSecurityPromise = import('./utils/image-security');
 
 // Re-export types
 export {
@@ -58,6 +62,26 @@ export {
   getInflightRequestStats,
   clearInflightRequests,
 } from './core/metadata-extractor';
+
+// Re-export Sharp caching utilities
+export {
+  getCacheStats,
+  clearAllCaches,
+  shutdownSharpCaches,
+} from './utils/sharp-cache';
+
+// Re-export Sharp APIs (pooling removed, caching recommended)
+export {
+  // Modern caching API (recommended)
+  createCachedSharp,
+  withCachedSharp,
+  // Legacy pooling API (now safe no-ops for backward compatibility)
+  createPooledSharp,
+  withPooledSharp,
+  releasePooledSharp,
+  getSharpPoolStats,
+  shutdownSharpPool,
+} from './utils/sharp-pool';
 
 /**
  * Template registry
@@ -234,7 +258,9 @@ async function generateDefaultOverlay(
     </svg>
   `;
 
-  return Buffer.from(overlaySvg);
+  // Use cached SVG creation for better performance
+  const cachedSVG = await createCachedSVG(overlaySvg);
+  return cachedSVG.toBuffer();
 }
 
 /**
@@ -251,7 +277,7 @@ async function processImageForTemplate(
   if (template.layout.imagePosition === 'none') {
     // Use transparent canvas if template requires it, otherwise use blank canvas
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
+      return await createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -260,7 +286,7 @@ async function processImageForTemplate(
   if (!metadata.image) {
     // Use transparent canvas if template requires it for custom backgrounds
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
+      return await createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }
@@ -268,38 +294,42 @@ async function processImageForTemplate(
   // Process background image with template-specific effects
   try {
     const imageBuffer = await fetchImage(metadata.image, options.security);
-    const secureImage = createSecureSharpInstance(imageBuffer);
-    let processedImage = secureResize(secureImage, width, height, {
-      fit: 'cover',
-      position: 'center',
+    
+    // Use withSecureSharp for automatic pool management
+    const { withSecureSharp } = await imageSecurityPromise;
+    return await withSecureSharp(imageBuffer, async (secureImage) => {
+      let processedImage = secureResize(secureImage, width, height, {
+        fit: 'cover',
+        position: 'center',
+      });
+
+      // Apply template-specific effects in optimized pipeline
+      const blurRadius = template.effects?.blur?.radius ?? 0;
+      const brightnessValue = template.imageProcessing?.brightness ?? 1.0;
+      const saturationValue = template.imageProcessing?.saturation;
+
+      // Apply blur first if needed
+      if (blurRadius > 0) {
+        processedImage = processedImage.blur(blurRadius);
+      }
+
+      // Apply brightness and saturation together for efficiency
+      if (brightnessValue !== 1.0 || saturationValue !== undefined) {
+        const modulateOptions: { brightness?: number; saturation?: number } = {};
+        
+        if (brightnessValue !== 1.0) {
+          modulateOptions.brightness = brightnessValue;
+        }
+        
+        if (saturationValue !== undefined) {
+          modulateOptions.saturation = saturationValue;
+        }
+        
+        processedImage = processedImage.modulate(modulateOptions);
+      }
+
+      return processedImage;
     });
-
-    // Apply template-specific effects in optimized pipeline
-    const blurRadius = template.effects?.blur?.radius ?? 0;
-    const brightnessValue = template.imageProcessing?.brightness ?? 1.0;
-    const saturationValue = template.imageProcessing?.saturation;
-
-    // Apply blur first if needed
-    if (blurRadius > 0) {
-      processedImage = processedImage.blur(blurRadius);
-    }
-
-    // Apply brightness and saturation together for efficiency
-    if (brightnessValue !== 1.0 || saturationValue !== undefined) {
-      const modulateOptions: { brightness?: number; saturation?: number } = {};
-      
-      if (brightnessValue !== 1.0) {
-        modulateOptions.brightness = brightnessValue;
-      }
-      
-      if (saturationValue !== undefined) {
-        modulateOptions.saturation = saturationValue;
-      }
-      
-      processedImage = processedImage.modulate(modulateOptions);
-    }
-
-    return processedImage;
   } catch (fetchError) {
     // If image fetch fails, create appropriate canvas based on template configuration
     logImageFetchError(
@@ -309,7 +339,7 @@ async function processImageForTemplate(
 
     // Use transparent canvas if template requires it for custom backgrounds
     if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
+      return await createTransparentCanvas(width, height);
     }
     return await createBlankCanvas(width, height, options);
   }

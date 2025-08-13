@@ -143,8 +143,8 @@ describe('Validators', () => {
   });
 
   describe('createTransparentCanvas', () => {
-    test('should create canvas with correct dimensions', () => {
-      const canvas = createTransparentCanvas(800, 600);
+    test('should create canvas with correct dimensions', async () => {
+      const canvas = await createTransparentCanvas(800, 600);
       expect(canvas).toBeDefined();
       // Note: We can't easily test sharp internals in unit tests,
       // but we can verify it returns a sharp instance

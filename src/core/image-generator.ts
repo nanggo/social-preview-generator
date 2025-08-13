@@ -4,7 +4,7 @@
  */
 
 import sharp from 'sharp';
-import { createSecureSharpInstance, secureResize } from '../utils/image-security';
+import { secureResize } from '../utils/image-security';
 import {
   ExtractedMetadata,
   PreviewOptions,
@@ -13,6 +13,10 @@ import {
   PreviewGeneratorError,
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
+import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
+
+// Pre-load image security module at module level for performance
+const imageSecurityPromise = import('../utils/image-security');
 import { fetchImage } from './metadata-extractor';
 import { createTransparentCanvas, validateColor } from '../utils/validators';
 
@@ -47,7 +51,7 @@ export async function generateImage(
     } else {
       // Create blank canvas with gradient background or transparent canvas based on template settings
       if (template.imageProcessing?.requiresTransparentCanvas) {
-        baseImage = createTransparentCanvas(width, height);
+        baseImage = await createTransparentCanvas(width, height);
       } else {
         baseImage = await createBlankCanvas(width, height, options);
       }
@@ -91,46 +95,48 @@ async function processBackgroundImage(
   template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
-    // Use secure Sharp instance
-    const image = createSecureSharpInstance(imageBuffer);
-    await image.metadata();
+    // Use withSecureSharp for automatic pool management  
+    const { withSecureSharp } = await imageSecurityPromise;
+    return await withSecureSharp(imageBuffer, async (image) => {
+      await image.metadata();
 
-    // Apply template-specific image processing settings
-    const imageProcessing = template.imageProcessing || {};
+      // Apply template-specific image processing settings
+      const imageProcessing = template.imageProcessing || {};
 
-    // Use secure resize function
-    let processedImage = secureResize(image, width, height, {
-      fit: 'cover',
-      position: 'center',
+      // Use secure resize function
+      let processedImage = secureResize(image, width, height, {
+        fit: 'cover',
+        position: 'center',
+      });
+
+      // Apply template-specific blur if specified
+      const blurRadius = imageProcessing.blur || template.effects?.blur?.radius || 2;
+      if (blurRadius > 0) {
+        processedImage = processedImage.blur(blurRadius);
+      }
+
+      // Apply template-specific brightness and saturation together for efficiency
+      const brightness = imageProcessing.brightness !== undefined ? imageProcessing.brightness : 0.7;
+
+      const saturation = imageProcessing.saturation;
+
+      // Apply modulation only once with all necessary changes
+      if (brightness !== 1 || saturation !== undefined) {
+        const modulateOptions: { brightness?: number; saturation?: number } = {};
+
+        if (brightness !== 1) {
+          modulateOptions.brightness = brightness;
+        }
+
+        if (saturation !== undefined) {
+          modulateOptions.saturation = saturation;
+        }
+
+        processedImage = processedImage.modulate(modulateOptions);
+      }
+
+      return processedImage;
     });
-
-    // Apply template-specific blur if specified
-    const blurRadius = imageProcessing.blur || template.effects?.blur?.radius || 2;
-    if (blurRadius > 0) {
-      processedImage = processedImage.blur(blurRadius);
-    }
-
-    // Apply template-specific brightness and saturation together for efficiency
-    const brightness = imageProcessing.brightness !== undefined ? imageProcessing.brightness : 0.7;
-
-    const saturation = imageProcessing.saturation;
-
-    // Apply modulation only once with all necessary changes
-    if (brightness !== 1 || saturation !== undefined) {
-      const modulateOptions: { brightness?: number; saturation?: number } = {};
-
-      if (brightness !== 1) {
-        modulateOptions.brightness = brightness;
-      }
-
-      if (saturation !== undefined) {
-        modulateOptions.saturation = saturation;
-      }
-
-      processedImage = processedImage.modulate(modulateOptions);
-    }
-
-    return processedImage;
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
@@ -142,6 +148,7 @@ async function processBackgroundImage(
 
 /**
  * Create blank canvas with gradient background
+ * Uses caching for better performance with repeated requests
  */
 export async function createBlankCanvas(
   width: number,
@@ -152,24 +159,13 @@ export async function createBlankCanvas(
   const backgroundColor = validateColor(options.colors?.background || '#1a1a2e');
   const accentColor = validateColor(options.colors?.accent || '#16213e');
 
-  // Create gradient SVG
-  const gradientSvg = `
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:${backgroundColor};stop-opacity:1" />
-          <stop offset="100%" style="stop-color:${accentColor};stop-opacity:1" />
-        </linearGradient>
-        <pattern id="pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
-          <circle cx="2" cy="2" r="1" fill="white" opacity="0.05"/>
-        </pattern>
-      </defs>
-      <rect width="${width}" height="${height}" fill="url(#bgGradient)"/>
-      <rect width="${width}" height="${height}" fill="url(#pattern)"/>
-    </svg>
-  `;
-
-  return sharp(Buffer.from(gradientSvg));
+  // Use cached canvas creation for performance
+  return createCachedCanvas(width, height, {
+    colors: {
+      background: backgroundColor,
+      accent: accentColor
+    }
+  });
 }
 
 /**
@@ -299,7 +295,9 @@ async function generateTextOverlay(
     </svg>
   `;
 
-  return Buffer.from(overlaySvg);
+  // Use cached SVG creation for better performance
+  const cachedSVG = await createCachedSVG(overlaySvg);
+  return cachedSVG.toBuffer();
 }
 
 /**
