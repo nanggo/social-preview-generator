@@ -1,6 +1,26 @@
 /**
  * LRU Cache implementation with TTL support
  * Used for caching metadata extraction results
+ * 
+ * @example
+ * ```typescript
+ * import { metadataCache, stopCacheCleanup, startCacheCleanup } from './cache';
+ * 
+ * // For graceful server shutdown
+ * process.on('SIGTERM', () => {
+ *   stopCacheCleanup();
+ *   // ... other cleanup
+ * });
+ * 
+ * // For testing environments
+ * afterAll(() => {
+ *   stopCacheCleanup();
+ * });
+ * 
+ * // Custom cleanup interval (5 minutes)
+ * stopCacheCleanup();
+ * startCacheCleanup(5 * 60 * 1000);
+ * ```
  */
 
 interface CacheEntry<T> {
@@ -112,10 +132,45 @@ import { ExtractedMetadata } from '../types';
 
 export const metadataCache = new LRUCache<ExtractedMetadata>(100, 5 * 60 * 1000); // 100 entries, 5 minutes TTL
 
-// Automatic cleanup every 10 minutes
-const cleanupInterval = setInterval(() => {
-  metadataCache.cleanup();
-}, 10 * 60 * 1000);
+// Cache cleanup management
+let cleanupInterval: NodeJS.Timeout | null = null;
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
-// Don't prevent Node.js process from exiting
-cleanupInterval.unref();
+/**
+ * Starts automatic cache cleanup if not already running.
+ * @param intervalMs - Cleanup interval in milliseconds (default: 10 minutes)
+ */
+export function startCacheCleanup(intervalMs: number = CLEANUP_INTERVAL_MS): void {
+  if (cleanupInterval) {
+    return; // Already running
+  }
+  
+  cleanupInterval = setInterval(() => {
+    metadataCache.cleanup();
+  }, intervalMs);
+  
+  // Don't prevent Node.js process from exiting
+  cleanupInterval.unref();
+}
+
+/**
+ * Stops the automatic cache cleanup interval.
+ * Useful for graceful shutdown in applications and testing environments.
+ */
+export function stopCacheCleanup(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+}
+
+/**
+ * Checks if automatic cache cleanup is currently running.
+ * @returns true if cleanup interval is active
+ */
+export function isCacheCleanupRunning(): boolean {
+  return cleanupInterval !== null;
+}
+
+// Start automatic cleanup by default
+startCacheCleanup();

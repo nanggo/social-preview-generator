@@ -46,6 +46,13 @@ export {
   PreviewGeneratorError,
 };
 
+// Re-export cache management functions
+export {
+  startCacheCleanup,
+  stopCacheCleanup,
+  isCacheCleanupRunning,
+} from './utils/cache';
+
 /**
  * Template registry
  */
