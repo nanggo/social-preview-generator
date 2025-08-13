@@ -124,15 +124,9 @@ export class SharpPool {
         const waiter = this.waitQueue.shift();
         if (waiter) {
           pooledInstance.inUse = true;
-          // Create new configured instance for the waiter
-          try {
-            const newInstance = sharp({ ...SHARP_SECURITY_CONFIG });
-            waiter.resolve(newInstance);
-          } catch (error) {
-            // Reset pooled instance state on error
-            pooledInstance.inUse = false;
-            waiter.reject(error instanceof Error ? error : new Error('Failed to create Sharp instance'));
-          }
+          pooledInstance.lastUsed = Date.now();
+          // Return the actual pooled instance that just became available
+          waiter.resolve(pooledInstance.instance);
         }
       }
     } else {
@@ -197,18 +191,15 @@ export class SharpPool {
       logger?.debug?.(`Sharp pool cleanup: removed ${removedCount} idle instances`);
     }
 
-    // Clean up expired waiters
-    const expiredWaiters = this.waitQueue.filter(waiter => 
-      now - waiter.timestamp > this.acquireTimeout
-    );
-    
-    expiredWaiters.forEach(waiter => {
-      waiter.reject(new Error('Sharp pool acquire timeout during cleanup'));
-    });
-    
-    this.waitQueue = this.waitQueue.filter(waiter => 
-      now - waiter.timestamp <= this.acquireTimeout
-    );
+    // Clean up expired waiters atomically to prevent race conditions
+    let i = this.waitQueue.length;
+    while (i--) {
+      const waiter = this.waitQueue[i];
+      if (now - waiter.timestamp > this.acquireTimeout) {
+        waiter.reject(new Error('Sharp pool acquire timeout during cleanup'));
+        this.waitQueue.splice(i, 1);
+      }
+    }
   }
 
   /**
@@ -239,11 +230,14 @@ export class SharpPool {
     // Clear cleanup interval
     clearInterval(this.cleanupInterval);
 
-    // Reject all waiting requests
-    this.waitQueue.forEach(waiter => {
+    // Atomically capture and clear the wait queue to prevent race conditions
+    const waiters = this.waitQueue;
+    this.waitQueue = [];
+    
+    // Reject all captured waiting requests
+    waiters.forEach(waiter => {
       waiter.reject(new Error('Sharp pool is being drained'));
     });
-    this.waitQueue = [];
 
     // Destroy all instances
     for (const pooledInstance of this.pool) {
