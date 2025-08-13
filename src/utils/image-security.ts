@@ -9,9 +9,8 @@ import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import * as os from 'os';
 
-// Cache file-type module to avoid repeated dynamic imports
-// Use typeof import to ensure type safety with actual module structure
-let fileTypeModule: typeof import('file-type') | null = null;
+// Optimize file-type module to avoid repeated dynamic imports
+// Use single promise to cache the import result
 let fileTypeImportPromise: Promise<typeof import('file-type')> | null = null;
 import {
   MAX_INPUT_PIXELS,
@@ -173,15 +172,12 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
 
   // First attempt: Use file-type library for robust detection
   try {
-    // Use cached module or import if not cached
-    if (!fileTypeModule) {
-      if (!fileTypeImportPromise) {
-        fileTypeImportPromise = import('file-type');
-      }
-      fileTypeModule = await fileTypeImportPromise;
+    // Use cached import promise for better performance
+    if (!fileTypeImportPromise) {
+      fileTypeImportPromise = import('file-type');
     }
     
-    const { fileTypeFromBuffer } = fileTypeModule;
+    const { fileTypeFromBuffer } = await fileTypeImportPromise;
     const detected = await fileTypeFromBuffer(imageBuffer);
 
     if (!detected || !ALLOWED_MIME_TYPES.has(detected.mime)) {
