@@ -54,9 +54,9 @@ export class SharpPool {
    * Waits for available instance if pool is full
    */
   async acquire(input?: string | Buffer, options?: SharpOptions): Promise<Sharp> {
-    // If input is provided, create directly without pooling
-    // Sharp instances with input are not reusable
-    if (input) {
+    // If input or create options are provided, create a new instance directly without pooling
+    // These instances are not statefully reusable in the pool
+    if (input || options?.create) {
       return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
     }
 
@@ -113,19 +113,20 @@ export class SharpPool {
   release(instance: Sharp): void {
     const pooledInstance = this.pool.find(p => p.instance === instance);
     if (pooledInstance) {
-      pooledInstance.inUse = false;
-      pooledInstance.lastUsed = Date.now();
-
-      // Process wait queue if any (atomic operation)
+      // If there's a waiting request, pass the instance directly without marking it as free
       if (this.waitQueue.length > 0) {
         const waiter = this.waitQueue.shift();
         if (waiter) {
-          pooledInstance.inUse = true;
           pooledInstance.lastUsed = Date.now();
-          // Return the actual pooled instance that just became available
+          // The instance remains inUse and is passed to the next consumer
           waiter.resolve(pooledInstance.instance);
+          return;
         }
       }
+
+      // No waiters, so release the instance back to the pool
+      pooledInstance.inUse = false;
+      pooledInstance.lastUsed = Date.now();
     } else {
       // Instance not from pool, just let it be garbage collected
       logger?.debug?.('Sharp instance not from pool, releasing manually');
@@ -259,11 +260,11 @@ export async function withPooledSharp<T>(
   try {
     return await operation(sharpInstance);
   } finally {
-    // Only release if it's a pooled instance (no input)
-    if (!input) {
+    // Only release if it's a pooled instance (no input and no create options)
+    if (!input && !options?.create) {
       sharpPool.release(sharpInstance);
     }
-    // Input-based instances are not pooled and will be garbage collected
+    // Input-based and create-based instances are not pooled and will be garbage collected
   }
 }
 
