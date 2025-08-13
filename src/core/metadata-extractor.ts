@@ -89,16 +89,14 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       // This ensures that even if multiple requests arrive concurrently,
       // only one will create the promise.
       const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions, abortController.signal);
-      // Prevent unhandled rejection if timeout occurs before original promise settles
-      originalPromise.catch((error) => {
-        // Log the original error to aid in debugging timeouts
-        console.warn(`Original metadata promise rejected after timeout for ${url}:`, error);
-      });
-      
+
+      let timedOut = false;
+
       // Add timeout protection to prevent stuck promises from blocking the map indefinitely
       let timeoutId: NodeJS.Timeout;
       const timeoutPromise = new Promise<ExtractedMetadata>((_, reject) => {
         timeoutId = setTimeout(() => {
+          timedOut = true; // Mark that timeout has occurred
           // Cancel the ongoing request to prevent resource waste
           abortController.abort();
           reject(new PreviewGeneratorError(
@@ -106,6 +104,15 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
             `In-flight request timeout after ${INFLIGHT_REQUEST_TIMEOUT}ms for URL: ${url}`
           ));
         }, INFLIGHT_REQUEST_TIMEOUT);
+      });
+      
+      // Prevent unhandled rejection if timeout occurs before original promise settles
+      originalPromise.catch((error) => {
+        // Only log the warning if the timeout has already happened.
+        // Otherwise, the main promise race will handle the rejection.
+        if (timedOut) {
+          console.warn(`Original metadata promise rejected after timeout for ${url}:`, error);
+        }
       });
       
       // Race the original promise against the timeout.
