@@ -14,6 +14,8 @@ import { metadataCache } from '../utils/cache';
 // In-flight request management to prevent cache stampede
 // Limit the size to prevent memory exhaustion DoS attacks
 const MAX_INFLIGHT_REQUESTS = 1000;
+// Timeout for in-flight requests to prevent stuck promises from blocking the map indefinitely
+const INFLIGHT_REQUEST_TIMEOUT = process.env.NODE_ENV === 'test' ? 1000 : 30000; // 1s for tests, 30s for production
 const inflightRequests = new Map<string, Promise<ExtractedMetadata>>();
 
 /**
@@ -80,7 +82,20 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       // If no request is in-flight, create one and store it in the map.
       // This ensures that even if multiple requests arrive concurrently,
       // only one will create the promise.
-      metadataPromise = extractMetadataInternal(url, cacheKey, securityOptions);
+      const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions);
+      
+      // Add timeout protection to prevent stuck promises from blocking the map indefinitely
+      const timeoutPromise = new Promise<ExtractedMetadata>((_, reject) => {
+        setTimeout(() => {
+          reject(new PreviewGeneratorError(
+            ErrorType.FETCH_ERROR,
+            `In-flight request timeout after ${INFLIGHT_REQUEST_TIMEOUT}ms for URL: ${url}`
+          ));
+        }, INFLIGHT_REQUEST_TIMEOUT);
+      });
+      
+      // Race the original promise against the timeout
+      metadataPromise = Promise.race([originalPromise, timeoutPromise]);
       inflightRequests.set(cacheKey, metadataPromise);
 
       // The creator of the promise is responsible for cleaning it up from the map

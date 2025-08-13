@@ -267,5 +267,50 @@ describe('Cache Stampede Prevention', () => {
       // Clean up
       clearInflightRequests();
     });
+
+    it('should timeout stuck in-flight requests', async () => {
+      // Mock axios to create a request that never resolves (stuck)
+      mockedAxios.get.mockImplementation(() => 
+        new Promise(() => {}) // Never resolves or rejects
+      );
+
+      // Start a request that will get stuck
+      const stuckPromise = extractMetadata('https://stuck-server.com');
+
+      // The request should timeout after the configured timeout period (1s in test mode)
+      await expect(stuckPromise).rejects.toThrow(
+        'In-flight request timeout after 1000ms for URL: https://stuck-server.com'
+      );
+
+      // After timeout, the in-flight requests should be cleaned up
+      expect(getInflightRequestStats().count).toBe(0);
+    }, 5000); // Test timeout longer than the in-flight timeout
+
+    it('should handle multiple stuck requests independently', async () => {
+      // Mock axios to create stuck requests
+      mockedAxios.get.mockImplementation(() => 
+        new Promise(() => {}) // Never resolves
+      );
+
+      // Start multiple stuck requests
+      const stuckPromise1 = extractMetadata('https://stuck1.com');
+      const stuckPromise2 = extractMetadata('https://stuck2.com');
+
+      // Both should timeout independently
+      await expect(Promise.all([
+        stuckPromise1.catch(e => e),
+        stuckPromise2.catch(e => e)
+      ])).resolves.toEqual([
+        expect.objectContaining({
+          message: expect.stringContaining('In-flight request timeout')
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining('In-flight request timeout')
+        })
+      ]);
+
+      // All requests should be cleaned up
+      expect(getInflightRequestStats().count).toBe(0);
+    }, 5000);
   });
 });
