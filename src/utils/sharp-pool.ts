@@ -210,7 +210,7 @@ export class SharpPool {
    * Drain the pool (for testing or shutdown)
    * Destroys all instances and clears wait queue
    */
-  async drain(): Promise<void> {
+  drain(): void {
     // Clear cleanup interval
     clearInterval(this.cleanupInterval);
 
@@ -284,8 +284,8 @@ export function getSharpPoolStats() {
 /**
  * Graceful shutdown helper
  */
-export async function shutdownSharpPool(): Promise<void> {
-  await sharpPool.drain();
+export function shutdownSharpPool(): void {
+  sharpPool.drain();
 }
 
 // Register cleanup handlers (can be disabled if needed)
