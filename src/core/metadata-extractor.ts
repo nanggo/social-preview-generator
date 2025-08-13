@@ -83,6 +83,8 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       // This ensures that even if multiple requests arrive concurrently,
       // only one will create the promise.
       const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions);
+      // Prevent unhandled rejection if timeout occurs before original promise settles
+      originalPromise.catch(() => {});
       
       // Add timeout protection to prevent stuck promises from blocking the map indefinitely
       const timeoutPromise = new Promise<ExtractedMetadata>((_, reject) => {
