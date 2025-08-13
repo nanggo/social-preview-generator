@@ -82,10 +82,13 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
         );
       }
 
+      // Create AbortController for request cancellation
+      const abortController = new AbortController();
+
       // If no request is in-flight, create one and store it in the map.
       // This ensures that even if multiple requests arrive concurrently,
       // only one will create the promise.
-      const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions);
+      const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions, abortController.signal);
       // Prevent unhandled rejection if timeout occurs before original promise settles
       originalPromise.catch((error) => {
         // Log the original error to aid in debugging timeouts
@@ -96,6 +99,8 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       let timeoutId: NodeJS.Timeout;
       const timeoutPromise = new Promise<ExtractedMetadata>((_, reject) => {
         timeoutId = setTimeout(() => {
+          // Cancel the ongoing request to prevent resource waste
+          abortController.abort();
           reject(new PreviewGeneratorError(
             ErrorType.FETCH_ERROR,
             `In-flight request timeout after ${INFLIGHT_REQUEST_TIMEOUT}ms for URL: ${url}`
@@ -150,13 +155,14 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
 async function extractMetadataInternal(
   url: string,
   cacheKey: string,
-  securityOptions?: SecurityOptions
+  securityOptions?: SecurityOptions,
+  abortSignal?: AbortSignal
 ): Promise<ExtractedMetadata> {
   // Validate URL with SSRF protection and security options
   const validatedUrl = await validateUrl(url, securityOptions);
 
   // Extract Open Graph data
-  const ogData = await fetchOpenGraphData(validatedUrl, securityOptions);
+  const ogData = await fetchOpenGraphData(validatedUrl, securityOptions, abortSignal);
 
   // Parse and normalize metadata
   const metadata = parseMetadata(ogData, validatedUrl);
@@ -207,7 +213,7 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
 /**
  * Fetch Open Graph data using open-graph-scraper
  */
-async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions): Promise<Record<string, unknown>> {
+async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Record<string, unknown>> {
   try {
     // Create secure axios config with redirect validation and secure agent
     const axiosConfig = {
@@ -221,6 +227,7 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
       httpAgent: getEnhancedSecureAgentForUrl(url),
       httpsAgent: getEnhancedSecureAgentForUrl(url),
+      signal: abortSignal, // Add abort signal for request cancellation
       beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as RedirectOptions;
@@ -400,9 +407,10 @@ function cleanText(text: string): string {
  * Fetch image from URL and return as buffer with size and type validation
  * @param imageUrl - URL of the image to fetch
  * @param securityOptions - Security configuration options
+ * @param abortSignal - Optional abort signal for request cancellation
  * @returns Image buffer
  */
-export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions): Promise<Buffer> {
+export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Buffer> {
   try {
     // Validate URL with SSRF protection before fetching
     const validatedUrl = await validateUrl(imageUrl, securityOptions);
@@ -437,6 +445,7 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       maxBodyLength: MAX_IMAGE_SIZE,
       httpAgent: getEnhancedSecureAgentForUrl(validatedUrl),
       httpsAgent: getEnhancedSecureAgentForUrl(validatedUrl),
+      signal: abortSignal, // Add abort signal for request cancellation
       beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as RedirectOptions;
