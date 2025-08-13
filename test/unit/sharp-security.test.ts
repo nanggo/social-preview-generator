@@ -92,7 +92,7 @@ describe('Sharp Security Configuration - Enhanced', () => {
 
     it('should create instance with security configuration', async () => {
       const buffer = await createTestImageBuffer();
-      const instance = createSecureSharpInstance(buffer);
+      const instance = await createSecureSharpInstance(buffer);
       
       expect(instance).toBeDefined();
       // Verify the instance is properly configured
@@ -103,7 +103,7 @@ describe('Sharp Security Configuration - Enhanced', () => {
 
     it('should create instance with metadata cleaning', async () => {
       const buffer = await createTestImageBuffer();
-      const instance = createSecureSharpWithCleanMetadata(buffer);
+      const instance = await createSecureSharpWithCleanMetadata(buffer);
       
       expect(instance).toBeDefined();
       
@@ -120,7 +120,7 @@ describe('Sharp Security Configuration - Enhanced', () => {
 
     it('should handle sequential read for memory efficiency', async () => {
       const buffer = await createTestImageBuffer(1000, 1000); // Larger image
-      const instance = createSecureSharpInstance(buffer);
+      const instance = await createSecureSharpInstance(buffer);
       
       // Should be able to process without memory issues
       const resized = await instance

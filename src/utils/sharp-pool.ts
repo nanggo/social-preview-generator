@@ -62,10 +62,11 @@ export class SharpPool {
       
       // Configure existing pooled instance with new input
       if (input) {
-        // For input-based instances, create new instance (pooling less effective but necessary)
+        // For input-based instances, create new configured instance 
+        // but keep pool instance marked as in use for proper tracking
         return sharp(input, { ...SHARP_SECURITY_CONFIG, ...options });
       } else {
-        // Return the actual pooled instance for reuse
+        // Return the actual pooled instance for reuse (no input case)
         return pooledInstance.instance;
       }
     }
@@ -271,6 +272,23 @@ export const sharpPool = new SharpPool({
  */
 export async function createPooledSharp(input?: string | Buffer, options?: SharpOptions): Promise<Sharp> {
   return sharpPool.acquire(input, options);
+}
+
+/**
+ * Wraps Sharp operations to automatically handle pool release
+ * Use this for operations that need automatic cleanup
+ */
+export async function withPooledSharp<T>(
+  operation: (sharp: Sharp) => Promise<T>,
+  input?: string | Buffer,
+  options?: SharpOptions
+): Promise<T> {
+  const sharpInstance = await sharpPool.acquire(input, options);
+  try {
+    return await operation(sharpInstance);
+  } finally {
+    sharpPool.release(sharpInstance);
+  }
 }
 
 /**

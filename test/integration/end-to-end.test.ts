@@ -96,7 +96,11 @@ describe('End-to-End Integration Tests', () => {
       expect(result).toBeInstanceOf(Buffer);
       
       const sharpInstance = mockedSharp.mock.results[0].value;
-      expect(sharpInstance.jpeg).toHaveBeenCalledWith({ quality: 85 });
+      expect(sharpInstance.jpeg).toHaveBeenCalledWith({ 
+        quality: 85,
+        progressive: true,
+        mozjpeg: true 
+      });
     });
 
     it('should handle fallback when metadata extraction fails', async () => {

@@ -54,7 +54,11 @@ describe('Image Generator', () => {
 
       expect(result).toBeInstanceOf(Buffer);
       expect(mockSharpInstance.composite).toHaveBeenCalled();
-      expect(mockSharpInstance.jpeg).toHaveBeenCalledWith({ quality: 90 });
+      expect(mockSharpInstance.jpeg).toHaveBeenCalledWith({ 
+        quality: 90,
+        progressive: true,
+        mozjpeg: true
+      });
     });
 
     it('should handle custom fallback text', async () => {

@@ -4,7 +4,7 @@
  */
 
 import sharp from 'sharp';
-import { createSecureSharpInstance, secureResize } from '../utils/image-security';
+import { secureResize } from '../utils/image-security';
 import {
   ExtractedMetadata,
   PreviewOptions,
@@ -91,46 +91,48 @@ async function processBackgroundImage(
   template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
-    // Use secure Sharp instance
-    const image = await createSecureSharpInstance(imageBuffer);
-    await image.metadata();
+    // Use withSecureSharp for automatic pool management
+    const { withSecureSharp } = await import('../utils/image-security');
+    return await withSecureSharp(imageBuffer, async (image) => {
+      await image.metadata();
 
-    // Apply template-specific image processing settings
-    const imageProcessing = template.imageProcessing || {};
+      // Apply template-specific image processing settings
+      const imageProcessing = template.imageProcessing || {};
 
-    // Use secure resize function
-    let processedImage = secureResize(image, width, height, {
-      fit: 'cover',
-      position: 'center',
+      // Use secure resize function
+      let processedImage = secureResize(image, width, height, {
+        fit: 'cover',
+        position: 'center',
+      });
+
+      // Apply template-specific blur if specified
+      const blurRadius = imageProcessing.blur || template.effects?.blur?.radius || 2;
+      if (blurRadius > 0) {
+        processedImage = processedImage.blur(blurRadius);
+      }
+
+      // Apply template-specific brightness and saturation together for efficiency
+      const brightness = imageProcessing.brightness !== undefined ? imageProcessing.brightness : 0.7;
+
+      const saturation = imageProcessing.saturation;
+
+      // Apply modulation only once with all necessary changes
+      if (brightness !== 1 || saturation !== undefined) {
+        const modulateOptions: { brightness?: number; saturation?: number } = {};
+
+        if (brightness !== 1) {
+          modulateOptions.brightness = brightness;
+        }
+
+        if (saturation !== undefined) {
+          modulateOptions.saturation = saturation;
+        }
+
+        processedImage = processedImage.modulate(modulateOptions);
+      }
+
+      return processedImage;
     });
-
-    // Apply template-specific blur if specified
-    const blurRadius = imageProcessing.blur || template.effects?.blur?.radius || 2;
-    if (blurRadius > 0) {
-      processedImage = processedImage.blur(blurRadius);
-    }
-
-    // Apply template-specific brightness and saturation together for efficiency
-    const brightness = imageProcessing.brightness !== undefined ? imageProcessing.brightness : 0.7;
-
-    const saturation = imageProcessing.saturation;
-
-    // Apply modulation only once with all necessary changes
-    if (brightness !== 1 || saturation !== undefined) {
-      const modulateOptions: { brightness?: number; saturation?: number } = {};
-
-      if (brightness !== 1) {
-        modulateOptions.brightness = brightness;
-      }
-
-      if (saturation !== undefined) {
-        modulateOptions.saturation = saturation;
-      }
-
-      processedImage = processedImage.modulate(modulateOptions);
-    }
-
-    return processedImage;
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,

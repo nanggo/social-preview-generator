@@ -368,11 +368,24 @@ export function sanitizeSvgContent(svgContent: string): string {
 /**
  * Create a secure Sharp instance with safety checks and timeout protection
  * Uses pooled instances for better performance
+ * Note: Caller is responsible for releasing the instance back to the pool
  */
 export async function createSecureSharpInstance(imageBuffer: Buffer): Promise<sharp.Sharp> {
   const { createPooledSharp } = await import('./sharp-pool');
   // This will be called after validateImageBuffer, so we know it's safe
   return createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG);
+}
+
+/**
+ * Execute a Sharp operation with automatic pool management
+ * Use this for one-shot operations that need automatic cleanup
+ */
+export async function withSecureSharp<T>(
+  imageBuffer: Buffer,
+  operation: (sharp: sharp.Sharp) => Promise<T>
+): Promise<T> {
+  const { withPooledSharp } = await import('./sharp-pool');
+  return withPooledSharp(operation, imageBuffer, SHARP_SECURITY_CONFIG);
 }
 
 /**
@@ -437,12 +450,29 @@ export function secureResize(
 /**
  * Create a Sharp instance with metadata removal for privacy and security
  * Uses pooled instances for better performance
+ * Note: Caller is responsible for releasing the instance back to the pool
  */
 export async function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): Promise<sharp.Sharp> {
   const { createPooledSharp } = await import('./sharp-pool');
   return (await createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG))
     // Remove EXIF and other metadata by default - use empty metadata
     .withMetadata({});
+}
+
+/**
+ * Execute a Sharp operation with automatic pool management and clean metadata
+ * Use this for one-shot operations that need automatic cleanup
+ */
+export async function withSecureSharpCleanMetadata<T>(
+  imageBuffer: Buffer,
+  operation: (sharp: sharp.Sharp) => Promise<T>
+): Promise<T> {
+  const { withPooledSharp } = await import('./sharp-pool');
+  return withPooledSharp(
+    async (sharpInstance) => operation(sharpInstance.withMetadata({})),
+    imageBuffer, 
+    SHARP_SECURITY_CONFIG
+  );
 }
 
 /**
