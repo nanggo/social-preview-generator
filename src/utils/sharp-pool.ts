@@ -15,6 +15,7 @@
 
 import sharp, { Sharp, SharpOptions } from 'sharp';
 import { SHARP_SECURITY_CONFIG } from '../constants/security';
+import { createCachedSVG } from './sharp-cache';
 
 /**
  * Create a secure Sharp instance with proper configuration
@@ -101,8 +102,7 @@ export function shutdownSharpPool(): void {
  * Provides better performance through intelligent caching
  */
 export async function createCachedSharp(input?: string | Buffer, options?: SharpOptions): Promise<Sharp> {
-  // Import modern caching system
-  const { createCachedSVG } = await import('./sharp-cache');
+  // Use modern caching system
   
   // For SVG content, use SVG caching
   if (input && Buffer.isBuffer(input) && input.length > 0) {

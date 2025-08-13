@@ -8,6 +8,8 @@ import { PreviewGeneratorError, ErrorType } from '../types';
 import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import * as os from 'os';
+import { getCachedMetadata } from './sharp-cache';
+import { createPooledSharp, withPooledSharp } from './sharp-pool';
 
 // Cache file-type module to avoid repeated dynamic imports
 // Use typeof import to ensure type safety with actual module structure
@@ -102,7 +104,7 @@ export async function validateImageBuffer(
 
   try {
     // Get metadata with strict error handling for security - use cached version for performance
-    const { getCachedMetadata } = await import('./sharp-cache');
+    // Use imported getCachedMetadata function
     const metadata = await getCachedMetadata(imageBuffer);
 
     // Check if dimensions are valid
@@ -372,7 +374,7 @@ export function sanitizeSvgContent(svgContent: string): string {
  * Note: Caller is responsible for releasing the instance back to the pool
  */
 export async function createSecureSharpInstance(imageBuffer: Buffer): Promise<sharp.Sharp> {
-  const { createPooledSharp } = await import('./sharp-pool');
+  // Use imported createPooledSharp function
   // This will be called after validateImageBuffer, so we know it's safe
   return createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG);
 }
@@ -385,7 +387,7 @@ export async function withSecureSharp<T>(
   imageBuffer: Buffer,
   operation: (sharp: sharp.Sharp) => Promise<T>
 ): Promise<T> {
-  const { withPooledSharp } = await import('./sharp-pool');
+  // Use imported withPooledSharp function
   return withPooledSharp(operation, imageBuffer, SHARP_SECURITY_CONFIG);
 }
 
@@ -454,7 +456,7 @@ export function secureResize(
  * Note: Caller is responsible for releasing the instance back to the pool
  */
 export async function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): Promise<sharp.Sharp> {
-  const { createPooledSharp } = await import('./sharp-pool');
+  // Use imported createPooledSharp function
   return (await createPooledSharp(imageBuffer, SHARP_SECURITY_CONFIG))
     // Remove EXIF and other metadata by default - use empty metadata
     .withMetadata({});
@@ -468,7 +470,7 @@ export async function withSecureSharpCleanMetadata<T>(
   imageBuffer: Buffer,
   operation: (sharp: sharp.Sharp) => Promise<T>
 ): Promise<T> {
-  const { withPooledSharp } = await import('./sharp-pool');
+  // Use imported withPooledSharp function
   return withPooledSharp(
     async (sharpInstance) => operation(sharpInstance.withMetadata({})),
     imageBuffer, 

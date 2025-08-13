@@ -12,6 +12,7 @@ import {
   ValidatedDimension,
   SanitizedOptions
 } from '../types';
+import { createPooledSharp } from './sharp-pool';
 import {
   MAX_TEXT_LENGTH,
   MAX_COLOR_LENGTH,
@@ -337,7 +338,7 @@ export function validateDimensions(width: number, height: number): void {
  * Uses pooled Sharp instances for better performance
  */
 export async function createTransparentCanvas(width: number, height: number) {
-  const { createPooledSharp } = await import('./sharp-pool');
+  // Use imported createPooledSharp function
   return createPooledSharp(undefined, {
     create: {
       width,

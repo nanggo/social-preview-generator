@@ -32,6 +32,7 @@ import {
 import { SanitizedOptions } from './types';
 import sharp from 'sharp';
 import { initializeSharpSecurity, secureResize } from './utils/image-security';
+import { createCachedSVG } from './utils/sharp-cache';
 
 // Initialize Sharp security settings
 initializeSharpSecurity();
@@ -258,7 +259,6 @@ async function generateDefaultOverlay(
   `;
 
   // Use cached SVG creation for better performance
-  const { createCachedSVG } = await import('./utils/sharp-cache');
   const cachedSVG = await createCachedSVG(overlaySvg);
   return cachedSVG.toBuffer();
 }

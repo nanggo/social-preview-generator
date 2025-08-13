@@ -27,8 +27,18 @@ interface CacheEntry<T> {
 
 interface CacheOptions {
   maxSize?: number;
-  maxAge?: number; // milliseconds
+  maxAge?: number; // milliseconds - TTL for cache entries
+  idleTimeout?: number; // milliseconds - idle timeout for LRU eviction
   cleanupInterval?: number; // milliseconds
+}
+
+export interface CanvasOptions {
+  colors?: {
+    background?: string;
+    accent?: string;
+    text?: string;
+  };
+  background?: string;
 }
 
 /**
@@ -39,11 +49,13 @@ class LRUCache<T> {
   private cache = new Map<string, CacheEntry<T>>();
   private readonly maxSize: number;
   private readonly maxAge: number;
+  private readonly idleTimeout: number;
   private cleanupInterval: NodeJS.Timeout;
 
   constructor(options: CacheOptions = {}) {
     this.maxSize = Math.max(1, Math.min(options.maxSize || 100, 1000));
     this.maxAge = Math.max(60000, Math.min(options.maxAge || 5 * 60 * 1000, 30 * 60 * 1000)); // 1min-30min
+    this.idleTimeout = Math.max(30000, Math.min(options.idleTimeout || 2 * 60 * 1000, 10 * 60 * 1000)); // 30sec-10min
     
     // Start cleanup interval
     this.cleanupInterval = setInterval(() => this.cleanup(), options.cleanupInterval || 60000);
@@ -55,7 +67,9 @@ class LRUCache<T> {
     if (!entry) return undefined;
 
     const now = Date.now();
-    if (now - entry.createdAt > this.maxAge) {
+    
+    // Check both TTL (absolute) and idle timeout (relative to lastUsed)
+    if (now - entry.createdAt > this.maxAge || now - entry.lastUsed > this.idleTimeout) {
       this.cache.delete(key);
       return undefined;
     }
@@ -99,19 +113,24 @@ class LRUCache<T> {
     
     // Collect expired keys first to avoid modifying Map during iteration
     const expiredKeys: string[] = [];
+    const idleKeys: string[] = [];
+    
     for (const [key, entry] of this.cache) {
       if (now - entry.createdAt > this.maxAge) {
         expiredKeys.push(key);
+      } else if (now - entry.lastUsed > this.idleTimeout) {
+        idleKeys.push(key);
       }
     }
     
-    // Remove expired entries
-    for (const key of expiredKeys) {
+    // Remove expired and idle entries
+    const allKeysToRemove = [...expiredKeys, ...idleKeys];
+    for (const key of allKeysToRemove) {
       this.cache.delete(key);
     }
 
-    if (expiredKeys.length > 0) {
-      logger?.debug?.(`Cache cleanup: removed ${expiredKeys.length} expired entries`);
+    if (allKeysToRemove.length > 0) {
+      logger?.debug?.(`Cache cleanup: removed ${expiredKeys.length} expired entries, ${idleKeys.length} idle entries`);
     }
   }
 
@@ -144,7 +163,8 @@ class SVGCache extends LRUCache<Buffer> {
   constructor() {
     super({
       maxSize: 200,
-      maxAge: 10 * 60 * 1000, // 10 minutes
+      maxAge: 10 * 60 * 1000, // 10 minutes absolute TTL
+      idleTimeout: 3 * 60 * 1000, // 3 minutes idle timeout for SVG content
     });
   }
 
@@ -173,7 +193,8 @@ class MetadataCache extends LRUCache<sharp.Metadata> {
   constructor() {
     super({
       maxSize: 500,
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 15 * 60 * 1000, // 15 minutes absolute TTL
+      idleTimeout: 5 * 60 * 1000, // 5 minutes idle timeout for metadata
     });
   }
 
@@ -205,11 +226,12 @@ class CanvasCache extends LRUCache<string> {
   constructor() {
     super({
       maxSize: 50,
-      maxAge: 20 * 60 * 1000, // 20 minutes
+      maxAge: 20 * 60 * 1000, // 20 minutes absolute TTL
+      idleTimeout: 8 * 60 * 1000, // 8 minutes idle timeout for canvas backgrounds
     });
   }
 
-  getCachedCanvas(width: number, height: number, options: any): Sharp | undefined {
+  getCachedCanvas(width: number, height: number, options: CanvasOptions): Sharp | undefined {
     const key = this.generateCanvasKey(width, height, options);
     const cachedSvg = this.get(key);
     
@@ -217,13 +239,13 @@ class CanvasCache extends LRUCache<string> {
     return cachedSvg ? sharp(Buffer.from(cachedSvg), SHARP_SECURITY_CONFIG) : undefined;
   }
 
-  cacheCanvas(width: number, height: number, options: any, svgContent: string): void {
+  cacheCanvas(width: number, height: number, options: CanvasOptions, svgContent: string): void {
     const key = this.generateCanvasKey(width, height, options);
     // Cache the SVG content rather than Sharp instance
     this.set(key, svgContent);
   }
 
-  private generateCanvasKey(width: number, height: number, options: any): string {
+  private generateCanvasKey(width: number, height: number, options: CanvasOptions): string {
     const keyData = {
       width,
       height,
@@ -287,7 +309,7 @@ export async function getCachedMetadata(imageBuffer: Buffer): Promise<sharp.Meta
 export async function createCachedCanvas(
   width: number, 
   height: number, 
-  options: any
+  options: CanvasOptions
 ): Promise<Sharp> {
   // Try cache first
   let canvas = canvasCache.getCachedCanvas(width, height, options);
@@ -308,7 +330,7 @@ export async function createCachedCanvas(
 /**
  * Create canvas SVG content (internal helper)
  */
-function createCanvasSVG(width: number, height: number, options: any): string {
+function createCanvasSVG(width: number, height: number, options: CanvasOptions): string {
   const backgroundColor = options.colors?.background || '#1a1a2e';
   const accentColor = options.colors?.accent || '#16213e';
 

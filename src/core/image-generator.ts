@@ -13,6 +13,7 @@ import {
   PreviewGeneratorError,
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
+import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
 
 // Pre-load image security module at module level for performance
 const imageSecurityPromise = import('../utils/image-security');
@@ -159,7 +160,6 @@ export async function createBlankCanvas(
   const accentColor = validateColor(options.colors?.accent || '#16213e');
 
   // Use cached canvas creation for performance
-  const { createCachedCanvas } = await import('../utils/sharp-cache');
   return createCachedCanvas(width, height, {
     colors: {
       background: backgroundColor,
@@ -296,7 +296,6 @@ async function generateTextOverlay(
   `;
 
   // Use cached SVG creation for better performance
-  const { createCachedSVG } = await import('../utils/sharp-cache');
   const cachedSVG = await createCachedSVG(overlaySvg);
   return cachedSVG.toBuffer();
 }
