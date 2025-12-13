@@ -11,76 +11,22 @@ import {
   ErrorType,
   PreviewGeneratorError,
 } from './types';
-import {
-  extractMetadata,
-  validateMetadata,
-  applyFallbacks,
-  fetchImage,
-} from './core/metadata-extractor';
-import { createFallbackImage, DEFAULT_DIMENSIONS, createBlankCanvas } from './core/image-generator';
-import { modernTemplate } from './templates/modern';
-import { classicTemplate } from './templates/classic';
-import { minimalTemplate } from './templates/minimal';
-import { escapeXml, logImageFetchError, wrapText } from './utils';
-import {
-  createTransparentCanvas,
-  validateDimensions,
-  validateColor,
-  validateOptions,
-  sanitizeOptions,
-} from './utils/validators';
-import { SanitizedOptions } from './types';
-import sharp from 'sharp';
-import { initializeSharpSecurity, secureResize } from './utils/image-security';
-import { createCachedSVG } from './utils/sharp-cache';
+import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
+import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
+import { templates } from './templates/registry';
+import { validateDimensions, validateOptions, sanitizeOptions } from './utils/validators';
+import { initializeSharpSecurity } from './utils/image-security';
+import { generateDefaultOverlay } from './core/overlay-generator';
+import { processImageForTemplate } from './core/template-image-processing';
+import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
 
 // Initialize Sharp security settings
 initializeSharpSecurity();
 
-// Pre-load image security module at module level for performance
-const imageSecurityPromise = import('./utils/image-security');
-
-// Re-export types
-export {
-  PreviewOptions,
-  ExtractedMetadata,
-  GeneratedPreview,
-  TemplateConfig,
-  ErrorType,
-  PreviewGeneratorError,
-};
-
-// Re-export cache management functions
-export {
-  startCacheCleanup,
-  stopCacheCleanup,
-  isCacheCleanupRunning,
-} from './utils/cache';
-
-// Re-export metadata extraction utilities
-export {
-  getInflightRequestStats,
-  clearInflightRequests,
-} from './core/metadata-extractor';
-
-// Re-export Sharp caching utilities
-export {
-  getCacheStats,
-  clearAllCaches,
-  shutdownSharpCaches,
-} from './utils/sharp-cache';
+export * from './exports';
 
 // Note: Sharp caching utilities (createCachedSVG, createCachedCanvas) are used internally
 // Direct Sharp instance creation is now recommended over pooling for better reliability
-
-/**
- * Template registry
- */
-const templates: Record<string, TemplateConfig> = {
-  modern: modernTemplate,
-  classic: classicTemplate,
-  minimal: minimalTemplate,
-};
 
 /**
  * Generate a social preview image from a URL
@@ -153,189 +99,6 @@ export async function generateImageWithTemplate(
 }
 
 /**
- * Generate default overlay for non-modern templates with proper text wrapping
- */
-async function generateDefaultOverlay(
-  metadata: ExtractedMetadata,
-  template: TemplateConfig,
-  width: number,
-  height: number,
-  options: PreviewOptions
-): Promise<Buffer> {
-  const padding = template.layout.padding || 60;
-  const textColor = validateColor(options.colors?.text || '#ffffff');
-
-  // Typography settings
-  const titleFontSize = template.typography.title.fontSize;
-  const titleLineHeight = template.typography.title.lineHeight || 1.2;
-  const descFontSize = template.typography.description?.fontSize || 24;
-  const descLineHeight = template.typography.description?.lineHeight || 1.4;
-
-  // Text wrapping similar to specific template generators
-  const maxTextWidth = width - padding * 2;
-  const titleLines = wrapText(
-    metadata.title,
-    maxTextWidth,
-    titleFontSize,
-    template.typography.title.maxLines || 2,
-    'default'
-  );
-  const descLines = metadata.description
-    ? wrapText(
-        metadata.description,
-        maxTextWidth,
-        descFontSize,
-        template.typography.description?.maxLines || 2,
-        'default'
-      )
-    : [];
-
-  // Calculate positions for proper vertical centering
-  const titleHeight = titleLines.length * titleFontSize * titleLineHeight;
-  const descHeight = descLines.length > 0 ? descLines.length * descFontSize * descLineHeight : 0;
-  const gap = descLines.length > 0 ? 20 : 0;
-  const totalContentHeight = titleHeight + gap + descHeight;
-
-  const contentStartY = (height - totalContentHeight) / 2;
-  const titleStartY = contentStartY + titleFontSize;
-  const descStartY = titleStartY + titleHeight + gap;
-
-  const overlaySvg = `
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <style>
-          .title { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-            font-size: ${titleFontSize}px; 
-            font-weight: ${template.typography.title.fontWeight || '700'}; 
-            fill: ${textColor};
-          }
-          .description { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-            font-size: ${descFontSize}px; 
-            font-weight: ${template.typography.description?.fontWeight || '400'}; 
-            fill: ${textColor};
-            opacity: 0.9;
-          }
-        </style>
-      </defs>
-      
-      <!-- Title with proper wrapping -->
-      ${titleLines
-        .map(
-          (line: string, index: number) => `
-      <text x="${padding}" y="${titleStartY + index * titleFontSize * titleLineHeight}" class="title">
-        ${escapeXml(line)}
-      </text>
-      `
-        )
-        .join('')}
-      
-      <!-- Description with proper wrapping -->
-      ${
-        descLines.length > 0
-          ? descLines
-              .map(
-                (line: string, index: number) => `
-      <text x="${padding}" y="${descStartY + index * descFontSize * descLineHeight}" class="description">
-        ${escapeXml(line)}
-      </text>
-      `
-              )
-              .join('')
-          : ''
-      }
-    </svg>
-  `;
-
-  // Use cached SVG creation for better performance
-  const cachedSVG = await createCachedSVG(overlaySvg);
-  return cachedSVG.toBuffer();
-}
-
-/**
- * Process image for template with template-specific configuration
- */
-async function processImageForTemplate(
-  metadata: ExtractedMetadata,
-  template: TemplateConfig,
-  width: number,
-  height: number,
-  options: SanitizedOptions
-): Promise<sharp.Sharp> {
-  // Check if template wants no background image
-  if (template.layout.imagePosition === 'none') {
-    // Use transparent canvas if template requires it, otherwise use blank canvas
-    if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
-    }
-    return await createBlankCanvas(width, height, options);
-  }
-
-  // If no image available, handle based on template configuration
-  if (!metadata.image) {
-    // Use transparent canvas if template requires it for custom backgrounds
-    if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
-    }
-    return await createBlankCanvas(width, height, options);
-  }
-
-  // Process background image with template-specific effects
-  try {
-    const imageBuffer = await fetchImage(metadata.image, options.security);
-    
-    // Use withSecureSharp for automatic pool management
-    const { withSecureSharp } = await imageSecurityPromise;
-    return await withSecureSharp(imageBuffer, async (secureImage) => {
-      let processedImage = secureResize(secureImage, width, height, {
-        fit: 'cover',
-        position: 'center',
-      });
-
-      // Apply template-specific effects in optimized pipeline
-      const blurRadius = template.effects?.blur?.radius ?? 0;
-      const brightnessValue = template.imageProcessing?.brightness ?? 1.0;
-      const saturationValue = template.imageProcessing?.saturation;
-
-      // Apply blur first if needed
-      if (blurRadius > 0) {
-        processedImage = processedImage.blur(blurRadius);
-      }
-
-      // Apply brightness and saturation together for efficiency
-      if (brightnessValue !== 1.0 || saturationValue !== undefined) {
-        const modulateOptions: { brightness?: number; saturation?: number } = {};
-        
-        if (brightnessValue !== 1.0) {
-          modulateOptions.brightness = brightnessValue;
-        }
-        
-        if (saturationValue !== undefined) {
-          modulateOptions.saturation = saturationValue;
-        }
-        
-        processedImage = processedImage.modulate(modulateOptions);
-      }
-
-      return processedImage;
-    });
-  } catch (fetchError) {
-    // If image fetch fails, create appropriate canvas based on template configuration
-    logImageFetchError(
-      metadata.image,
-      fetchError instanceof Error ? fetchError : new Error(String(fetchError))
-    );
-
-    // Use transparent canvas if template requires it for custom backgrounds
-    if (template.imageProcessing?.requiresTransparentCanvas) {
-      return createTransparentCanvas(width, height);
-    }
-    return await createBlankCanvas(width, height, options);
-  }
-}
-
-/**
  * Generate preview with full result details
  */
 export async function generatePreviewWithDetails(
@@ -352,9 +115,17 @@ export async function generatePreviewWithDetails(
       width: DEFAULT_DIMENSIONS.width,
       height: DEFAULT_DIMENSIONS.height,
       quality: 90,
-      cache: false, // Set to false until caching is properly implemented
+      cache: false,
       ...options,
     };
+
+    const shouldCache = finalOptions.cache === true;
+    if (shouldCache) {
+      const cached = getCachedPreview(url, finalOptions);
+      if (cached) {
+        return { ...cached, cached: true };
+      }
+    }
 
     // Extract metadata from URL once
     let metadata: ExtractedMetadata;
@@ -375,7 +146,7 @@ export async function generatePreviewWithDetails(
         const buffer = await createFallbackImage(url, finalOptions);
         // Create minimal metadata for fallback
         const fallbackMetadata = applyFallbacks({}, url);
-        return {
+        const fallbackResult: GeneratedPreview = {
           buffer,
           format: 'jpeg',
           dimensions: {
@@ -386,6 +157,10 @@ export async function generatePreviewWithDetails(
           template: finalOptions.template || 'modern',
           cached: false,
         };
+        if (shouldCache) {
+          setCachedPreview(url, finalOptions, fallbackResult);
+        }
+        return fallbackResult;
       }
       throw error;
     }
@@ -408,7 +183,7 @@ export async function generatePreviewWithDetails(
       finalOptions
     );
 
-    return {
+    const result: GeneratedPreview = {
       buffer,
       format: 'jpeg',
       dimensions: {
@@ -417,8 +192,12 @@ export async function generatePreviewWithDetails(
       },
       metadata,
       template: finalOptions.template || 'modern',
-      cached: false, // TODO: Implement caching
+      cached: false,
     };
+    if (shouldCache) {
+      setCachedPreview(url, finalOptions, result);
+    }
+    return result;
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;

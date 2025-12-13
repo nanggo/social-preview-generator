@@ -58,6 +58,7 @@ interface PreviewOptions {
   width?: number;                                // Image width (default: 1200)
   height?: number;                               // Image height (default: 630)
   quality?: number;                              // JPEG quality 1-100 (default: 90)
+  cache?: boolean;                               // Cache generated results in memory (default: false)
   fallback?: {
     strategy?: 'auto' | 'custom' | 'generate';   // Fallback strategy
     image?: string;                               // Custom fallback image path
