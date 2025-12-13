@@ -422,7 +422,7 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
     secureProtocol: 'TLSv1_2_method',
     ciphers: 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384',
     honorCipherOrder: true,
-    checkServerIdentity: (hostname: string, cert: any) => {
+    checkServerIdentity: (hostname: string, cert: tls.PeerCertificate) => {
       // Perform additional hostname verification
       const result = tls.checkServerIdentity(hostname, cert);
       if (result) return result;

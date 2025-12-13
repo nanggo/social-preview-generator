@@ -9,6 +9,7 @@ import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import * as os from 'os';
 import { getCachedMetadata } from './sharp-cache';
+import { logger } from './logger';
 // Sharp pooling removed - use direct instantiation for better reliability
 
 // Cache file-type module to avoid repeated dynamic imports
@@ -36,6 +37,8 @@ import {
 
 // Import centralized constants from security module
 // All security limits are now defined in src/constants/security.ts
+
+type AllowedImageFormat = typeof ALLOWED_IMAGE_FORMATS extends Set<infer T> ? T : never;
 
 /**
  * Initialize Sharp with security settings
@@ -133,7 +136,7 @@ export async function validateImageBuffer(
     }
 
     // Sharp format validation - ensure it's a recognized image format (whitelist approach)
-    if (metadata.format && !ALLOWED_IMAGE_FORMATS.has(metadata.format as any)) {
+    if (metadata.format && !ALLOWED_IMAGE_FORMATS.has(metadata.format as AllowedImageFormat)) {
       throw new PreviewGeneratorError(
         ErrorType.IMAGE_ERROR,
         `Unsupported image format detected by Sharp: ${metadata.format}. Allowed formats: ${Array.from(ALLOWED_IMAGE_FORMATS).join(', ')}`
@@ -203,7 +206,10 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
     }
     
     // file-type failed (module not found, etc.), try magic bytes fallback
-    console.warn('file-type validation failed, falling back to magic bytes:', error instanceof Error ? error.message : String(error));
+    logger.debug('file-type validation failed, falling back to magic bytes', {
+      operation: 'image-validation',
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   // Fallback: Manual magic bytes validation
@@ -277,15 +283,33 @@ export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
     if (sanitizationInfo && sanitizationInfo.length > 0) {
       // Log what was removed for security monitoring
       const removedElements = sanitizationInfo
-        .map((item: any) => {
-          if (item.element) {
-            return `<${item.element.tagName.toLowerCase()}>`;
-          } else if (item.attribute) {
-            return `${item.attribute.name}="${item.attribute.value}"`;
+        .map((item: unknown) => {
+          if (!item || typeof item !== 'object') {
+            return 'unknown';
           }
+
+          const record = item as Record<string, unknown>;
+          const element = record.element;
+          const attribute = record.attribute;
+
+          if (element && typeof element === 'object') {
+            const tagName = (element as Record<string, unknown>).tagName;
+            if (typeof tagName === 'string') {
+              return `<${tagName.toLowerCase()}>`;
+            }
+          }
+
+          if (attribute && typeof attribute === 'object') {
+            const name = (attribute as Record<string, unknown>).name;
+            const value = (attribute as Record<string, unknown>).value;
+            if (typeof name === 'string' && typeof value === 'string') {
+              return `${name}="${value}"`;
+            }
+          }
+
           return 'unknown';
         })
-        .filter((item: string) => item !== 'unknown');
+        .filter((item): item is string => item !== 'unknown');
 
       // Block SVG if dangerous elements/attributes were removed
       // Only block for truly dangerous content, not just structural HTML elements
@@ -312,7 +336,10 @@ export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
       }
 
       // Log warning for other removed content (might be overly strict filtering)
-      console.warn(`SVG sanitization removed elements: ${removedElements.join(', ')}`);
+      logger.warn('SVG sanitization removed elements', {
+        operation: 'svg-sanitization',
+        metadata: { removedElements },
+      });
     }
 
     // Validate that the result is still a valid SVG
