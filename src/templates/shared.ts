@@ -39,7 +39,7 @@ export function layoutCenteredTitleDescription(params: {
   return {
     contentStartY,
     titleStartY: contentStartY + params.titleFontSize,
-    descStartY: contentStartY + params.titleFontSize + titleHeight + appliedGap,
+    descStartY: contentStartY + titleHeight + appliedGap + params.descFontSize,
     titleHeight,
     descHeight,
     totalContentHeight,
@@ -56,4 +56,3 @@ export function createSvgStyleCdata(css: string): string {
     </style>
   `;
 }
-

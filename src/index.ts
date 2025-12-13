@@ -157,9 +157,6 @@ export async function generatePreviewWithDetails(
           template: finalOptions.template || 'modern',
           cached: false,
         };
-        if (shouldCache) {
-          setCachedPreview(url, finalOptions, fallbackResult);
-        }
         return fallbackResult;
       }
       throw error;

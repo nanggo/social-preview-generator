@@ -2,47 +2,45 @@ import crypto from 'crypto';
 import { GeneratedPreview, PreviewOptions } from '../types';
 import { previewCache } from './cache';
 
-function stripUndefined(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.filter((entry) => entry !== undefined).map(stripUndefined);
-  }
-
-  if (value && typeof value === 'object') {
-    const output: Record<string, unknown> = {};
-    for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
-      if (entryValue === undefined) continue;
-      output[key] = stripUndefined(entryValue);
-    }
-    return output;
-  }
-
-  return value;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object') return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
-function stableStringify(value: unknown): string {
+function normalizeForCache(value: unknown): unknown {
   if (value === undefined) {
-    return 'null';
+    return undefined;
   }
 
   if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value) ?? 'null';
+    return value;
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`;
+    return value.map(normalizeForCache).filter((entry) => entry !== undefined);
+  }
+
+  // Preserve non-plain objects so `JSON.stringify` can apply `toJSON` (e.g. Date -> ISO string).
+  if (!isPlainObject(value)) {
+    return value;
   }
 
   const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  const entries = keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
-  return `{${entries.join(',')}}`;
+  const output: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    const normalized = normalizeForCache(record[key]);
+    if (normalized === undefined) continue;
+    output[key] = normalized;
+  }
+  return output;
 }
 
 function createPreviewCacheKey(url: string, options: PreviewOptions): string {
   const optionsWithoutCache: PreviewOptions = { ...options };
   delete optionsWithoutCache.cache;
-  const normalized = stripUndefined({ url, options: optionsWithoutCache });
-  const serialized = stableStringify(normalized);
+  const normalized = normalizeForCache({ url, options: optionsWithoutCache });
+  const serialized = JSON.stringify(normalized) ?? 'null';
   return crypto.createHash('sha256').update(serialized).digest('hex');
 }
 
