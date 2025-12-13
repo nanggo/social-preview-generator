@@ -28,6 +28,8 @@ export * from './exports';
 // Note: Sharp caching utilities (createCachedSVG, createCachedCanvas) are used internally
 // Direct Sharp instance creation is now recommended over pooling for better reliability
 
+const FALLBACK_PREVIEW_CACHE_TTL_MS = 30_000;
+
 /**
  * Generate a social preview image from a URL
  * @param url - The URL to generate preview for
@@ -157,6 +159,9 @@ export async function generatePreviewWithDetails(
           template: finalOptions.template || 'modern',
           cached: false,
         };
+        if (shouldCache) {
+          setCachedPreview(url, finalOptions, fallbackResult, FALLBACK_PREVIEW_CACHE_TTL_MS);
+        }
         return fallbackResult;
       }
       throw error;
@@ -166,7 +171,7 @@ export async function generatePreviewWithDetails(
     const templateName = finalOptions.template || 'modern';
     const template = templates[templateName];
 
-    if (!template && templateName !== 'custom') {
+    if (!template) {
       throw new PreviewGeneratorError(
         ErrorType.TEMPLATE_ERROR,
         `Template "${templateName}" not found`

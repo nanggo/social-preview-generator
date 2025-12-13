@@ -86,7 +86,7 @@ export interface RedirectResponseDetails {
 /**
  * Available template types
  */
-export type TemplateType = 'modern' | 'classic' | 'minimal' | 'custom';
+export type TemplateType = 'modern' | 'classic' | 'minimal';
 
 /**
  * Fallback options for handling missing metadata

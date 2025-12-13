@@ -36,18 +36,31 @@ function normalizeForCache(value: unknown): unknown {
   return output;
 }
 
-function createPreviewCacheKey(url: string, options: PreviewOptions): string {
-  const optionsWithoutCache: PreviewOptions = { ...options };
-  delete optionsWithoutCache.cache;
-  const normalized = normalizeForCache({ url, options: optionsWithoutCache });
-  const serialized = JSON.stringify(normalized) ?? 'null';
-  return crypto.createHash('sha256').update(serialized).digest('hex');
+function createPreviewCacheKey(url: string, options: PreviewOptions): string | undefined {
+  try {
+    const optionsWithoutCache: PreviewOptions = { ...options };
+    delete optionsWithoutCache.cache;
+    const normalized = normalizeForCache({ url, options: optionsWithoutCache });
+    const serialized = JSON.stringify(normalized) ?? 'null';
+    return crypto.createHash('sha256').update(serialized).digest('hex');
+  } catch {
+    return undefined;
+  }
 }
 
 export function getCachedPreview(url: string, options: PreviewOptions): GeneratedPreview | undefined {
-  return previewCache.get(createPreviewCacheKey(url, options));
+  const key = createPreviewCacheKey(url, options);
+  if (!key) return undefined;
+  return previewCache.get(key);
 }
 
-export function setCachedPreview(url: string, options: PreviewOptions, preview: GeneratedPreview): void {
-  previewCache.set(createPreviewCacheKey(url, options), preview);
+export function setCachedPreview(
+  url: string,
+  options: PreviewOptions,
+  preview: GeneratedPreview,
+  ttlMs?: number
+): void {
+  const key = createPreviewCacheKey(url, options);
+  if (!key) return;
+  previewCache.set(key, preview, ttlMs);
 }

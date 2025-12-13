@@ -355,7 +355,7 @@ export const QUALITY_LIMITS = {
 } as const;
 
 /** Template validation */
-export const ALLOWED_TEMPLATES = ['modern', 'classic', 'minimal', 'custom'] as const;
+export const ALLOWED_TEMPLATES = ['modern', 'classic', 'minimal'] as const;
 
 // =============================================================================
 // SECURITY EXPORT
