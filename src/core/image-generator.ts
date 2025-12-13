@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
 import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
+import { SYSTEM_FONT_STACK } from '../constants/fonts';
 
 // Pre-load image security module at module level for performance
 const imageSecurityPromise = import('../utils/image-security');
@@ -226,14 +227,14 @@ async function generateTextOverlay(
       <defs>
         <style>
           .title { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${titleFontSize}px; 
             font-weight: 700; 
             fill: ${textColor};
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
           }
           .description { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${descFontSize}px; 
             font-weight: 400; 
             fill: ${textColor};
@@ -241,7 +242,7 @@ async function generateTextOverlay(
             filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
           }
           .siteName { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 600; 
             fill: ${textColor};
