@@ -6,6 +6,8 @@
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, wrapText } from '../utils';
 import { validateColor } from '../utils/validators';
+import { SYSTEM_FONT_STACK } from '../constants/fonts';
+import { createSvgStyleCdata, layoutCenteredTitleDescription } from './shared';
 
 /**
  * Minimal template configuration
@@ -102,23 +104,27 @@ export function generateMinimalOverlay(
       )
     : [];
 
-  // Vertical centering with minimal spacing
-  const titleHeight = titleLines.length * titleFontSize * titleLineHeight;
-  const descHeight = descLines.length > 0 ? descLines.length * descFontSize * descLineHeight : 0;
-  const gap = descLines.length > 0 ? 60 : 0; // Generous gap between title and description
-  const totalContentHeight = titleHeight + gap + descHeight;
+  const TITLE_DESCRIPTION_GAP = 60;
+  const layout = layoutCenteredTitleDescription({
+    height,
+    titleLineCount: titleLines.length,
+    titleFontSize,
+    titleLineHeight,
+    descLineCount: descLines.length,
+    descFontSize,
+    descLineHeight,
+    gap: TITLE_DESCRIPTION_GAP,
+  });
 
-  const contentStartY = (height - totalContentHeight) / 2;
-  const titleStartY = contentStartY + titleFontSize;
-  const descStartY = titleStartY + titleHeight + gap;
+  const titleStartY = layout.titleStartY;
+  const descStartY = layout.descStartY;
 
   return `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <style type="text/css">
-          <![CDATA[
+        ${createSvgStyleCdata(`
           .minimal-title { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${titleFontSize}px; 
             font-weight: 300; 
             fill: ${textColor};
@@ -126,7 +132,7 @@ export function generateMinimalOverlay(
             line-height: ${titleLineHeight};
           }
           .minimal-description { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${descFontSize}px; 
             font-weight: 300; 
             fill: ${textColor};
@@ -135,7 +141,7 @@ export function generateMinimalOverlay(
             line-height: ${descLineHeight};
           }
           .minimal-sitename { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 500; 
             fill: ${accentColor};
@@ -144,15 +150,14 @@ export function generateMinimalOverlay(
             opacity: 0.6;
           }
           .minimal-domain {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: 14px; 
             font-weight: 400; 
             fill: ${textColor};
             opacity: 0.4;
             letter-spacing: 0.05em;
           }
-          ]]>
-        </style>
+        `)}
       </defs>
       
       <!-- Clean background -->

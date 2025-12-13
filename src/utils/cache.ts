@@ -128,9 +128,10 @@ export class LRUCache<T> {
 }
 
 // Global metadata cache instance
-import { ExtractedMetadata } from '../types';
+import { ExtractedMetadata, GeneratedPreview } from '../types';
 
 export const metadataCache = new LRUCache<ExtractedMetadata>(100, 5 * 60 * 1000); // 100 entries, 5 minutes TTL
+export const previewCache = new LRUCache<GeneratedPreview>(50, 5 * 60 * 1000); // 50 entries, 5 minutes TTL
 
 // Cache cleanup management
 let cleanupInterval: NodeJS.Timeout | null = null;
@@ -147,6 +148,7 @@ export function startCacheCleanup(intervalMs: number = CLEANUP_INTERVAL_MS): voi
   
   cleanupInterval = setInterval(() => {
     metadataCache.cleanup();
+    previewCache.cleanup();
   }, intervalMs);
   
   // Don't prevent Node.js process from exiting

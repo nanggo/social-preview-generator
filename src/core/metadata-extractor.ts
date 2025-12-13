@@ -10,6 +10,7 @@ import { validateUrlInput } from '../utils/validators';
 import { getEnhancedSecureAgentForUrl, validateRequestSecurity } from '../utils/enhanced-secure-agent';
 import { validateImageBuffer } from '../utils/image-security';
 import { metadataCache } from '../utils/cache';
+import { logger } from '../utils/logger';
 
 // In-flight request management to prevent cache stampede
 // Limit the size to prevent memory exhaustion DoS attacks
@@ -111,7 +112,11 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
         // Only log the warning if the timeout has already happened.
         // Otherwise, the main promise race will handle the rejection.
         if (timedOut) {
-          console.warn(`Original metadata promise rejected after timeout for ${url}:`, error);
+          logger.warn('Original metadata promise rejected after timeout', {
+            operation: 'metadata-extraction',
+            url,
+            error: error instanceof Error ? error : String(error),
+          });
         }
       });
       
@@ -133,7 +138,11 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
           }
         } catch (cleanupError) {
           // Silently handle cleanup errors to prevent unhandled promise rejections
-          console.warn('Error during in-flight request cleanup:', cleanupError);
+          logger.warn('Error during in-flight request cleanup', {
+            operation: 'metadata-extraction',
+            url,
+            error: cleanupError instanceof Error ? cleanupError : String(cleanupError),
+          });
         }
       }).catch(() => {
         // Prevent unhandled promise rejection warnings
@@ -235,10 +244,15 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       httpAgent: getEnhancedSecureAgentForUrl(url),
       httpsAgent: getEnhancedSecureAgentForUrl(url),
       signal: abortSignal, // Add abort signal for request cancellation
-      beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
+      beforeRedirect: (
+        options: Record<string, unknown>,
+        _responseDetails: { headers: Record<string, string>; statusCode: number }
+      ) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
-        const redirectOptions = options as RedirectOptions;
-        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+        const redirectOptions = options as unknown as RedirectOptions;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
+          redirectOptions.port ? `:${redirectOptions.port}` : ''
+        }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
         try {
           validateUrlInput(redirectUrl);
         } catch (error) {
@@ -453,10 +467,15 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       httpAgent: getEnhancedSecureAgentForUrl(validatedUrl),
       httpsAgent: getEnhancedSecureAgentForUrl(validatedUrl),
       signal: abortSignal, // Add abort signal for request cancellation
-      beforeRedirect: (options: Record<string, any>, _responseDetails: { headers: Record<string, string>; statusCode: number }) => {
+      beforeRedirect: (
+        options: Record<string, unknown>,
+        _responseDetails: { headers: Record<string, string>; statusCode: number }
+      ) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
-        const redirectOptions = options as RedirectOptions;
-        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+        const redirectOptions = options as unknown as RedirectOptions;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
+          redirectOptions.port ? `:${redirectOptions.port}` : ''
+        }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
         try {
           validateUrlInput(redirectUrl);
         } catch (error) {

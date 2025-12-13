@@ -6,6 +6,8 @@
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, wrapText, adjustBrightness } from '../utils';
 import { validateColor } from '../utils/validators';
+import { SERIF_FONT_STACK, SYSTEM_FONT_STACK } from '../constants/fonts';
+import { createSvgStyleCdata } from './shared';
 
 /**
  * Classic template configuration
@@ -114,17 +116,16 @@ export function generateClassicOverlay(
   return `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <style type="text/css">
-          <![CDATA[
+        ${createSvgStyleCdata(`
           .classic-title { 
-            font-family: Georgia, 'Times New Roman', serif; 
+            font-family: ${SERIF_FONT_STACK}; 
             font-size: ${titleFontSize}px; 
             font-weight: 700; 
             fill: ${textColor};
             line-height: ${titleLineHeight};
           }
           .classic-description { 
-            font-family: Georgia, 'Times New Roman', serif; 
+            font-family: ${SERIF_FONT_STACK}; 
             font-size: ${descFontSize}px; 
             font-weight: 400; 
             fill: ${adjustBrightness(textColor, 20)};
@@ -132,7 +133,7 @@ export function generateClassicOverlay(
             line-height: ${descLineHeight};
           }
           .classic-sitename { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 600; 
             fill: ${accentColor};
@@ -140,14 +141,13 @@ export function generateClassicOverlay(
             letter-spacing: 0.1em;
           }
           .classic-domain {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: 16px; 
             font-weight: 400; 
             fill: ${adjustBrightness(textColor, 40)};
             opacity: 0.7;
           }
-          ]]>
-        </style>
+        `)}
         
         <!-- Background pattern for texture -->
         <pattern id="classicPattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">

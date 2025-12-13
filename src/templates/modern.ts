@@ -6,6 +6,8 @@
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, adjustBrightness, wrapText } from '../utils';
 import { validateColor } from '../utils/validators';
+import { SYSTEM_FONT_STACK } from '../constants/fonts';
+import { createSvgStyleCdata, layoutCenteredTitleDescription } from './shared';
 
 /**
  * Modern template configuration
@@ -102,23 +104,29 @@ export function generateModernOverlay(
       )
     : [];
 
-  // Calculate vertical centering
-  const totalContentHeight =
-    titleLines.length * titleFontSize * titleLineHeight +
-    (descLines.length > 0 ? 30 : 0) + // Gap between title and description
-    descLines.length * descFontSize * descLineHeight;
+  const TITLE_DESCRIPTION_GAP = 30;
+  const layout = layoutCenteredTitleDescription({
+    height,
+    titleLineCount: titleLines.length,
+    titleFontSize,
+    titleLineHeight,
+    descLineCount: descLines.length,
+    descFontSize,
+    descLineHeight,
+    gap: TITLE_DESCRIPTION_GAP,
+  });
 
-  const contentStartY = (height - totalContentHeight) / 2;
-  const titleY = contentStartY + titleFontSize;
-  const descY = titleY + titleLines.length * titleFontSize * titleLineHeight + 30;
+  const contentStartY = layout.contentStartY;
+  const titleY = layout.titleStartY;
+  const descY = layout.descStartY;
+  const totalContentHeight = layout.totalContentHeight;
 
   return `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <style type="text/css">
-          <![CDATA[
+        ${createSvgStyleCdata(`
           .title { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${titleFontSize}px; 
             font-weight: 800; 
             fill: ${textColor};
@@ -126,7 +134,7 @@ export function generateModernOverlay(
             letter-spacing: -0.02em;
           }
           .description { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${descFontSize}px; 
             font-weight: 400; 
             fill: ${textColor};
@@ -135,7 +143,7 @@ export function generateModernOverlay(
             letter-spacing: -0.01em;
           }
           .siteName { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 600; 
             fill: ${textColor};
@@ -144,14 +152,13 @@ export function generateModernOverlay(
             text-transform: uppercase;
           }
           .domain {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+            font-family: ${SYSTEM_FONT_STACK}; 
             font-size: 18px; 
             font-weight: 500; 
             fill: ${textColor};
             opacity: 0.6;
           }
-          ]]>
-        </style>
+        `)}
         
         <!-- Gradient overlays -->
         <linearGradient id="bgOverlay" x1="0%" y1="0%" x2="0%" y2="100%">
