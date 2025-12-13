@@ -250,7 +250,9 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       ) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as unknown as RedirectOptions;
-        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
+          redirectOptions.port ? `:${redirectOptions.port}` : ''
+        }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
         try {
           validateUrlInput(redirectUrl);
         } catch (error) {
@@ -471,7 +473,9 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       ) => {
         // Validate each redirect URL for SSRF protection using typed interface for clarity
         const redirectOptions = options as unknown as RedirectOptions;
-        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
+          redirectOptions.port ? `:${redirectOptions.port}` : ''
+        }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
         try {
           validateUrlInput(redirectUrl);
         } catch (error) {

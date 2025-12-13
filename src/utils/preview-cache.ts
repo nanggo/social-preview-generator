@@ -18,7 +18,8 @@ function normalizeForCache(value: unknown): unknown {
   }
 
   if (Array.isArray(value)) {
-    return value.map(normalizeForCache).filter((entry) => entry !== undefined);
+    // Keep array length stable; `JSON.stringify` will convert `undefined` entries to `null`.
+    return value.map(normalizeForCache);
   }
 
   // Preserve non-plain objects so `JSON.stringify` can apply `toJSON` (e.g. Date -> ISO string).
