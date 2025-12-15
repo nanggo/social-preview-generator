@@ -55,13 +55,17 @@ describe('Sharp Security Configuration - Enhanced', () => {
 
   describe('Timeout protection', () => {
     it('should timeout long-running operations', async () => {
+      let timer: NodeJS.Timeout | undefined;
       const slowOperation = () => new Promise<string>(resolve => {
-        setTimeout(() => resolve('done'), 5000); // 5 seconds
+        timer = setTimeout(() => resolve('done'), 5000); // 5 seconds
+        timer.unref?.();
       });
 
       await expect(
         processImageWithTimeout(slowOperation, 100) // 100ms timeout
       ).rejects.toThrow('timed out');
+
+      if (timer) clearTimeout(timer);
     }, 10000);
 
     it('should complete fast operations normally', async () => {

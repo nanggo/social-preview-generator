@@ -1,12 +1,21 @@
-import { generatePreview, generatePreviewWithDetails } from '../../src/index';
+import { clearAllCaches, clearInflightRequests, generatePreview, generatePreviewWithDetails } from '../../src/index';
 import { PreviewOptions } from '../../src/types';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import sharp from 'sharp';
+import { metadataCache } from '../../src/utils/cache';
 
 jest.mock('axios');
 jest.mock('open-graph-scraper');
 jest.mock('sharp');
+jest.mock('../../src/utils/enhanced-secure-agent', () => ({
+  getEnhancedSecureAgentForUrl: jest.fn(() => undefined),
+  validateRequestSecurity: jest.fn().mockResolvedValue({
+    allowed: true,
+    blockedIPs: [],
+    allowedIPs: [],
+  }),
+}));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 const mockedOgs = ogs as jest.MockedFunction<typeof ogs>;
@@ -15,6 +24,9 @@ const mockedSharp = sharp as jest.MockedFunction<typeof sharp>;
 describe('End-to-End Integration Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearAllCaches();
+    clearInflightRequests();
+    metadataCache.clear();
     
     // Setup default mocks
     const mockSharpInstance = {

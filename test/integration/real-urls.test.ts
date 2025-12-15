@@ -1,16 +1,18 @@
 import { generatePreview } from '../../src/index';
 import { PreviewOptions } from '../../src/types';
 
-describe('Real URLs Integration Tests', () => {
+// These tests use real network requests and should be run sparingly.
+// They can be skipped in CI environments by setting SKIP_NETWORK_TESTS=true.
+const skipNetworkTests = process.env.SKIP_NETWORK_TESTS === 'true' || process.env.CI === 'true';
+const describeIfNetwork = skipNetworkTests ? describe.skip : describe;
+
+describeIfNetwork('Real URLs Integration Tests', () => {
   // These tests use real network requests and should be run sparingly
   // They can be skipped in CI environments by setting SKIP_NETWORK_TESTS=true
   
-  const skipNetworkTests = process.env.SKIP_NETWORK_TESTS === 'true';
   const testTimeout = 30000;
 
-  const conditionalDescribe = skipNetworkTests ? describe.skip : describe;
-
-  conditionalDescribe('Real URL Tests', () => {
+  describe('Real URL Tests', () => {
     it('should handle GitHub URLs', async () => {
       const url = 'https://github.com';
       const options: PreviewOptions = {
