@@ -23,6 +23,14 @@
   ],
   "author": "nanggo",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nanggo/social-preview-generator"
+  },
+  "bugs": {
+    "url": "https://github.com/nanggo/social-preview-generator/issues"
+  },
+  "homepage": "https://github.com/nanggo/social-preview-generator#readme",
   "files": [
     "dist",
     "README.md"
