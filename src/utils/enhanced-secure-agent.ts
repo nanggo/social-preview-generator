@@ -42,6 +42,7 @@ class SecureDNSCache {
     // Adaptive cleanup interval based on TTL (cleanup every TTL/10, min 10s, max 60s)
     const cleanupIntervalMs = Math.max(10000, Math.min(60000, this.defaultTTL / 10));
     this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs);
+    this.cleanupInterval.unref();
   }
 
   /**
@@ -194,6 +195,12 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
   const allowedIPs: string[] = [];
 
   for (const addr of addresses) {
+    // Treat malformed IPs as blocked to avoid bypassing security checks
+    if (net.isIP(addr.address) === 0) {
+      blockedIPs.push(addr.address);
+      continue;
+    }
+
     // Check for various dangerous IP ranges
     if (isPrivateOrReservedIP(addr.address)) {
       blockedIPs.push(addr.address);
@@ -231,7 +238,7 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
     blockedIPs,
     allowedIPs,
     reason: blockedIPs.length > 0 
-      ? `Blocked private/reserved IPs: ${blockedIPs.join(', ')}`
+      ? `Blocked private or reserved IPs: ${blockedIPs.join(', ')}`
       : undefined
   };
 }
@@ -359,6 +366,35 @@ function validateSocketIP(socket: net.Socket, hostname: string): boolean {
   return true;
 }
 
+function getHostnameForValidation(options: unknown): string {
+  if (!options || typeof options !== 'object') return '';
+
+  const opts = options as { host?: unknown; hostname?: unknown };
+  const rawHost = typeof opts.hostname === 'string' ? opts.hostname : typeof opts.host === 'string' ? opts.host : '';
+
+  if (!rawHost) return '';
+
+  // Bracketed IPv6, optionally with port: [::1] or [::1]:443
+  if (rawHost.startsWith('[')) {
+    const endBracket = rawHost.indexOf(']');
+    if (endBracket !== -1) {
+      return rawHost.slice(1, endBracket);
+    }
+  }
+
+  // Unbracketed IPv6 (no port): ::1
+  if (net.isIP(rawHost) === 6) return rawHost;
+
+  // host:port (single colon). If multiple colons, assume it's IPv6 and return as-is.
+  const firstColon = rawHost.indexOf(':');
+  const lastColon = rawHost.lastIndexOf(':');
+  if (firstColon !== -1 && firstColon === lastColon) {
+    return rawHost.slice(0, firstColon);
+  }
+
+  return rawHost;
+}
+
 /**
  * Create enhanced secure HTTP agent
  */
@@ -376,8 +412,13 @@ export function createEnhancedSecureHttpAgent(): http.Agent {
   const originalCreateConnection = agent.createConnection;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agent.createConnection = function(options: any, callback?: any) {
-    const hostname = options.host || options.hostname;
-    const socket = originalCreateConnection.call(this, options, callback);
+    const normalizedOptions =
+      options && typeof options === 'object' && typeof options.hostname === 'string' && !options.host
+        ? { ...options, host: options.hostname }
+        : options;
+
+    const hostname = getHostnameForValidation(normalizedOptions);
+    const socket = originalCreateConnection.call(this, normalizedOptions, callback);
 
     // Listen for the 'connect' event to perform validation after connection is established
     socket.on('connect', () => {
@@ -437,8 +478,13 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
   const originalCreateConnection = agent.createConnection;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agent.createConnection = function(options: any, callback?: any) {
-    const hostname = options.host || options.hostname;
-    const socket = originalCreateConnection.call(this, options, callback);
+    const normalizedOptions =
+      options && typeof options === 'object' && typeof options.hostname === 'string' && !options.host
+        ? { ...options, host: options.hostname }
+        : options;
+
+    const hostname = getHostnameForValidation(normalizedOptions);
+    const socket = originalCreateConnection.call(this, normalizedOptions, callback);
 
     // Listen for the 'secureConnect' event for TLS sockets
     socket.on('secureConnect', () => {

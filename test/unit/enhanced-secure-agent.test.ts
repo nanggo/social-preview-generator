@@ -4,11 +4,12 @@
  * Tests the enhanced security features including DNS caching and TOCTOU protection
  */
 
+import http from 'http';
 import dns from 'dns';
 import net from 'net';
 import { 
-  createEnhancedSecureHttpAgent,
-  createEnhancedSecureHttpsAgent,
+	  createEnhancedSecureHttpAgent,
+	  createEnhancedSecureHttpsAgent,
   getDNSCacheStats,
   invalidateDNSCache,
   validateRequestSecurity
@@ -182,22 +183,36 @@ describe('Enhanced Secure Agent', () => {
 
       mockIsPrivateOrReservedIP.mockReturnValue(false);
 
-      const agent = createEnhancedSecureHttpAgent();
-      
-      // Mock socket creation
+      // Populate the DNS cache for socket-level validation
+      await validateRequestSecurity('http://test.com/');
+
+      const socketOn = jest.fn();
+      let connectListener: (() => void) | undefined;
+      socketOn.mockImplementation((event: string, listener: () => void) => {
+        if (event === 'connect') connectListener = listener;
+      });
+
+      const socketDestroy = jest.fn();
       const mockSocket = {
-        remoteAddress: '1.2.3.4', // Matches DNS resolution
+        remoteAddress: '1.2.3.4',
         remotePort: 80,
-        destroy: jest.fn()
+        destroy: socketDestroy,
+        on: socketOn,
       } as unknown as net.Socket;
 
-      // Test the createConnection override
-      const createConnectionSpy = jest.spyOn(agent, 'createConnection');
-      
-      // This would normally connect, but we're testing the validation logic
-      const connection = agent.createConnection({ hostname: 'test.com', port: 80 });
-      
-      expect(createConnectionSpy).toHaveBeenCalled();
+      const createConnectionSpy = jest
+        .spyOn(http.Agent.prototype, 'createConnection')
+        .mockImplementation(() => mockSocket);
+
+      const agent = createEnhancedSecureHttpAgent();
+      const socket = agent.createConnection({ host: 'test.com', port: 80 });
+
+      // Simulate successful connection
+      connectListener?.();
+
+      expect(socket).toBeDefined();
+      expect(socketDestroy).not.toHaveBeenCalled();
+      createConnectionSpy.mockRestore();
       cleanup();
     });
 
@@ -310,7 +325,7 @@ describe('Enhanced Secure Agent', () => {
       const result = await validateRequestSecurity('https://localhost/test');
       
       expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('Blocked private/reserved IPs');
+      expect(result.reason).toContain('Blocked private or reserved IPs');
 
       cleanup();
     });
@@ -550,81 +565,69 @@ describe('Enhanced Secure Agent', () => {
   });
 
   describe('Real-world Attack Scenarios', () => {
-    it('should block DNS rebinding attack with external-to-internal redirect', async () => {
+    it('should resist DNS rebinding by caching DNS results', async () => {
       // Simulate attacker.com resolving to external IP initially, then internal IP
       const cleanup1 = mockDNSLookup('attacker.com', [
         { address: '8.8.8.8', family: 4 } // Initially resolves to external IP
       ]);
       
-      mockIsPrivateOrReservedIP
-        .mockReturnValueOnce(false) // External IP passes initial check
-        .mockReturnValueOnce(true); // But socket connects to internal IP
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
 
       // First validation should succeed (external IP)  
       const result1 = await validateRequestSecurity('http://attacker.com/payload');
       expect(result1.allowed).toBe(true);
+
+      // Restore DNS lookup before installing a new mock
+      cleanup1();
       
       // Now attacker changes DNS to point to internal IP
       const cleanup2 = mockDNSLookup('attacker.com', [
         { address: '192.168.1.100', family: 4 } // Now points to internal
       ]);
+      const lookupMock2 = dns.lookup as unknown as jest.Mock;
       
-      mockIsPrivateOrReservedIP.mockReturnValue(true);
-      
-      // Second validation should fail (internal IP detected)
+      // Second validation should still use cached DNS and remain consistent
       const result2 = await validateRequestSecurity('http://attacker.com/payload');
-      expect(result2.allowed).toBe(false);
-      expect(result2.reason).toContain('private or reserved IP');
+      expect(result2.allowed).toBe(true);
+      expect(lookupMock2).not.toHaveBeenCalled();
       
-      cleanup1();
       cleanup2();
     });
 
     it('should prevent time-of-check-time-of-use attacks', async () => {
-      const cleanup = mockDNSLookup('evil.com', [
-        { address: '203.0.113.1', family: 4 } // Valid external IP
-      ]);
-      
-      mockIsPrivateOrReservedIP
-        .mockReturnValueOnce(false) // DNS check passes
-        .mockReturnValueOnce(true); // But socket connects to different IP
-      
-      const agent = createEnhancedSecureHttpAgent();
-      
-      // Mock socket connection to simulate TOCTOU attack
-      const originalCreateConnection = agent.createConnection;
-      let connectEventListener: Function | undefined;
-      
-      agent.createConnection = jest.fn((options: any, callback?: any) => {
-        const mockSocket = {
-          remoteAddress: '10.0.0.1', // Different from DNS resolution
-          remotePort: 80,
-          destroy: jest.fn(),
-          on: jest.fn((event: string, listener: Function) => {
-            if (event === 'connect') {
-              connectEventListener = listener;
-            }
-            return mockSocket; // Return self for chaining
-          }),
-          removeAllListeners: jest.fn()
-        } as unknown as net.Socket;
+      const cleanup = mockDNSLookup('evil.com', [{ address: '203.0.113.1', family: 4 }]);
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
 
-        // Simulate connection established
-        setTimeout(() => {
-          connectEventListener?.(); // This should trigger TOCTOU protection
-        }, 10);
+      // Populate the DNS cache for socket-level validation
+      const result = await validateRequestSecurity('http://evil.com/');
+      expect(result.allowed).toBe(true);
 
-        return mockSocket as net.Socket;
+      const socketOn = jest.fn();
+      let connectListener: (() => void) | undefined;
+      socketOn.mockImplementation((event: string, listener: () => void) => {
+        if (event === 'connect') connectListener = listener;
       });
-      
-      // Connection should be rejected due to IP mismatch
-      const socket = agent.createConnection({ hostname: 'evil.com', port: 80 });
-      
-      // Wait for async validation
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      // Socket should be destroyed due to TOCTOU protection
-      expect(socket.destroy).toHaveBeenCalled();
+
+      const socketDestroy = jest.fn();
+      const mockSocket = {
+        remoteAddress: '10.0.0.1', // Different from cached DNS IP
+        remotePort: 80,
+        destroy: socketDestroy,
+        on: socketOn,
+      } as unknown as net.Socket;
+
+      const createConnectionSpy = jest
+        .spyOn(http.Agent.prototype, 'createConnection')
+        .mockImplementation(() => mockSocket);
+
+      const agent = createEnhancedSecureHttpAgent();
+      const socket = agent.createConnection({ host: 'evil.com', port: 80 });
+
+      connectListener?.();
+
+      expect(socket).toBeDefined();
+      expect(socketDestroy).toHaveBeenCalled();
+      createConnectionSpy.mockRestore();
       
       cleanup();
     });
