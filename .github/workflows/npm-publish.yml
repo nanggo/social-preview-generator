@@ -35,4 +35,8 @@ jobs:
           SKIP_NETWORK_TESTS: 'true'
         
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: |
+          # Ensure token-based auth isn't used; Trusted Publishing uses OIDC instead.
+          unset NODE_AUTH_TOKEN || true
+          unset NPM_CONFIG_USERCONFIG || true
+          npm publish --access public --provenance
