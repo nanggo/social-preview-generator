@@ -12,6 +12,14 @@ import sharp from 'sharp';
 jest.mock('axios');
 jest.mock('open-graph-scraper');
 jest.mock('sharp');
+jest.mock('../../src/utils/enhanced-secure-agent', () => ({
+  getEnhancedSecureAgentForUrl: jest.fn(() => undefined),
+  validateRequestSecurity: jest.fn().mockResolvedValue({
+    allowed: true,
+    blockedIPs: [],
+    allowedIPs: [],
+  }),
+}));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 const mockedOgs = ogs as jest.MockedFunction<typeof ogs>;

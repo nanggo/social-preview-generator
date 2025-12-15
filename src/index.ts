@@ -19,6 +19,7 @@ import { initializeSharpSecurity } from './utils/image-security';
 import { generateDefaultOverlay } from './core/overlay-generator';
 import { processImageForTemplate } from './core/template-image-processing';
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
+import { svgCache } from './utils/sharp-cache';
 
 // Initialize Sharp security settings
 initializeSharpSecurity();
@@ -68,7 +69,7 @@ export async function generateImageWithTemplate(
 
     if (template.overlayGenerator) {
       const overlaySvg = template.overlayGenerator(metadata, width, height, options, template);
-      overlayBuffer = Buffer.from(overlaySvg);
+      overlayBuffer = svgCache.getCachedSVG(overlaySvg) ?? svgCache.cacheSVG(overlaySvg);
     } else {
       // Fallback to default overlay generation for custom templates
       overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
