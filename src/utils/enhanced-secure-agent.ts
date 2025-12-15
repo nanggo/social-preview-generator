@@ -419,6 +419,9 @@ export function createEnhancedSecureHttpAgent(): http.Agent {
 
     const hostname = getHostnameForValidation(normalizedOptions);
     const socket = originalCreateConnection.call(this, normalizedOptions, callback);
+    if (!socket) {
+      throw new Error(`Failed to create connection socket for ${hostname}`);
+    }
 
     // Listen for the 'connect' event to perform validation after connection is established
     socket.on('connect', () => {
@@ -485,6 +488,9 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
 
     const hostname = getHostnameForValidation(normalizedOptions);
     const socket = originalCreateConnection.call(this, normalizedOptions, callback);
+    if (!socket) {
+      throw new Error(`Failed to create TLS connection socket for ${hostname}`);
+    }
 
     // Listen for the 'secureConnect' event for TLS sockets
     socket.on('secureConnect', () => {
