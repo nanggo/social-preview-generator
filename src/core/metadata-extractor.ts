@@ -222,6 +222,9 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
 
     return urlObj.toString();
   } catch (error) {
+    if (error instanceof PreviewGeneratorError) {
+      throw error;
+    }
     throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `Invalid URL: ${url}`, error);
   }
 }
