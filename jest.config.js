@@ -6,6 +6,9 @@ module.exports = {
     '**/__tests__/**/*.ts',
     '**/?(*.)+(spec|test).ts'
   ],
+  moduleNameMapper: {
+    '^parse5$': '<rootDir>/node_modules/parse5/dist/cjs/index.js',
+  },
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },

@@ -290,7 +290,7 @@ describe('Enhanced Secure Agent', () => {
               reject(new Error('Connection should have been rejected due to IP mismatch'));
             }
           }
-        );
+        ) as net.Socket;
         
         // Verify socket.destroy was called on rejection
         expect(socket.destroy).toBeDefined();
