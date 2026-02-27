@@ -1,75 +1,15 @@
 import { PreviewGeneratorError, ErrorType, PreviewOptions, SanitizedOptions } from '../../types';
 import { ALLOWED_TEMPLATES, QUALITY_LIMITS } from '../../constants/security';
 import { validateColor } from './color';
-import { validateDimension, validateDimensions } from './dimensions';
+import { validateDimension } from './dimensions';
 import { validateTextInput } from './text';
 
 /**
  * Validates all preview options including dimensions, quality, and colors.
  */
 export function validateOptions(options: PreviewOptions): void {
-  // Use the new centralized sanitization - this ensures all validation paths converge
+  // Use the centralized sanitization - this ensures all validation paths converge
   sanitizeOptions(options);
-}
-
-// Legacy function maintained for backward compatibility
-export function validateOptionsLegacy(options: PreviewOptions): void {
-  // Validate dimensions if provided
-  if (options.width !== undefined || options.height !== undefined) {
-    const width = options.width || 1200;
-    const height = options.height || 630;
-    validateDimensions(width, height);
-  }
-
-  // Validate quality if provided
-  if (options.quality !== undefined) {
-    if (
-      !Number.isFinite(options.quality) ||
-      options.quality < QUALITY_LIMITS.MIN ||
-      options.quality > QUALITY_LIMITS.MAX
-    ) {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
-        `Quality must be between ${QUALITY_LIMITS.MIN} and ${QUALITY_LIMITS.MAX}, got: ${options.quality}`
-      );
-    }
-  }
-
-  // Validate colors if provided
-  if (options.colors) {
-    const colors = options.colors;
-
-    // Validate each color property if it exists
-    if (colors.primary) validateColor(colors.primary);
-    if (colors.secondary) validateColor(colors.secondary);
-    if (colors.background) validateColor(colors.background);
-    if (colors.text) validateColor(colors.text);
-    if (colors.accent) validateColor(colors.accent);
-    if (colors.overlay) validateColor(colors.overlay);
-  }
-
-  // Validate template type if provided
-  if (options.template !== undefined) {
-    if (!ALLOWED_TEMPLATES.includes(options.template)) {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
-        `Invalid template type: ${options.template}. Allowed templates: ${ALLOWED_TEMPLATES.join(', ')}`
-      );
-    }
-  }
-
-  // Validate cache option if provided
-  if (options.cache !== undefined && typeof options.cache !== 'boolean') {
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      `Cache option must be boolean, got: ${typeof options.cache}`
-    );
-  }
-
-  // Validate text inputs if provided
-  if (options.fallback?.text) {
-    validateTextInput(options.fallback.text, 'fallback text');
-  }
 }
 
 // =============================================================================

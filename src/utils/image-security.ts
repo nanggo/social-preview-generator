@@ -67,10 +67,10 @@ export function initializeSharpSecurity(): void {
     // Cache configuration: Balance security and performance
     // - Use limited memory cache for performance (controlled memory usage)
     // - Disable file cache for security (prevent cache-based attacks)
-    sharp.cache({ 
-      memory: SHARP_CACHE_CONFIG.memory,  // 150MB memory cache for performance
-      files: 0,   // Disable file cache for security
-      items: SHARP_CACHE_CONFIG.items     // 300 operations cache
+    sharp.cache({
+      memory: SHARP_CACHE_CONFIG.memory,
+      files: SHARP_CACHE_CONFIG.files,
+      items: SHARP_CACHE_CONFIG.items,
     });
   } catch (error) {
     // Silently fail if Sharp configuration is not supported
@@ -213,7 +213,7 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
   }
 
   // Fallback: Manual magic bytes validation
-  const header = imageBuffer.slice(0, 16);
+  const header = imageBuffer.subarray(0, 16);
   
   const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
   const isPNG = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;

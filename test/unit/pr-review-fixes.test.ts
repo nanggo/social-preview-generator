@@ -15,11 +15,11 @@ describe('PR Review Fixes', () => {
 
     it('should create secure agent with proper configuration', () => {
       // Test that agents are created successfully with secure configuration
-      const { createSecureHttpAgent, createSecureHttpsAgent } = require('../../src/utils/secure-agent');
-      
-      const httpAgent = createSecureHttpAgent();
-      const httpsAgent = createSecureHttpsAgent();
-      
+      const { createEnhancedSecureHttpAgent, createEnhancedSecureHttpsAgent } = require('../../src/utils/enhanced-secure-agent');
+
+      const httpAgent = createEnhancedSecureHttpAgent();
+      const httpsAgent = createEnhancedSecureHttpsAgent();
+
       expect(httpAgent).toBeDefined();
       expect(httpsAgent).toBeDefined();
       expect(httpAgent.keepAlive).toBe(true);
@@ -244,8 +244,8 @@ describe('PR Review Fixes', () => {
       await expect(validateImageBuffer(maliciousSvg, true)).rejects.toThrow();
       
       // Test 3: Integration - all security measures working together
-      const { createSecureHttpAgent } = require('../../src/utils/secure-agent');
-      const agent = createSecureHttpAgent();
+      const { createEnhancedSecureHttpAgent } = require('../../src/utils/enhanced-secure-agent');
+      const agent = createEnhancedSecureHttpAgent();
       expect(agent).toBeDefined(); // Secure agent created
       
       // SVG security already tested above

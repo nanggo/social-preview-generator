@@ -280,9 +280,15 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
 
     return result;
   } catch {
-    // Fallback: Try direct OG scraping
+    // Fallback: Try direct OG scraping with security settings
     try {
-      const { error: ogError, result } = await ogs({ url });
+      const { error: ogError, result } = await ogs({
+        url,
+        timeout: securityOptions?.timeout || 8000,
+        fetchOptions: {
+          signal: abortSignal ?? undefined,
+        },
+      });
 
       if (ogError) {
         throw new Error('Failed to fetch Open Graph data');
@@ -491,8 +497,9 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       },
     });
 
-    // Check content-type header if available
-    const contentType = response.headers?.['content-type']?.toLowerCase();
+    // Check content-type header if available (extract base MIME type, ignoring charset etc.)
+    const rawContentType = response.headers?.['content-type']?.toLowerCase();
+    const contentType = rawContentType?.split(';')[0]?.trim();
     if (contentType && !ALLOWED_MIME_TYPES.has(contentType)) {
       throw new Error(
         `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, BMP, and TIFF are allowed.`
