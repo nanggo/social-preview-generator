@@ -109,8 +109,10 @@ export async function generatePreviewWithDetails(
   options: PreviewOptions = {}
 ): Promise<GeneratedPreview> {
   try {
+    // Validate options up front so every path (including fallback) rejects bad input
+    sanitizeOptions(options);
+
     // Set default options
-    // Note: validation happens in generateImageWithTemplate via sanitizeOptions
     const finalOptions: PreviewOptions = {
       template: 'modern',
       width: DEFAULT_DIMENSIONS.width,
