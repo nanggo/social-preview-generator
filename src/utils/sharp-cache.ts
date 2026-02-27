@@ -45,7 +45,7 @@ export interface CanvasOptions {
  * High-performance LRU cache with TTL support
  * Uses Map's insertion order property for O(1) LRU operations
  */
-class LRUCache<T> {
+class SharpLRUCache<T> {
   private cache = new Map<string, CacheEntry<T>>();
   private readonly maxSize: number;
   private readonly maxAge: number;
@@ -159,7 +159,7 @@ class LRUCache<T> {
 /**
  * SVG Cache for text overlays and graphics
  */
-class SVGCache extends LRUCache<Buffer> {
+class SVGCache extends SharpLRUCache<Buffer> {
   constructor() {
     super({
       maxSize: 200,
@@ -189,7 +189,7 @@ class SVGCache extends LRUCache<Buffer> {
 /**
  * Metadata Cache for image analysis
  */
-class MetadataCache extends LRUCache<sharp.Metadata> {
+class MetadataCache extends SharpLRUCache<sharp.Metadata> {
   constructor() {
     super({
       maxSize: 500,
@@ -222,7 +222,7 @@ class MetadataCache extends LRUCache<sharp.Metadata> {
  * Canvas Cache for common backgrounds and patterns
  * Caches SVG content instead of Sharp instances for better compatibility
  */
-class CanvasCache extends LRUCache<string> {
+class CanvasCache extends SharpLRUCache<string> {
   constructor() {
     super({
       maxSize: 50,

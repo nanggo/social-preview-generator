@@ -438,7 +438,7 @@ describe('Enhanced Secure Agent', () => {
       expect(agent).toBeDefined();
       expect((agent as any).options.keepAlive).toBe(true);
       expect((agent as any).options.timeout).toBe(30000);
-      expect((agent as any).options.secureProtocol).toBe('TLSv1_2_method');
+      expect((agent as any).options.minVersion).toBe('TLSv1.2');
       expect((agent as any).options.ciphers).toBeDefined();
     });
 

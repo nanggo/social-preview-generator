@@ -463,7 +463,7 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
     timeout: SECURITY_CONFIG.HTTP_TIMEOUT,
     lookup: enhancedSecureLookup,
     // Additional TLS security settings
-    secureProtocol: 'TLSv1_2_method',
+    minVersion: 'TLSv1.2',
     ciphers: 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384',
     honorCipherOrder: true,
     checkServerIdentity: (hostname: string, cert: tls.PeerCertificate) => {

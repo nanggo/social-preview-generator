@@ -68,11 +68,11 @@ export async function generateImageWithTemplate(
     let overlayBuffer: Buffer;
 
     if (template.overlayGenerator) {
-      const overlaySvg = template.overlayGenerator(metadata, width, height, options, template);
+      const overlaySvg = template.overlayGenerator(metadata, width, height, sanitizedOptions, template);
       overlayBuffer = svgCache.getCachedSVG(overlaySvg) ?? svgCache.cacheSVG(overlaySvg);
     } else {
       // Fallback to default overlay generation for custom templates
-      overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
+      overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, sanitizedOptions);
     }
 
     // Composite overlay on base image
@@ -182,7 +182,7 @@ export async function generatePreviewWithDetails(
     // Generate image based on template - reuse metadata instead of re-extracting
     const buffer = await generateImageWithTemplate(
       metadata,
-      template || templates.modern,
+      template,
       finalOptions
     );
 
