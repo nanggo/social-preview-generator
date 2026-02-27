@@ -281,12 +281,21 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
     return result;
   } catch {
     // Fallback: Try direct OG scraping with security settings
+    // Validate URL for SSRF before letting OGS make its own fetch request,
+    // since OGS uses Node.js built-in fetch which bypasses our secure agent
+    const ssrfCheck = await validateRequestSecurity(url);
+    if (!ssrfCheck.allowed) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `URL blocked by security validation: ${ssrfCheck.reason}`,
+      );
+    }
     try {
       const { error: ogError, result } = await ogs({
         url,
         timeout: securityOptions?.timeout || 8000,
         fetchOptions: {
-          signal: abortSignal ?? undefined,
+          signal: abortSignal,
         },
       });
 

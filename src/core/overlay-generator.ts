@@ -1,4 +1,4 @@
-import { ExtractedMetadata, PreviewOptions, TemplateConfig } from '../types';
+import { ExtractedMetadata, SanitizedOptions, TemplateConfig } from '../types';
 import { escapeXml, wrapText } from '../utils';
 import { validateColor } from '../utils/validators';
 import { createCachedSVG } from '../utils/sharp-cache';
@@ -13,7 +13,7 @@ export async function generateDefaultOverlay(
   template: TemplateConfig,
   width: number,
   height: number,
-  options: PreviewOptions
+  options: SanitizedOptions
 ): Promise<Buffer> {
   const padding = template.layout.padding || 60;
   const textColor = validateColor(options.colors?.text || '#ffffff');

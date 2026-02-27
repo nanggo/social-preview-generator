@@ -14,7 +14,7 @@ import {
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { templates } from './templates/registry';
-import { validateDimensions, validateOptions, sanitizeOptions } from './utils/validators';
+import { validateDimensions, sanitizeOptions } from './utils/validators';
 import { initializeSharpSecurity } from './utils/image-security';
 import { generateDefaultOverlay } from './core/overlay-generator';
 import { processImageForTemplate } from './core/template-image-processing';
@@ -109,10 +109,8 @@ export async function generatePreviewWithDetails(
   options: PreviewOptions = {}
 ): Promise<GeneratedPreview> {
   try {
-    // Validate options first
-    validateOptions(options);
-
     // Set default options
+    // Note: validation happens in generateImageWithTemplate via sanitizeOptions
     const finalOptions: PreviewOptions = {
       template: 'modern',
       width: DEFAULT_DIMENSIONS.width,
