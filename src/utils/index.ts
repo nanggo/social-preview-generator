@@ -256,7 +256,7 @@ export function generateSvgGradient(
     x2 = '100%',
     y2 = '0%';
 
-  if (direction === 'vertical') {
+  if (direction === 'vertical' || direction === '180deg') {
     x1 = '0%';
     y1 = '0%';
     x2 = '0%';
