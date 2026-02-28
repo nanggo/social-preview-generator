@@ -429,19 +429,19 @@
 
 ```bash
 # 린팅
-npm run lint
+pnpm run lint
 
 # 테스트
-npm test
+pnpm test
 
 # 빌드
-npm run build
+pnpm run build
 
 # 타입 체크
 npx tsc --noEmit
 
 # 보안 감사
-npm audit
+pnpm audit
 ```
 
 ---
@@ -485,11 +485,11 @@ npm audit
 ### 테스트 및 검증
 - **각 수정 후 필수 실행**:
   ```bash
-  npm run lint        # 코드 스타일
-  npm test           # 단위 테스트
-  npm run build      # 빌드 성공 확인
+  pnpm run lint        # 코드 스타일
+  pnpm test           # 단위 테스트
+  pnpm run build      # 빌드 성공 확인
   npx tsc --noEmit   # 타입 체크
-  npm audit          # 보안 취약점 검사
+  pnpm audit          # 보안 취약점 검사
   ```
 - **성능 개선 작업 시**:
   - Before/After 벤치마크 결과 기록
@@ -572,7 +572,7 @@ npm audit
 - **패키지 업데이트 시**:
   - 보안 패치는 즉시 적용
   - Major 버전 업그레이드는 별도 브랜치에서 테스트
-  - package-lock.json 항상 커밋
+  - pnpm-lock.yaml 항상 커밋
 - **새 패키지 추가 시**:
   - 번들 크기 영향 확인
   - 라이센스 호환성 검토
