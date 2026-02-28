@@ -397,7 +397,7 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
     '';
 
   // Extract image URL (prioritize OG image, then Twitter image)
-  let image = extractImageUrlFromData(ogData.ogImage) ?? extractImageUrlFromData(ogData.twitterImage);
+  let image = extractImageUrlFromData(ogData.ogImage) || extractImageUrlFromData(ogData.twitterImage);
 
   // Ensure image URL is absolute
   if (image && !image.startsWith('http')) {
