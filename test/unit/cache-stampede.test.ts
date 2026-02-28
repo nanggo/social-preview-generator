@@ -185,19 +185,19 @@ describe('Cache Stampede Prevention', () => {
       // All should have failed with similar error messages (wrapped in PreviewGeneratorError)
       results.forEach(result => {
         expect(result).toBeInstanceOf(Error);
-        expect((result as Error).message).toMatch(/Network error|Failed to fetch data|OGS also failed/);
+        expect((result as Error).message).toMatch(/Network error|Failed to fetch data/);
       });
 
-      // Should have called axios twice (primary + fallback), but all 3 concurrent
-      // requests shared the same in-flight promise
-      expect(axiosCallCount).toBe(2);
+      // Network failures fail immediately (no fallback re-fetch), and all 3 concurrent
+      // requests shared the same in-flight promise — so only 1 axios call total
+      expect(axiosCallCount).toBe(1);
 
       // In-flight requests should be cleared after failure
       expect(getInflightRequestStats().count).toBe(0);
 
       // Subsequent request should work (not blocked by previous failure)
       await expect(extractMetadata(testUrl)).rejects.toThrow();
-      expect(axiosCallCount).toBe(4); // Called again (primary + fallback)
+      expect(axiosCallCount).toBe(2); // One more call for the new request
     });
   });
 

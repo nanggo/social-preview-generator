@@ -21,11 +21,10 @@ import { generateDefaultOverlay } from './core/overlay-generator';
 import { processImageForTemplate } from './core/template-image-processing';
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
 import { svgCache } from './utils/sharp-cache';
-import { startCacheCleanup } from './utils/cache';
+import { startCacheCleanup, isCacheCleanupRunning } from './utils/cache';
 
-// Initialize Sharp security settings and start cache cleanup
+// Initialize Sharp security settings (no side-effect timers at import time)
 initializeSharpSecurity();
-startCacheCleanup();
 
 export * from './exports';
 
@@ -116,6 +115,11 @@ export async function generatePreviewWithDetails(
   options: PreviewOptions = {}
 ): Promise<GeneratedPreview> {
   try {
+    // Lazily start cache cleanup on first actual usage (not at import time)
+    if (!isCacheCleanupRunning()) {
+      startCacheCleanup();
+    }
+
     // Merge defaults then validate+sanitize in a single pass
     const finalOptions = sanitizeOptions({
       template: 'modern',

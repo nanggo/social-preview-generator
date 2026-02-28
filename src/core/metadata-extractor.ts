@@ -293,71 +293,61 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
  * Fetch Open Graph data using open-graph-scraper
  */
 async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Record<string, unknown>> {
-  try {
-    // Create secure axios config with redirect validation and secure agent
-    const axiosConfig = {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-      responseType: 'text' as const, // Ensure we get a string response for HTML parsing
-      timeout: securityOptions?.timeout || 8000, // Configurable timeout
-      maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
-      maxContentLength: 1 * 1024 * 1024, // Reduced from 2MB to 1MB for HTML content
-      maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
-      httpAgent: getEnhancedSecureAgentForUrl(url),
-      httpsAgent: getEnhancedSecureAgentForUrl(url),
-      signal: abortSignal, // Add abort signal for request cancellation
-      beforeRedirect: createRedirectValidator('Redirect'),
-    };
+  // Create secure axios config with redirect validation and secure agent
+  const axiosConfig = {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+    responseType: 'text' as const,
+    timeout: securityOptions?.timeout || 8000,
+    maxRedirects: securityOptions?.maxRedirects ?? 3,
+    maxContentLength: 1 * 1024 * 1024,
+    maxBodyLength: 1 * 1024 * 1024,
+    httpAgent: getEnhancedSecureAgentForUrl(url),
+    httpsAgent: getEnhancedSecureAgentForUrl(url),
+    signal: abortSignal,
+    beforeRedirect: createRedirectValidator('Redirect'),
+  };
 
-    // First, try to fetch HTML content
+  // Phase 1: Fetch HTML through secure agent
+  let html: string;
+  try {
     const response = await axios.get(url, axiosConfig);
 
     if (typeof response.data !== 'string') {
       throw new Error('Expected HTML response but received non-string data');
     }
 
-    // Extract OG data from HTML
-    const { error, result } = await ogs({ html: response.data, url });
+    html = response.data;
+  } catch (fetchError) {
+    // Network-level failure — no HTML to parse, fail immediately without retry
+    throw new PreviewGeneratorError(
+      ErrorType.FETCH_ERROR,
+      `Failed to fetch data from ${url}`,
+      fetchError
+    );
+  }
+
+  // Phase 2: Parse OG data from fetched HTML (no extra network request on parse failure)
+  try {
+    const { error, result } = await ogs({ html, url });
 
     if (error) {
       throw new Error('Failed to parse Open Graph data');
     }
 
     return result;
-  } catch (primaryError) {
-    // Log first attempt failure for debugging
-    logger.warn('Primary metadata fetch failed, attempting fallback', {
+  } catch (parseError) {
+    logger.warn('OG parsing failed, attempting lenient re-parse', {
       operation: 'metadata-extraction',
       url,
-      error: primaryError instanceof Error ? primaryError.message : String(primaryError),
+      error: parseError instanceof Error ? parseError.message : String(parseError),
     });
 
-    // Fallback: Re-fetch HTML with full security protections (secure agent, redirect validation)
-    // and parse with ogs({ html }) to avoid ogs making its own unprotected HTTP request
+    // Fallback: retry ogs parse on already-fetched HTML (no re-fetch)
     try {
-      const fallbackResponse = await axios.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
-          Accept: 'text/html,application/xhtml+xml',
-        },
-        responseType: 'text' as const,
-        timeout: securityOptions?.timeout || 8000,
-        maxRedirects: securityOptions?.maxRedirects ?? 3,
-        maxContentLength: 1 * 1024 * 1024,
-        maxBodyLength: 1 * 1024 * 1024,
-        httpAgent: getEnhancedSecureAgentForUrl(url),
-        httpsAgent: getEnhancedSecureAgentForUrl(url),
-        signal: abortSignal,
-        beforeRedirect: createRedirectValidator('Fallback redirect'),
-      });
-
-      if (typeof fallbackResponse.data !== 'string') {
-        throw new Error('Expected HTML response but received non-string data');
-      }
-
-      const { error: ogError, result } = await ogs({ html: fallbackResponse.data, url });
+      const { error: ogError, result } = await ogs({ html, url });
 
       if (ogError) {
         throw new Error('Failed to parse Open Graph data from fallback');
@@ -367,7 +357,7 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
     } catch (fallbackError) {
       throw new PreviewGeneratorError(
         ErrorType.FETCH_ERROR,
-        `Failed to fetch data from ${url}`,
+        `Failed to parse metadata from ${url}`,
         fallbackError
       );
     }
@@ -510,8 +500,9 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
     const rawContentType = response.headers?.['content-type']?.toLowerCase();
     const contentType = rawContentType?.split(';')[0]?.trim();
     if (contentType && !allowedMimeTypes.has(contentType)) {
+      const allowed = Array.from(allowedMimeTypes).map(t => t.replace('image/', '')).join(', ');
       throw new Error(
-        `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, BMP, and TIFF are allowed.`
+        `Unsupported image type: ${contentType}. Allowed types: ${allowed}.`
       );
     }
 

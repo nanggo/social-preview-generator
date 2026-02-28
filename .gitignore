@@ -17,6 +17,7 @@ npm-debug.log*
 .vscode/
 .idea/
 .claude/
+.serena/
 *.swp
 *.swo
 .DS_Store

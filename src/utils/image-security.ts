@@ -11,14 +11,19 @@ import * as os from 'os';
 import { getCachedMetadata } from './sharp-cache';
 import { logger } from './logger';
 
-// Singleton JSDOM/DOMPurify instance to avoid expensive re-creation per call
+// Singleton JSDOM/DOMPurify instance to avoid expensive re-creation per call.
+// Periodically recreated to prevent JSDOM window memory accumulation in long-running processes.
 let cachedPurify: ReturnType<typeof DOMPurify> | null = null;
+let purifyCallCount = 0;
+const PURIFY_RECREATE_THRESHOLD = 1000;
 
 function getDOMPurify(): ReturnType<typeof DOMPurify> {
-  if (!cachedPurify) {
+  if (!cachedPurify || purifyCallCount >= PURIFY_RECREATE_THRESHOLD) {
     const window = new JSDOM('').window;
     cachedPurify = DOMPurify(window);
+    purifyCallCount = 0;
   }
+  purifyCallCount++;
   return cachedPurify;
 }
 
