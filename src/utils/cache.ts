@@ -174,5 +174,5 @@ export function isCacheCleanupRunning(): boolean {
   return cleanupInterval !== null;
 }
 
-// Start automatic cleanup by default
-startCacheCleanup();
+// Auto-start disabled to avoid side effects on import for library consumers.
+// Call startCacheCleanup() explicitly if automatic cleanup is needed.

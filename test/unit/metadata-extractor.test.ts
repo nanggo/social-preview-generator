@@ -122,9 +122,15 @@ describe('Metadata Extractor', () => {
 
     it('should handle network errors with fallback', async () => {
       const testUrl = 'https://error-example.com';
-      
+
+      // First axios call (primary) fails
       mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
-      
+      // Second axios call (fallback) succeeds with HTML
+      mockedAxios.get.mockResolvedValueOnce({
+        data: '<html><head><title>Fallback Title</title></head></html>',
+        headers: { 'content-type': 'text/html' },
+      });
+
       mockedOgs.mockResolvedValueOnce({
         error: false,
         result: {

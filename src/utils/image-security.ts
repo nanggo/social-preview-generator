@@ -10,7 +10,17 @@ import DOMPurify from 'dompurify';
 import * as os from 'os';
 import { getCachedMetadata } from './sharp-cache';
 import { logger } from './logger';
-// Sharp pooling removed - use direct instantiation for better reliability
+
+// Singleton JSDOM/DOMPurify instance to avoid expensive re-creation per call
+let cachedPurify: ReturnType<typeof DOMPurify> | null = null;
+
+function getDOMPurify(): ReturnType<typeof DOMPurify> {
+  if (!cachedPurify) {
+    const window = new JSDOM('').window;
+    cachedPurify = DOMPurify(window);
+  }
+  return cachedPurify;
+}
 
 // Cache file-type module to avoid repeated dynamic imports
 // Use typeof import to ensure type safety with actual module structure
@@ -170,7 +180,8 @@ export async function validateImageBuffer(
 async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
   const ALLOWED_MIME_TYPES = new Set<string>([
     'image/jpeg',
-    'image/png', 
+    'image/jpg', // Non-standard but sent by some servers
+    'image/png',
     'image/gif',
     'image/webp',
     'image/bmp',
@@ -213,7 +224,7 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
   }
 
   // Fallback: Manual magic bytes validation
-  const header = imageBuffer.slice(0, 16);
+  const header = imageBuffer.subarray(0, 16);
   
   const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
   const isPNG = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
@@ -246,9 +257,8 @@ export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
   }
 
   try {
-    // Create JSDOM window for DOMPurify
-    const window = new JSDOM('').window;
-    const purify = DOMPurify(window);
+    // Use cached DOMPurify singleton for performance
+    const purify = getDOMPurify();
 
     // Configure DOMPurify for strict SVG sanitization with detailed reporting
     const cleanSvg = purify.sanitize(svgContent, {
@@ -367,9 +377,8 @@ export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
  */
 export function sanitizeSvgContent(svgContent: string): string {
   try {
-    // Create JSDOM window for DOMPurify
-    const window = new JSDOM('').window;
-    const purify = DOMPurify(window);
+    // Use cached DOMPurify singleton for performance
+    const purify = getDOMPurify();
 
     // Use the same configuration as validateSvgContent - simplified for debugging
     const cleanSvg = purify.sanitize(svgContent, {

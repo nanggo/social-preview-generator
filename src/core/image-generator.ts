@@ -4,7 +4,7 @@
  */
 
 import sharp from 'sharp';
-import { secureResize } from '../utils/image-security';
+import { secureResize, withSecureSharp } from '../utils/image-security';
 import {
   ExtractedMetadata,
   PreviewOptions,
@@ -15,9 +15,6 @@ import {
 import { escapeXml, wrapText } from '../utils';
 import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
 import { SYSTEM_FONT_STACK } from '../constants/fonts';
-
-// Pre-load image security module at module level for performance
-const imageSecurityPromise = import('../utils/image-security');
 import { fetchImage } from './metadata-extractor';
 import { createTransparentCanvas, validateColor } from '../utils/validators';
 
@@ -96,11 +93,8 @@ async function processBackgroundImage(
   template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
-    // Use withSecureSharp for automatic pool management  
-    const { withSecureSharp } = await imageSecurityPromise;
+    // Use withSecureSharp for automatic pool management
     return await withSecureSharp(imageBuffer, async (image) => {
-      await image.metadata();
-
       // Apply template-specific image processing settings
       const imageProcessing = template.imageProcessing || {};
 

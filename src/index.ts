@@ -5,6 +5,7 @@
 
 import {
   PreviewOptions,
+  SanitizedOptions,
   ExtractedMetadata,
   GeneratedPreview,
   TemplateConfig,
@@ -14,15 +15,17 @@ import {
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { templates } from './templates/registry';
-import { validateDimensions, validateOptions, sanitizeOptions } from './utils/validators';
+import { validateDimensions, sanitizeOptions } from './utils/validators';
 import { initializeSharpSecurity } from './utils/image-security';
 import { generateDefaultOverlay } from './core/overlay-generator';
 import { processImageForTemplate } from './core/template-image-processing';
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
 import { svgCache } from './utils/sharp-cache';
+import { startCacheCleanup } from './utils/cache';
 
-// Initialize Sharp security settings
+// Initialize Sharp security settings and start cache cleanup
 initializeSharpSecurity();
+startCacheCleanup();
 
 export * from './exports';
 
@@ -43,39 +46,43 @@ export async function generatePreview(url: string, options: PreviewOptions = {})
 }
 
 /**
- * Generate image with specific template
+ * Generate image with specific template (public API - validates options)
  */
 export async function generateImageWithTemplate(
   metadata: ExtractedMetadata,
   template: TemplateConfig,
   options: PreviewOptions
 ): Promise<Buffer> {
-  // Use centralized validation gateway - returns sanitized options
   const sanitizedOptions = sanitizeOptions(options);
-  
+  return generateImageWithSanitizedOptions(metadata, template, sanitizedOptions);
+}
+
+/**
+ * Internal image generation with pre-validated options (skips redundant validation)
+ */
+async function generateImageWithSanitizedOptions(
+  metadata: ExtractedMetadata,
+  template: TemplateConfig,
+  sanitizedOptions: SanitizedOptions
+): Promise<Buffer> {
   const width = sanitizedOptions.width || DEFAULT_DIMENSIONS.width;
   const height = sanitizedOptions.height || DEFAULT_DIMENSIONS.height;
   const quality = sanitizedOptions.quality || 90;
 
   try {
-    // Validate dimensions once at the start
     validateDimensions(width, height);
 
-    // Create base image with template-specific processing
     const baseImage = await processImageForTemplate(metadata, template, width, height, sanitizedOptions);
 
-    // Generate overlay using template's overlay generator
     let overlayBuffer: Buffer;
 
     if (template.overlayGenerator) {
-      const overlaySvg = template.overlayGenerator(metadata, width, height, options, template);
+      const overlaySvg = template.overlayGenerator(metadata, width, height, sanitizedOptions, template);
       overlayBuffer = svgCache.getCachedSVG(overlaySvg) ?? svgCache.cacheSVG(overlaySvg);
     } else {
-      // Fallback to default overlay generation for custom templates
-      overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, options);
+      overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, sanitizedOptions);
     }
 
-    // Composite overlay on base image
     const finalImage = await baseImage
       .composite([
         {
@@ -84,10 +91,10 @@ export async function generateImageWithTemplate(
           left: 0,
         },
       ])
-      .jpeg({ 
+      .jpeg({
         quality,
         progressive: true,
-        mozjpeg: true 
+        mozjpeg: true
       })
       .toBuffer();
 
@@ -109,18 +116,15 @@ export async function generatePreviewWithDetails(
   options: PreviewOptions = {}
 ): Promise<GeneratedPreview> {
   try {
-    // Validate options first
-    validateOptions(options);
-
-    // Set default options
-    const finalOptions: PreviewOptions = {
+    // Merge defaults then validate+sanitize in a single pass
+    const finalOptions = sanitizeOptions({
       template: 'modern',
       width: DEFAULT_DIMENSIONS.width,
       height: DEFAULT_DIMENSIONS.height,
       quality: 90,
       cache: false,
       ...options,
-    };
+    });
 
     const shouldCache = finalOptions.cache === true;
     if (shouldCache) {
@@ -179,10 +183,10 @@ export async function generatePreviewWithDetails(
       );
     }
 
-    // Generate image based on template - reuse metadata instead of re-extracting
-    const buffer = await generateImageWithTemplate(
+    // Generate image based on template - use pre-sanitized options with defaults applied
+    const buffer = await generateImageWithSanitizedOptions(
       metadata,
-      template || templates.modern,
+      template,
       finalOptions
     );
 
