@@ -88,7 +88,7 @@ async function performanceTest() {
   // Test fallback specifically
   console.log(`\n🔄 Testing Fallback Behavior:`);
   console.log('In Node.js environment, file-type should work...');
-  console.log('(In Jest environment, it would fallback to magic bytes)');
+  console.log('(In test environment, it would fallback to magic bytes)');
   
   const fallbackTestStart = process.hrtime.bigint();
   try {

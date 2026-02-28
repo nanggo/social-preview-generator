@@ -8,13 +8,13 @@
 - `src/constants/`, `src/types/` shared limits and public types
 - `src/assets/` static assets (fallback images/fonts when present)
 
-Tests live in `test/` (`unit/`, `integration/`, `performance/`) with fixtures in `test/fixtures/`; Jest is configured in `jest.config.js`. `examples/` contains runnable demos/middleware. Generated artifacts like `dist/`, `coverage/`, and `examples/output/` are gitignored.
+Tests live in `test/` (`unit/`, `integration/`, `performance/`) with fixtures in `test/fixtures/`; Vitest is configured in `vitest.config.ts`. `examples/` contains runnable demos/middleware. Generated artifacts like `dist/`, `coverage/`, and `examples/output/` are gitignored.
 
 ## Build, Test, and Development Commands
 - `npm ci` (or `npm install`) install dependencies (requires Node `>=20`)
 - `npm run build` compile to `dist/` with `tsc`
 - `npm run dev` run `tsc --watch`
-- `npm test` run Jest
+- `npm test` run Vitest
 - `npm run lint` lint `src/**/*.ts` with ESLint (`eslint.config.mjs`)
 - `npm run format` format `src/**/*.ts` with Prettier
 - `cd examples && npm install && npm start` run the example server (optional)

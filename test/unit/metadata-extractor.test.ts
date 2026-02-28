@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { extractMetadata, validateMetadata, applyFallbacks, fetchImage } from '../../src/core/metadata-extractor';
 import { ExtractedMetadata } from '../../src/types';
 import { mockHtmlWithOg, mockHtmlMinimal, mockHtmlWithTwitter } from '../fixtures/mock-html';
@@ -5,27 +6,27 @@ import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import * as imageSecurity from '../../src/utils/image-security';
 
-jest.mock('axios');
-jest.mock('open-graph-scraper');
-jest.mock('../../src/utils/image-security');
-jest.mock('../../src/utils/enhanced-secure-agent', () => ({
-  getEnhancedSecureAgentForUrl: jest.fn(() => undefined),
-  validateRequestSecurity: jest.fn().mockResolvedValue({
+vi.mock('axios');
+vi.mock('open-graph-scraper');
+vi.mock('../../src/utils/image-security');
+vi.mock('../../src/utils/enhanced-secure-agent', () => ({
+  getEnhancedSecureAgentForUrl: vi.fn(() => undefined),
+  validateRequestSecurity: vi.fn().mockResolvedValue({
     allowed: true,
     blockedIPs: [],
     allowedIPs: [],
   }),
 }));
 
-const mockedAxios = axios as jest.Mocked<typeof axios>;
-const mockedOgs = ogs as jest.MockedFunction<typeof ogs>;
-const mockedImageSecurity = imageSecurity as jest.Mocked<typeof imageSecurity>;
+const mockedAxios = axios as vi.Mocked<typeof axios>;
+const mockedOgs = ogs as vi.MockedFunction<typeof ogs>;
+const mockedImageSecurity = imageSecurity as vi.Mocked<typeof imageSecurity>;
 
 describe('Metadata Extractor', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Mock validateImageBuffer to resolve successfully for tests
-    mockedImageSecurity.validateImageBuffer = jest.fn().mockResolvedValue(undefined);
+    mockedImageSecurity.validateImageBuffer = vi.fn().mockResolvedValue(undefined);
   });
 
   describe('extractMetadata', () => {

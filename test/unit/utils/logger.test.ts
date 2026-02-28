@@ -1,17 +1,18 @@
+import { vi } from 'vitest';
 import { Logger, LogLevel, logger, logImageFetchError, logMetadataExtractionError } from '../../../src/utils/logger';
 
 // Mock console methods
 const mockConsole = {
-  debug: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
 };
 
 describe('Logger', () => {
   beforeEach(() => {
     // Reset console mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     
     // Mock console methods
     global.console.debug = mockConsole.debug;

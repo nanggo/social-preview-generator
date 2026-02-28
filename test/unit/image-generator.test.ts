@@ -1,24 +1,25 @@
+import { vi } from 'vitest';
 import { generateImage, createFallbackImage, DEFAULT_DIMENSIONS } from '../../src/core/image-generator';
 import { ExtractedMetadata, PreviewOptions } from '../../src/types';
 import sharp from 'sharp';
 
-jest.mock('sharp');
+vi.mock('sharp');
 
-const mockedSharp = sharp as jest.MockedFunction<typeof sharp>;
+const mockedSharp = sharp as vi.MockedFunction<typeof sharp>;
 
 describe('Image Generator', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     
     // Setup default sharp mock chain
     const mockSharpInstance = {
-      resize: jest.fn().mockReturnThis(),
-      blur: jest.fn().mockReturnThis(),
-      modulate: jest.fn().mockReturnThis(),
-      composite: jest.fn().mockReturnThis(),
-      jpeg: jest.fn().mockReturnThis(),
-      png: jest.fn().mockReturnThis(),
-      toBuffer: jest.fn().mockResolvedValue(Buffer.from('mock-image')),
+      resize: vi.fn().mockReturnThis(),
+      blur: vi.fn().mockReturnThis(),
+      modulate: vi.fn().mockReturnThis(),
+      composite: vi.fn().mockReturnThis(),
+      jpeg: vi.fn().mockReturnThis(),
+      png: vi.fn().mockReturnThis(),
+      toBuffer: vi.fn().mockResolvedValue(Buffer.from('mock-image')),
     };
 
     mockedSharp.mockReturnValue(mockSharpInstance as any);
@@ -43,9 +44,9 @@ describe('Image Generator', () => {
       };
 
       const mockSharpInstance = {
-        composite: jest.fn().mockReturnThis(),
-        jpeg: jest.fn().mockReturnThis(),
-        toBuffer: jest.fn().mockResolvedValue(Buffer.from('fallback-image')),
+        composite: vi.fn().mockReturnThis(),
+        jpeg: vi.fn().mockReturnThis(),
+        toBuffer: vi.fn().mockResolvedValue(Buffer.from('fallback-image')),
       };
 
       mockedSharp.mockReturnValue(mockSharpInstance as any);
@@ -78,9 +79,9 @@ describe('Image Generator', () => {
       const options: PreviewOptions = {};
 
       const mockSharpInstance = {
-        composite: jest.fn().mockReturnThis(),
-        jpeg: jest.fn().mockReturnThis(),
-        toBuffer: jest.fn().mockResolvedValue(Buffer.from('fallback-image')),
+        composite: vi.fn().mockReturnThis(),
+        jpeg: vi.fn().mockReturnThis(),
+        toBuffer: vi.fn().mockResolvedValue(Buffer.from('fallback-image')),
       };
 
       mockedSharp.mockReturnValue(mockSharpInstance as any);
@@ -95,9 +96,9 @@ describe('Image Generator', () => {
   describe('error handling', () => {
     it('should handle sharp errors gracefully', async () => {
       const mockSharpInstance = {
-        composite: jest.fn().mockReturnThis(),
-        jpeg: jest.fn().mockReturnThis(),
-        toBuffer: jest.fn().mockRejectedValue(new Error('Sharp processing error')),
+        composite: vi.fn().mockReturnThis(),
+        jpeg: vi.fn().mockReturnThis(),
+        toBuffer: vi.fn().mockRejectedValue(new Error('Sharp processing error')),
       };
 
       mockedSharp.mockReturnValue(mockSharpInstance as any);
