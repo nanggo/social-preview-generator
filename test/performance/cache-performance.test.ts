@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 /**
  * Sharp Caching Performance Tests
  * Verifies that the new caching system provides performance benefits
@@ -9,36 +10,36 @@ import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import sharp from 'sharp';
 
-jest.mock('axios');
-jest.mock('open-graph-scraper');
-jest.mock('sharp');
-jest.mock('../../src/utils/enhanced-secure-agent', () => ({
-  getEnhancedSecureAgentForUrl: jest.fn(() => undefined),
-  validateRequestSecurity: jest.fn().mockResolvedValue({
+vi.mock('axios');
+vi.mock('open-graph-scraper');
+vi.mock('sharp');
+vi.mock('../../src/utils/enhanced-secure-agent', () => ({
+  getEnhancedSecureAgentForUrl: vi.fn(() => undefined),
+  validateRequestSecurity: vi.fn().mockResolvedValue({
     allowed: true,
     blockedIPs: [],
     allowedIPs: [],
   }),
 }));
 
-const mockedAxios = axios as jest.Mocked<typeof axios>;
-const mockedOgs = ogs as jest.MockedFunction<typeof ogs>;
-const mockedSharp = sharp as jest.MockedFunction<typeof sharp>;
+const mockedAxios = axios as vi.Mocked<typeof axios>;
+const mockedOgs = ogs as vi.MockedFunction<typeof ogs>;
+const mockedSharp = sharp as vi.MockedFunction<typeof sharp>;
 
 describe('Sharp Caching Performance Tests', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     clearAllCaches();
     
     // Setup default mocks
     const mockSharpInstance = {
-      resize: jest.fn().mockReturnThis(),
-      blur: jest.fn().mockReturnThis(),
-      modulate: jest.fn().mockReturnThis(),
-      composite: jest.fn().mockReturnThis(),
-      jpeg: jest.fn().mockReturnThis(),
-      png: jest.fn().mockReturnThis(),
-      toBuffer: jest.fn().mockResolvedValue(Buffer.from('generated-image')),
+      resize: vi.fn().mockReturnThis(),
+      blur: vi.fn().mockReturnThis(),
+      modulate: vi.fn().mockReturnThis(),
+      composite: vi.fn().mockReturnThis(),
+      jpeg: vi.fn().mockReturnThis(),
+      png: vi.fn().mockReturnThis(),
+      toBuffer: vi.fn().mockResolvedValue(Buffer.from('generated-image')),
     };
 
     mockedSharp.mockReturnValue(mockSharpInstance as any);

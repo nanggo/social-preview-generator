@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "jest --passWithNoTests",
+    "test": "vitest run",
     "lint": "eslint src",
     "format": "prettier --write 'src/**/*.ts'",
     "prepublishOnly": "npm run build && npm test"
@@ -54,17 +54,16 @@
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@types/dompurify": "^3.0.5",
-    "@types/jest": "^30.0.0",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^25.0.2",
     "@typescript-eslint/eslint-plugin": "^8.39.0",
     "@typescript-eslint/parser": "^8.39.0",
+    "@vitest/coverage-v8": "^2.0.0",
     "eslint": "^9.32.0",
-    "jest": "^30.0.5",
     "jsdom": "^27.3.0",
     "parse5": "^7.3.0",
     "prettier": "^3.6.2",
-    "ts-jest": "^29.4.1",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^2.0.0"
   }
 }

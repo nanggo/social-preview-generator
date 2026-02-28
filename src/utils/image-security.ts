@@ -61,17 +61,6 @@ type AllowedImageFormat = typeof ALLOWED_IMAGE_FORMATS extends Set<infer T> ? T 
  */
 export function initializeSharpSecurity(): void {
   try {
-    // Set global pixel limit to prevent pixel bomb attacks
-    // Note: sharp.limitInputPixels() might not be available in all versions
-    if (
-      typeof (sharp as unknown as { limitInputPixels?: (pixels: number) => void })
-        .limitInputPixels === 'function'
-    ) {
-      (sharp as unknown as { limitInputPixels: (pixels: number) => void }).limitInputPixels(
-        MAX_INPUT_PIXELS
-      );
-    }
-
     // Set concurrency limit to prevent resource exhaustion
     // Lower concurrency for security (prevents DoS through resource exhaustion)
     sharp.concurrency(Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2))));

@@ -119,7 +119,7 @@ describe('Sharp Security Configuration - Enhanced', () => {
       expect(cleanedMetadata.width).toBe(100);
       expect(cleanedMetadata.height).toBe(100);
       // Note: Sharp may still include some technical metadata, but it should be minimal
-      // The key is that we processed with .withMetadata({}) to strip user metadata
+      // Sharp strips metadata by default when not using withMetadata()
     });
 
     it('should handle sequential read for memory efficiency', async () => {

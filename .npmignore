@@ -5,7 +5,8 @@ tsconfig.json
 !*.d.ts
 
 # Development files
-.eslintrc.json
+eslint.config.mjs
+vitest.config.ts
 .prettierrc
 .gitignore
 
@@ -14,9 +15,13 @@ examples/
 test/
 *.test.js
 *.test.ts
+test-*.js
+performance-benchmark.js
 
 # Documentation
 social-preview-prd.md
+IMPROVEMENTS.md
+AGENTS.md
 
 # Test outputs
 test-output.jpg
@@ -44,3 +49,7 @@ coverage/
 # Cache
 .cache/
 temp/
+
+# Claude
+.claude/
+.serena/

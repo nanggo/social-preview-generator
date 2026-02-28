@@ -1,4 +1,4 @@
-import 'jest';
+import { vi } from 'vitest';
 
 // Global test setup
 beforeAll(() => {
@@ -8,8 +8,7 @@ beforeAll(() => {
 
 afterEach(() => {
   // Clear all mocks after each test
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
-// Increase timeout for integration tests
-jest.setTimeout(30000);
+// Timeout is configured in vitest.config.ts via testTimeout: 30000

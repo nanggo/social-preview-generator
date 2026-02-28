@@ -67,10 +67,10 @@ export async function generateImage(
           left: 0,
         },
       ])
-      .jpeg({ 
+      .jpeg({
         quality,
         progressive: true,
-        mozjpeg: true 
+        mozjpeg: true
       })
       .toBuffer();
 

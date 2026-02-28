@@ -118,12 +118,12 @@ const buffer = await generatePreview('https://example.com', {
 - Centered text layout
 - Perfect for tech and modern websites
 
-### Classic (Coming Soon)
+### Classic
 - Traditional card layout
 - Image on top, text below
 - Great for news and blog sites
 
-### Minimal (Coming Soon)
+### Minimal
 - Simple, text-focused design
 - Minimal decorations
 - Ideal for documentation sites
@@ -134,13 +134,21 @@ const buffer = await generatePreview('https://example.com', {
 social-preview-generator/
 ├── src/
 │   ├── core/
-│   │   ├── metadata-extractor.ts   # URL metadata extraction
-│   │   └── image-generator.ts      # Image generation engine
+│   │   ├── metadata-extractor.ts        # URL metadata extraction
+│   │   ├── image-generator.ts           # Image generation engine
+│   │   ├── overlay-generator.ts         # SVG text overlay generation
+│   │   └── template-image-processing.ts # Template-specific image processing
 │   ├── templates/
-│   │   └── modern.ts               # Template implementations
+│   │   ├── modern.ts                    # Modern template
+│   │   ├── classic.ts                   # Classic template
+│   │   ├── minimal.ts                   # Minimal template
+│   │   ├── shared.ts                    # Shared layout helpers
+│   │   └── registry.ts                  # Template registry
+│   ├── utils/                           # Shared utilities & security
+│   ├── constants/                       # Security limits & font config
 │   ├── types/
-│   │   └── index.ts               # TypeScript definitions
-│   └── index.ts                   # Main entry point
+│   │   └── index.ts                     # TypeScript definitions
+│   └── index.ts                         # Main entry point
 ```
 
 ## 🤝 Contributing

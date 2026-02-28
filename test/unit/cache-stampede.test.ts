@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 /**
  * Cache Stampede Prevention Tests
  * Tests for in-flight request management to prevent duplicate concurrent requests
@@ -14,15 +15,15 @@ import axios from 'axios';
 import ogs from 'open-graph-scraper';
 
 // Mock external dependencies to control timing and behavior
-jest.mock('axios');
-jest.mock('open-graph-scraper');
-jest.mock('../../src/utils/enhanced-secure-agent', () => ({
-  getEnhancedSecureAgentForUrl: jest.fn(() => null),
-  validateRequestSecurity: jest.fn(() => Promise.resolve({ allowed: true }))
+vi.mock('axios');
+vi.mock('open-graph-scraper');
+vi.mock('../../src/utils/enhanced-secure-agent', () => ({
+  getEnhancedSecureAgentForUrl: vi.fn(() => null),
+  validateRequestSecurity: vi.fn(() => Promise.resolve({ allowed: true }))
 }));
 
-const mockedAxios = axios as jest.Mocked<typeof axios>;
-const mockedOgs = ogs as jest.MockedFunction<typeof ogs>;
+const mockedAxios = axios as vi.Mocked<typeof axios>;
+const mockedOgs = ogs as vi.MockedFunction<typeof ogs>;
 
 describe('Cache Stampede Prevention', () => {
   beforeEach(() => {
@@ -31,7 +32,7 @@ describe('Cache Stampede Prevention', () => {
     clearInflightRequests();
     
     // Reset all mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {

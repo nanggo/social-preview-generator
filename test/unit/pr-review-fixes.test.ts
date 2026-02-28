@@ -1,21 +1,22 @@
+import { vi } from 'vitest';
 // Tests for PR review fixes: IP validation, SVG security, and MIME type handling
 import { validateImageBuffer } from '../../src/utils/image-security';
 import { PreviewGeneratorError } from '../../src/types';
 import dns from 'dns';
 
 // Mock dns.lookup for IP validation tests
-jest.mock('dns');
-const mockDnsLookup = dns.lookup as jest.MockedFunction<typeof dns.lookup>;
+vi.mock('dns');
+const mockDnsLookup = dns.lookup as vi.MockedFunction<typeof dns.lookup>;
 
 describe('PR Review Fixes', () => {
   describe('Multi-IP Address Validation', () => {
     beforeEach(() => {
-      jest.resetAllMocks();
+      vi.resetAllMocks();
     });
 
-    it('should create secure agent with proper configuration', () => {
+    it('should create secure agent with proper configuration', async () => {
       // Test that agents are created successfully with secure configuration
-      const { createEnhancedSecureHttpAgent, createEnhancedSecureHttpsAgent } = require('../../src/utils/enhanced-secure-agent');
+      const { createEnhancedSecureHttpAgent, createEnhancedSecureHttpsAgent } = await import('../../src/utils/enhanced-secure-agent');
 
       const httpAgent = createEnhancedSecureHttpAgent();
       const httpsAgent = createEnhancedSecureHttpsAgent();
@@ -28,10 +29,10 @@ describe('PR Review Fixes', () => {
       expect(httpsAgent.maxSockets).toBe(50);
     });
 
-    it('should force all option in DNS lookup for comprehensive validation', () => {
+    it('should force all option in DNS lookup for comprehensive validation', async () => {
       // This tests that our modification to use 'all: true' is in place
       // The actual DNS validation logic is tested indirectly through IP validation utils
-      const { isPrivateOrReservedIP } = require('../../src/utils/ip-validation');
+      const { isPrivateOrReservedIP } = await import('../../src/utils/ip-validation');
       
       // Test the IP validation logic that the secure lookup uses
       expect(isPrivateOrReservedIP('192.168.1.1')).toBe(true);  // Private
@@ -42,9 +43,9 @@ describe('PR Review Fixes', () => {
       expect(isPrivateOrReservedIP('8.8.8.8')).toBe(false);     // Public
     });
 
-    it('should validate comprehensive IP blocking logic', () => {
+    it('should validate comprehensive IP blocking logic', async () => {
       // Test that the consolidated IP validation works correctly for various scenarios
-      const { isPrivateOrReservedIP } = require('../../src/utils/ip-validation');
+      const { isPrivateOrReservedIP } = await import('../../src/utils/ip-validation');
       
       // Scenario 1: Mix of public and private IPs (what multi-IP validation should catch)
       const mixedIPs = ['1.1.1.1', '192.168.1.1', '8.8.8.8'];
@@ -111,7 +112,7 @@ describe('PR Review Fixes', () => {
 
       try {
         await validateImageBuffer(maliciousSvg, true);
-        fail('Should have thrown error for malicious SVG');
+        expect.unreachable('Should have thrown error for malicious SVG');
       } catch (error) {
         expect(error).toBeInstanceOf(PreviewGeneratorError);
         expect((error as PreviewGeneratorError).message).toMatch(/SVG blocked.*object/i);
@@ -159,8 +160,8 @@ describe('PR Review Fixes', () => {
     // Note: These tests focus on the MIME type logic in fetchImage
     // The actual HTTP requests are mocked in other test files
 
-    it('should reject SVG MIME type when allowSvg is false', () => {
-      const { fetchImage } = require('../../src/core/metadata-extractor');
+    it('should reject SVG MIME type when allowSvg is false', async () => {
+      const { fetchImage } = await import('../../src/core/metadata-extractor');
       
       // This tests the MIME type checking logic
       // The ALLOWED_MIME_TYPES set should not include 'image/svg+xml' when allowSvg is false
@@ -233,9 +234,9 @@ describe('PR Review Fixes', () => {
       // Test that multiple security layers work together
       
       // Test 1: IP validation logic (used by secure agents)
-      const { isPrivateOrReservedIP } = require('../../src/utils/ip-validation');
+      const { isPrivateOrReservedIP } = await import('../../src/utils/ip-validation');
       expect(isPrivateOrReservedIP('127.0.0.1')).toBe(true);
-      
+
       // Test 2: SVG validation catches malicious content
       const maliciousSvg = Buffer.from(
         `<svg><iframe src="javascript:alert('XSS')"></iframe></svg>`
@@ -244,7 +245,7 @@ describe('PR Review Fixes', () => {
       await expect(validateImageBuffer(maliciousSvg, true)).rejects.toThrow();
       
       // Test 3: Integration - all security measures working together
-      const { createEnhancedSecureHttpAgent } = require('../../src/utils/enhanced-secure-agent');
+      const { createEnhancedSecureHttpAgent } = await import('../../src/utils/enhanced-secure-agent');
       const agent = createEnhancedSecureHttpAgent();
       expect(agent).toBeDefined(); // Secure agent created
       

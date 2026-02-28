@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 /**
  * Enhanced Secure Agent Tests
  * 
@@ -16,27 +17,27 @@ import {
 } from '../../src/utils/enhanced-secure-agent';
 
 // Mock dependencies
-jest.mock('../../src/utils/logger', () => ({
+vi.mock('../../src/utils/logger', () => ({
   logger: {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   }
 }));
 
-jest.mock('../../src/utils/ip-validation', () => ({
-  isPrivateOrReservedIP: jest.fn()
+vi.mock('../../src/utils/ip-validation', () => ({
+  isPrivateOrReservedIP: vi.fn()
 }));
 
 import { isPrivateOrReservedIP } from '../../src/utils/ip-validation';
-const mockIsPrivateOrReservedIP = isPrivateOrReservedIP as jest.MockedFunction<typeof isPrivateOrReservedIP>;
+const mockIsPrivateOrReservedIP = isPrivateOrReservedIP as vi.MockedFunction<typeof isPrivateOrReservedIP>;
 
 // Test utilities
 function mockDNSLookup(hostname: string, addresses: dns.LookupAddress[]) {
   const originalLookup = dns.lookup;
   
-  (dns.lookup as any) = jest.fn((host, options, callback) => {
+  (dns.lookup as any) = vi.fn((host, options, callback) => {
     if (typeof options === 'function') {
       callback = options;
       options = {};
@@ -78,7 +79,7 @@ describe('Enhanced Secure Agent', () => {
   let cleanupFunctions: (() => void)[] = [];
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     invalidateDNSCache(); // Clear cache between tests
     cleanupFunctions = []; // Reset cleanup functions
   });
@@ -123,7 +124,7 @@ describe('Enhanced Secure Agent', () => {
     });
 
     it('should reuse cached DNS results for subsequent requests', async () => {
-      const lookupMock = jest.fn();
+      const lookupMock = vi.fn();
       const originalLookup = dns.lookup;
       
       (dns.lookup as any) = lookupMock.mockImplementation((host, options, callback) => {
@@ -150,7 +151,7 @@ describe('Enhanced Secure Agent', () => {
     it('should expire cached results after TTL', async () => {
       const mockNow = 1000000;
       const originalDateNow = Date.now;
-      Date.now = jest.fn(() => mockNow);
+      Date.now = vi.fn(() => mockNow);
 
       const cleanup = mockDNSLookup('example.com', [
         { address: '93.184.216.34', family: 4 }
@@ -162,10 +163,10 @@ describe('Enhanced Secure Agent', () => {
       await validateRequestSecurity('https://example.com/test');
       
       // Advance time beyond TTL (5 minutes = 300000ms)
-      (Date.now as jest.Mock).mockReturnValue(mockNow + 400000);
+      (Date.now as vi.Mock).mockReturnValue(mockNow + 400000);
 
       // This should trigger a new DNS lookup
-      const lookupSpy = jest.spyOn(dns, 'lookup');
+      const lookupSpy = vi.spyOn(dns, 'lookup');
       await validateRequestSecurity('https://example.com/test2');
       
       expect(lookupSpy).toHaveBeenCalled();
@@ -186,13 +187,13 @@ describe('Enhanced Secure Agent', () => {
       // Populate the DNS cache for socket-level validation
       await validateRequestSecurity('http://test.com/');
 
-      const socketOn = jest.fn();
+      const socketOn = vi.fn();
       let connectListener: (() => void) | undefined;
       socketOn.mockImplementation((event: string, listener: () => void) => {
         if (event === 'connect') connectListener = listener;
       });
 
-      const socketDestroy = jest.fn();
+      const socketDestroy = vi.fn();
       const mockSocket = {
         remoteAddress: '1.2.3.4',
         remotePort: 80,
@@ -200,7 +201,7 @@ describe('Enhanced Secure Agent', () => {
         on: socketOn,
       } as unknown as net.Socket;
 
-      const createConnectionSpy = jest
+      const createConnectionSpy = vi
         .spyOn(http.Agent.prototype, 'createConnection')
         .mockImplementation(() => mockSocket);
 
@@ -239,14 +240,14 @@ describe('Enhanced Secure Agent', () => {
       const originalCreateConnection = agent.createConnection;
       
       // Override createConnection to simulate socket with wrong IP
-      agent.createConnection = jest.fn((options: any, callback?: any) => {
+      agent.createConnection = vi.fn((options: any, callback?: any) => {
         // Create mock socket that simulates connection to different IP than DNS resolved
         const mockSocket = {
           remoteAddress: '192.168.1.1', // Private IP - different from DNS result  
           remotePort: 80,
-          destroy: jest.fn(),
-          on: jest.fn(),
-          removeAllListeners: jest.fn()
+          destroy: vi.fn(),
+          on: vi.fn(),
+          removeAllListeners: vi.fn()
         } as unknown as net.Socket;
 
         // Call the original logic but with our mocked socket
@@ -316,8 +317,8 @@ describe('Enhanced Secure Agent', () => {
       ]);
 
       // Use the real validation function
+      const { isPrivateOrReservedIP: actualFunction } = await import('../../src/utils/ip-validation');
       mockIsPrivateOrReservedIP.mockImplementation((ip: string) => {
-        const { isPrivateOrReservedIP: actualFunction } = require('../../src/utils/ip-validation');
         return actualFunction(ip);
       });
 
@@ -344,9 +345,8 @@ describe('Enhanced Secure Agent', () => {
         ]);
 
         // Use the real isPrivateOrReservedIP function instead of mock
+        const { isPrivateOrReservedIP: actualFunction } = await import('../../src/utils/ip-validation');
         mockIsPrivateOrReservedIP.mockImplementation((ip: string) => {
-          // Call the actual validation function by requiring it again
-          const { isPrivateOrReservedIP: actualFunction } = require('../../src/utils/ip-validation');
           return actualFunction(ip);
         });
 
@@ -442,9 +442,9 @@ describe('Enhanced Secure Agent', () => {
       expect((agent as any).options.ciphers).toBeDefined();
     });
 
-    it('should use singleton instances for performance', () => {
-      const { getEnhancedSecureHttpAgent, getEnhancedSecureHttpsAgent } = 
-        require('../../src/utils/enhanced-secure-agent');
+    it('should use singleton instances for performance', async () => {
+      const { getEnhancedSecureHttpAgent, getEnhancedSecureHttpsAgent } =
+        await import('../../src/utils/enhanced-secure-agent');
       
       const httpAgent1 = getEnhancedSecureHttpAgent();
       const httpAgent2 = getEnhancedSecureHttpAgent();
@@ -584,7 +584,7 @@ describe('Enhanced Secure Agent', () => {
       const cleanup2 = mockDNSLookup('attacker.com', [
         { address: '192.168.1.100', family: 4 } // Now points to internal
       ]);
-      const lookupMock2 = dns.lookup as unknown as jest.Mock;
+      const lookupMock2 = dns.lookup as unknown as vi.Mock;
       
       // Second validation should still use cached DNS and remain consistent
       const result2 = await validateRequestSecurity('http://attacker.com/payload');
@@ -602,13 +602,13 @@ describe('Enhanced Secure Agent', () => {
       const result = await validateRequestSecurity('http://evil.com/');
       expect(result.allowed).toBe(true);
 
-      const socketOn = jest.fn();
+      const socketOn = vi.fn();
       let connectListener: (() => void) | undefined;
       socketOn.mockImplementation((event: string, listener: () => void) => {
         if (event === 'connect') connectListener = listener;
       });
 
-      const socketDestroy = jest.fn();
+      const socketDestroy = vi.fn();
       const mockSocket = {
         remoteAddress: '10.0.0.1', // Different from cached DNS IP
         remotePort: 80,
@@ -616,7 +616,7 @@ describe('Enhanced Secure Agent', () => {
         on: socketOn,
       } as unknown as net.Socket;
 
-      const createConnectionSpy = jest
+      const createConnectionSpy = vi
         .spyOn(http.Agent.prototype, 'createConnection')
         .mockImplementation(() => mockSocket);
 
@@ -721,7 +721,7 @@ describe('Enhanced Secure Agent', () => {
     it('should handle malformed IP addresses in DNS responses', async () => {
       // Mock DNS to return invalid IP format
       const originalLookup = dns.lookup;
-      (dns.lookup as any) = jest.fn((host, options, callback) => {
+      (dns.lookup as any) = vi.fn((host, options, callback) => {
         if (typeof options === 'function') {
           callback = options;
         }

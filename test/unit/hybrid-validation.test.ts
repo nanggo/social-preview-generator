@@ -28,12 +28,11 @@ describe('Hybrid Image Validation', () => {
 
   describe('Fallback Behavior', () => {
     it('should use fallback when file-type is unavailable', async () => {
-      // This test runs in Jest where file-type is not available
+      // file-type detection runs first; falls back to magic bytes + Sharp
       const validJpeg = createValidJPEG();
       
-      // In Jest environment, file-type fails and falls back to magic bytes + Sharp
       // Sharp might still fail on the hand-crafted JPEG, but the important thing is
-      // that magic bytes validation passed (file-type fallback worked)
+      // that magic bytes validation passed (fallback worked)
       try {
         await validateImageBuffer(validJpeg, false);
         // If it succeeds, great! Both fallback and Sharp validation worked
@@ -98,15 +97,15 @@ describe('Hybrid Image Validation', () => {
       const invalidBuffer = Buffer.from([0x00, 0x01, 0x02, 0x03, ...Array(100).fill(0xFF)]);
       
       await expect(validateImageBuffer(invalidBuffer, false)).rejects.toThrow(
-        'Unsupported image format detected by magic bytes fallback'
+        'Unsupported image format detected by'
       );
     });
 
     it('should reject empty buffer', async () => {
       const emptyBuffer = Buffer.alloc(0);
-      
+
       await expect(validateImageBuffer(emptyBuffer, false)).rejects.toThrow(
-        'Unsupported image format detected by magic bytes fallback'
+        'Unsupported image format detected by'
       );
     });
 
