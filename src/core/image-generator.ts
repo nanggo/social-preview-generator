@@ -94,8 +94,6 @@ async function processBackgroundImage(
 ): Promise<sharp.Sharp> {
   try {
     return await withSecureSharp(imageBuffer, async (image) => {
-      await image.metadata();
-
       // Apply template-specific image processing settings
       const imageProcessing = template.imageProcessing || {};
 

@@ -198,12 +198,12 @@ export interface TemplateConfig {
     /** Whether template requires transparent canvas when no image available */
     requiresTransparentCanvas?: boolean;
   };
-  /** Custom overlay generator function */
+  /** Custom overlay generator function (receives pre-validated options) */
   overlayGenerator?: (
     metadata: ExtractedMetadata,
     width: number,
     height: number,
-    options: PreviewOptions,
+    options: SanitizedOptions,
     template?: TemplateConfig
   ) => string;
 }

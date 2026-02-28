@@ -24,6 +24,10 @@ const mockedSharp = sharp as jest.MockedFunction<typeof sharp>;
 describe('End-to-End Integration Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset axios/ogs implementations to clear leftover once-mock queues from previous tests
+    // (clearAllMocks only clears call data, not once-value queues)
+    mockedAxios.get.mockReset();
+    mockedOgs.mockReset();
     clearAllCaches();
     clearInflightRequests();
     metadataCache.clear();

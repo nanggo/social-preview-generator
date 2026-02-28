@@ -115,16 +115,17 @@ describe('Cache Stampede Prevention', () => {
         };
       });
 
-      // Mock ogs to return URL-specific metadata
+      // Mock ogs to return metadata extracted from provided HTML
       mockedOgs.mockImplementation(async (options: any) => {
-        const hostname = new URL(options.url).hostname;
+        // Extract hostname from the HTML title since ogs receives only html (not url)
+        const titleMatch = options.html?.match(/<title>Title for ([^<]+)<\/title>/);
+        const hostname = titleMatch ? titleMatch[1] : 'unknown';
         return {
           error: false,
           result: {
             ogTitle: `Title for ${hostname}`,
-            url: options.url
           },
-          html: '<html></html>',
+          html: options.html,
           response: {} as any
         } as any;
       });
@@ -185,10 +186,11 @@ describe('Cache Stampede Prevention', () => {
       // All should have failed with similar error messages (wrapped in PreviewGeneratorError)
       results.forEach(result => {
         expect(result).toBeInstanceOf(Error);
-        expect((result as Error).message).toMatch(/Network error|Failed to fetch data|OGS also failed/);
+        expect((result as Error).message).toMatch(/Network error|Failed to fetch data/);
       });
 
-      // Should have called axios only once (all requests shared the same promise)
+      // Network failures fail immediately (no fallback re-fetch), and all 3 concurrent
+      // requests shared the same in-flight promise — so only 1 axios call total
       expect(axiosCallCount).toBe(1);
 
       // In-flight requests should be cleared after failure
@@ -196,7 +198,7 @@ describe('Cache Stampede Prevention', () => {
 
       // Subsequent request should work (not blocked by previous failure)
       await expect(extractMetadata(testUrl)).rejects.toThrow();
-      expect(axiosCallCount).toBe(2); // Called again
+      expect(axiosCallCount).toBe(2); // One more call for the new request
     });
   });
 

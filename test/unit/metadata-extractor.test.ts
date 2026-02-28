@@ -120,22 +120,13 @@ describe('Metadata Extractor', () => {
       await expect(extractMetadata(invalidUrl)).rejects.toThrow();
     });
 
-    it('should handle network errors with fallback', async () => {
+    it('should fail immediately on network error (no fallback re-fetch)', async () => {
       const testUrl = 'https://error-example.com';
-      
-      mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
-      
-      mockedOgs.mockResolvedValueOnce({
-        error: false,
-        result: {
-          dcTitle: 'Fallback Title',
-        },
-        html: '<html></html>',
-        response: {} as any,
-      });
 
-      const result = await extractMetadata(testUrl);
-      expect(result.title).toBe('Fallback Title');
+      // Axios call fails — network-level errors are not retried
+      mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(extractMetadata(testUrl)).rejects.toThrow('Failed to fetch data');
     });
   });
 

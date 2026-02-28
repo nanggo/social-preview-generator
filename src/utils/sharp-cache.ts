@@ -45,6 +45,9 @@ export interface CanvasOptions {
  * High-performance LRU cache with TTL support
  * Uses Map's insertion order property for O(1) LRU operations
  */
+// Note: This is a separate LRU implementation from cache.ts with additional features
+// (idle timeout, hit counting, automatic cleanup interval).
+// TODO: Consider unifying with cache.ts LRUCache into a shared module.
 class SharpLRUCache<T> {
   private cache = new Map<string, CacheEntry<T>>();
   private readonly maxSize: number;
@@ -182,7 +185,7 @@ class SVGCache extends SharpLRUCache<Buffer> {
 
   private generateSVGKey(svgContent: string): string {
     // Generate compact hash for SVG content
-    return crypto.createHash('sha1').update(svgContent).digest('hex').substring(0, 16);
+    return crypto.createHash('sha256').update(svgContent).digest('hex').substring(0, 16);
   }
 }
 
@@ -253,7 +256,7 @@ class CanvasCache extends SharpLRUCache<string> {
       background: options.background || 'default'
     };
     
-    return crypto.createHash('sha1')
+    return crypto.createHash('sha256')
       .update(JSON.stringify(keyData))
       .digest('hex')
       .substring(0, 16);

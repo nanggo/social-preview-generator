@@ -12,6 +12,66 @@ import { validateImageBuffer } from '../utils/image-security';
 import { metadataCache } from '../utils/cache';
 import { logger } from '../utils/logger';
 
+// Allowed MIME types for images
+const BASE_ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+  'image/tiff',
+]);
+
+// Maximum allowed image size (15MB)
+const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
+
+/**
+ * Build redirect validation callback for SSRF protection
+ */
+function createRedirectValidator(context: string) {
+  return (
+    options: Record<string, unknown>,
+    _responseDetails: { headers: Record<string, string>; statusCode: number }
+  ) => {
+    const redirectOptions = options as unknown as RedirectOptions;
+    const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
+      redirectOptions.port ? `:${redirectOptions.port}` : ''
+    }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+    try {
+      validateUrlInput(redirectUrl);
+    } catch (error) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `${context} to unsafe URL blocked: ${redirectUrl}`,
+        error
+      );
+    }
+  };
+}
+
+/**
+ * Extract image URL from OG/Twitter image data that may be a string, object, or array
+ */
+function extractImageUrlFromData(data: unknown): string | undefined {
+  if (Array.isArray(data)) {
+    const first = data[0];
+    if (typeof first === 'object' && first !== null && 'url' in first) {
+      const url = (first as { url: unknown }).url;
+      return typeof url === 'string' ? url : undefined;
+    }
+    if (typeof first === 'string') {
+      return first;
+    }
+  } else if (typeof data === 'object' && data !== null && 'url' in data) {
+    const url = (data as { url: unknown }).url;
+    return typeof url === 'string' ? url : undefined;
+  } else if (typeof data === 'string') {
+    return data;
+  }
+  return undefined;
+}
+
 // In-flight request management to prevent cache stampede
 // Limit the size to prevent memory exhaustion DoS attacks
 const MAX_INFLIGHT_REQUESTS = 1000;
@@ -233,84 +293,58 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
  * Fetch Open Graph data using open-graph-scraper
  */
 async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Record<string, unknown>> {
-  try {
-    // Create secure axios config with redirect validation and secure agent
-    const axiosConfig = {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-      timeout: securityOptions?.timeout || 8000, // Configurable timeout
-      maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
-      maxContentLength: 1 * 1024 * 1024, // Reduced from 2MB to 1MB for HTML content
-      maxBodyLength: 1 * 1024 * 1024, // Ensure body is also limited
-      httpAgent: getEnhancedSecureAgentForUrl(url),
-      httpsAgent: getEnhancedSecureAgentForUrl(url),
-      signal: abortSignal, // Add abort signal for request cancellation
-      beforeRedirect: (
-        options: Record<string, unknown>,
-        _responseDetails: { headers: Record<string, string>; statusCode: number }
-      ) => {
-        // Validate each redirect URL for SSRF protection using typed interface for clarity
-        const redirectOptions = options as unknown as RedirectOptions;
-        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
-          redirectOptions.port ? `:${redirectOptions.port}` : ''
-        }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
-        try {
-          validateUrlInput(redirectUrl);
-        } catch (error) {
-          throw new PreviewGeneratorError(
-            ErrorType.VALIDATION_ERROR,
-            `Redirect to unsafe URL blocked: ${redirectUrl}`,
-            error
-          );
-        }
-      },
-    };
+  // Create secure axios config with redirect validation and secure agent
+  const axiosConfig = {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+    responseType: 'text' as const,
+    timeout: securityOptions?.timeout || 8000,
+    maxRedirects: securityOptions?.maxRedirects ?? 3,
+    maxContentLength: 1 * 1024 * 1024,
+    maxBodyLength: 1 * 1024 * 1024,
+    httpAgent: getEnhancedSecureAgentForUrl(url),
+    httpsAgent: getEnhancedSecureAgentForUrl(url),
+    signal: abortSignal,
+    beforeRedirect: createRedirectValidator('Redirect'),
+  };
 
-    // First, try to fetch HTML content
+  // Phase 1: Fetch HTML through secure agent
+  let html: string;
+  try {
     const response = await axios.get(url, axiosConfig);
 
-    // Extract OG data from HTML
-    const { error, result } = await ogs({ html: response.data, url });
+    if (typeof response.data !== 'string') {
+      throw new Error('Expected HTML response but received non-string data');
+    }
+
+    html = response.data;
+  } catch (fetchError) {
+    // Network-level failure — no HTML to parse, fail immediately without retry
+    throw new PreviewGeneratorError(
+      ErrorType.FETCH_ERROR,
+      `Failed to fetch data from ${url}`,
+      fetchError
+    );
+  }
+
+  // Phase 2: Parse OG data from fetched HTML
+  // Note: ogs rejects calls with both `html` and `url` — only pass `html`
+  try {
+    const { error, result } = await ogs({ html });
 
     if (error) {
       throw new Error('Failed to parse Open Graph data');
     }
 
     return result;
-  } catch {
-    // Fallback: Try direct OG scraping with security settings
-    // Validate URL for SSRF before letting OGS make its own fetch request,
-    // since OGS uses Node.js built-in fetch which bypasses our secure agent
-    const ssrfCheck = await validateRequestSecurity(url);
-    if (!ssrfCheck.allowed) {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
-        `URL blocked by security validation: ${ssrfCheck.reason}`,
-      );
-    }
-    try {
-      const { error: ogError, result } = await ogs({
-        url,
-        timeout: securityOptions?.timeout || 8000,
-        fetchOptions: {
-          signal: abortSignal,
-        },
-      });
-
-      if (ogError) {
-        throw new Error('Failed to fetch Open Graph data');
-      }
-
-      return result;
-    } catch (fallbackError) {
-      throw new PreviewGeneratorError(
-        ErrorType.FETCH_ERROR,
-        `Failed to fetch data from ${url}`,
-        fallbackError
-      );
-    }
+  } catch (parseError) {
+    throw new PreviewGeneratorError(
+      ErrorType.FETCH_ERROR,
+      `Failed to parse metadata from ${url}`,
+      parseError
+    );
   }
 }
 
@@ -337,40 +371,12 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
     '';
 
   // Extract image URL (prioritize OG image, then Twitter image)
-  let image: string | undefined;
-  if (ogData.ogImage) {
-    if (Array.isArray(ogData.ogImage)) {
-      const firstImage = ogData.ogImage[0];
-      if (typeof firstImage === 'object' && firstImage !== null && 'url' in firstImage) {
-        image = (firstImage as { url: string }).url;
-      } else if (typeof firstImage === 'string') {
-        image = firstImage;
-      }
-    } else if (typeof ogData.ogImage === 'object' && ogData.ogImage !== null && 'url' in ogData.ogImage) {
-      image = (ogData.ogImage as { url: string }).url;
-    } else if (typeof ogData.ogImage === 'string') {
-      image = ogData.ogImage;
-    }
-  } else if (ogData.twitterImage) {
-    if (Array.isArray(ogData.twitterImage)) {
-      const firstImage = ogData.twitterImage[0];
-      if (typeof firstImage === 'object' && firstImage !== null && 'url' in firstImage) {
-        image = (firstImage as { url: string }).url;
-      } else if (typeof firstImage === 'string') {
-        image = firstImage;
-      }
-    } else if (typeof ogData.twitterImage === 'object' && ogData.twitterImage !== null && 'url' in ogData.twitterImage) {
-      image = (ogData.twitterImage as { url: string }).url;
-    } else if (typeof ogData.twitterImage === 'string') {
-      image = ogData.twitterImage;
-    }
-  }
+  let image = extractImageUrlFromData(ogData.ogImage) || extractImageUrlFromData(ogData.twitterImage);
 
   // Ensure image URL is absolute
   if (image && !image.startsWith('http')) {
     try {
-      const imageUrl = new URL(image, url);
-      image = imageUrl.toString();
+      image = new URL(image, url).toString();
     } catch {
       image = undefined;
     }
@@ -454,24 +460,10 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
     // Validate URL with SSRF protection before fetching
     const validatedUrl = await validateUrl(imageUrl, securityOptions);
 
-    // Maximum allowed image size (15MB)
-    const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
-
-    // Allowed MIME types for images (SVG conditionally allowed based on security settings)
-    const ALLOWED_MIME_TYPES = new Set([
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'image/bmp',
-      'image/tiff',
-    ]);
-
-    // Add SVG to allowed types only if explicitly permitted
-    if (securityOptions?.allowSvg) {
-      ALLOWED_MIME_TYPES.add('image/svg+xml');
-    }
+    // Check SVG allowance
+    const allowedMimeTypes = securityOptions?.allowSvg
+      ? new Set([...BASE_ALLOWED_MIME_TYPES, 'image/svg+xml'])
+      : BASE_ALLOWED_MIME_TYPES;
 
     const response = await axios.get(validatedUrl, {
       responseType: 'arraybuffer',
@@ -485,33 +477,16 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       httpAgent: getEnhancedSecureAgentForUrl(validatedUrl),
       httpsAgent: getEnhancedSecureAgentForUrl(validatedUrl),
       signal: abortSignal, // Add abort signal for request cancellation
-      beforeRedirect: (
-        options: Record<string, unknown>,
-        _responseDetails: { headers: Record<string, string>; statusCode: number }
-      ) => {
-        // Validate each redirect URL for SSRF protection using typed interface for clarity
-        const redirectOptions = options as unknown as RedirectOptions;
-        const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
-          redirectOptions.port ? `:${redirectOptions.port}` : ''
-        }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
-        try {
-          validateUrlInput(redirectUrl);
-        } catch (error) {
-          throw new PreviewGeneratorError(
-            ErrorType.VALIDATION_ERROR,
-            `Image redirect to unsafe URL blocked: ${redirectUrl}`,
-            error
-          );
-        }
-      },
+      beforeRedirect: createRedirectValidator('Image redirect'),
     });
 
     // Check content-type header if available (extract base MIME type, ignoring charset etc.)
     const rawContentType = response.headers?.['content-type']?.toLowerCase();
     const contentType = rawContentType?.split(';')[0]?.trim();
-    if (contentType && !ALLOWED_MIME_TYPES.has(contentType)) {
+    if (contentType && !allowedMimeTypes.has(contentType)) {
+      const allowed = Array.from(allowedMimeTypes).map(t => t.replace('image/', '')).join(', ');
       throw new Error(
-        `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, BMP, and TIFF are allowed.`
+        `Unsupported image type: ${contentType}. Allowed types: ${allowed}.`
       );
     }
 
