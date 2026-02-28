@@ -295,7 +295,6 @@ export const SHARP_SECURITY_CONFIG = {
   sequentialRead: true,
   density: 300,
   failOnError: true,  // Security: fail fast on corrupted/malicious images
-  stripMetadata: true,
 } as const;
 
 // =============================================================================

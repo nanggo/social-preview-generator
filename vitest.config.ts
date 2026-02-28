@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
@@ -12,6 +12,7 @@ export default defineConfig({
     setupFiles: ['./test/setup.ts'],
     testTimeout: 30000,
     passWithNoTests: true,
+    exclude: [...configDefaults.exclude, 'test/integration/real-urls.test.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

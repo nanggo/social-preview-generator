@@ -67,10 +67,11 @@ export async function generateImage(
           left: 0,
         },
       ])
-      .jpeg({ 
+      .withMetadata({})
+      .jpeg({
         quality,
         progressive: true,
-        mozjpeg: true 
+        mozjpeg: true
       })
       .toBuffer();
 

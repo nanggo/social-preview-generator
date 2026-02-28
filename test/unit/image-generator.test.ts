@@ -17,6 +17,7 @@ describe('Image Generator', () => {
       blur: vi.fn().mockReturnThis(),
       modulate: vi.fn().mockReturnThis(),
       composite: vi.fn().mockReturnThis(),
+      withMetadata: vi.fn().mockReturnThis(),
       jpeg: vi.fn().mockReturnThis(),
       png: vi.fn().mockReturnThis(),
       toBuffer: vi.fn().mockResolvedValue(Buffer.from('mock-image')),
@@ -45,6 +46,7 @@ describe('Image Generator', () => {
 
       const mockSharpInstance = {
         composite: vi.fn().mockReturnThis(),
+        withMetadata: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('fallback-image')),
       };
@@ -55,7 +57,7 @@ describe('Image Generator', () => {
 
       expect(result).toBeInstanceOf(Buffer);
       expect(mockSharpInstance.composite).toHaveBeenCalled();
-      expect(mockSharpInstance.jpeg).toHaveBeenCalledWith({ 
+      expect(mockSharpInstance.jpeg).toHaveBeenCalledWith({
         quality: 90,
         progressive: true,
         mozjpeg: true
@@ -80,6 +82,7 @@ describe('Image Generator', () => {
 
       const mockSharpInstance = {
         composite: vi.fn().mockReturnThis(),
+        withMetadata: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('fallback-image')),
       };
@@ -97,6 +100,7 @@ describe('Image Generator', () => {
     it('should handle sharp errors gracefully', async () => {
       const mockSharpInstance = {
         composite: vi.fn().mockReturnThis(),
+        withMetadata: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockRejectedValue(new Error('Sharp processing error')),
       };

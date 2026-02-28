@@ -39,6 +39,7 @@ describe('End-to-End Integration Tests', () => {
       blur: vi.fn().mockReturnThis(),
       modulate: vi.fn().mockReturnThis(),
       composite: vi.fn().mockReturnThis(),
+      withMetadata: vi.fn().mockReturnThis(),
       jpeg: vi.fn().mockReturnThis(),
       png: vi.fn().mockReturnThis(),
       toBuffer: vi.fn().mockResolvedValue(Buffer.from('generated-image')),
@@ -305,6 +306,7 @@ describe('End-to-End Integration Tests', () => {
         blur: vi.fn().mockReturnThis(),
         modulate: vi.fn().mockReturnThis(),
         composite: vi.fn().mockReturnThis(),
+        withMetadata: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockRejectedValue(new Error('Sharp processing error')),
       };

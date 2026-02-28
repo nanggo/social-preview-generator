@@ -184,8 +184,7 @@ class SVGCache extends SharpLRUCache<Buffer> {
   }
 
   private generateSVGKey(svgContent: string): string {
-    // Generate compact hash for SVG content
-    return crypto.createHash('sha256').update(svgContent).digest('hex').substring(0, 16);
+    return crypto.createHash('sha256').update(svgContent).digest('hex');
   }
 }
 
@@ -258,8 +257,7 @@ class CanvasCache extends SharpLRUCache<string> {
     
     return crypto.createHash('sha256')
       .update(JSON.stringify(keyData))
-      .digest('hex')
-      .substring(0, 16);
+      .digest('hex');
   }
 }
 

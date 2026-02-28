@@ -90,6 +90,7 @@ async function generateImageWithSanitizedOptions(
           left: 0,
         },
       ])
+      .withMetadata({})
       .jpeg({
         quality,
         progressive: true,
