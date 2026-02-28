@@ -285,7 +285,7 @@ export const ALLOWED_SVG_NAMESPACES = ['http://www.w3.org/2000/svg'] as const;
 /** Sharp memory cache settings */
 export const SHARP_CACHE_CONFIG = {
   memory: 150,  // 150MB memory cache
-  files: 30,    // 30 files cache
+  files: 0,     // Disabled for security (prevent cache-based attacks)
   items: 300,   // 300 operations cache
 } as const;
 

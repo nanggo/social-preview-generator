@@ -77,10 +77,10 @@ export function initializeSharpSecurity(): void {
     // Cache configuration: Balance security and performance
     // - Use limited memory cache for performance (controlled memory usage)
     // - Disable file cache for security (prevent cache-based attacks)
-    sharp.cache({ 
-      memory: SHARP_CACHE_CONFIG.memory,  // 150MB memory cache for performance
-      files: 0,   // Disable file cache for security
-      items: SHARP_CACHE_CONFIG.items     // 300 operations cache
+    sharp.cache({
+      memory: SHARP_CACHE_CONFIG.memory,
+      files: SHARP_CACHE_CONFIG.files,
+      items: SHARP_CACHE_CONFIG.items,
     });
   } catch (error) {
     // Silently fail if Sharp configuration is not supported

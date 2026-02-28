@@ -506,9 +506,9 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       beforeRedirect: createRedirectValidator('Image redirect'),
     });
 
-    // Check content-type header if available (strip parameters like charset)
+    // Check content-type header if available (extract base MIME type, ignoring charset etc.)
     const rawContentType = response.headers?.['content-type']?.toLowerCase();
-    const contentType = rawContentType?.split(';')[0].trim();
+    const contentType = rawContentType?.split(';')[0]?.trim();
     if (contentType && !allowedMimeTypes.has(contentType)) {
       throw new Error(
         `Unsupported image type: ${contentType}. Only JPEG, PNG, GIF, WebP, BMP, and TIFF are allowed.`

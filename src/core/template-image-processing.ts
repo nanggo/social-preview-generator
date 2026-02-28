@@ -35,7 +35,6 @@ export async function processImageForTemplate(
   try {
     const imageBuffer = await fetchImage(metadata.image, options.security);
 
-    // Use withSecureSharp for automatic pool management
     return await withSecureSharp(imageBuffer, async (secureImage) => {
       let processedImage = secureResize(secureImage, width, height, {
         fit: 'cover',

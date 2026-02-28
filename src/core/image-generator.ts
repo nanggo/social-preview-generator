@@ -93,7 +93,6 @@ async function processBackgroundImage(
   template: TemplateConfig
 ): Promise<sharp.Sharp> {
   try {
-    // Use withSecureSharp for automatic pool management
     return await withSecureSharp(imageBuffer, async (image) => {
       // Apply template-specific image processing settings
       const imageProcessing = template.imageProcessing || {};

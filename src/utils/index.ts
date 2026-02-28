@@ -256,29 +256,29 @@ export function generateSvgGradient(
     x2 = '100%',
     y2 = '0%';
 
-  if (typeof direction === 'number' || direction.endsWith('deg')) {
+  if (direction === 'vertical' || direction === '180deg') {
+    x1 = '0%';
+    y1 = '0%';
+    x2 = '0%';
+    y2 = '100%';
+  } else if (typeof direction === 'number' || (typeof direction === 'string' && direction.endsWith('deg'))) {
     const angle = typeof direction === 'number' ? direction : parseInt(direction);
     const rad = (angle * Math.PI) / 180;
     x1 = '50%';
     y1 = '50%';
     x2 = `${50 + 50 * Math.cos(rad)}%`;
     y2 = `${50 + 50 * Math.sin(rad)}%`;
-  } else if (direction === 'vertical' || direction === '180deg') {
-    x1 = '0%';
-    y1 = '0%';
-    x2 = '0%';
-    y2 = '100%';
   }
 
   const stops = colors
     .map(
       ({ offset, color, opacity = 1 }) =>
-        `<stop offset="${offset}" style="stop-color:${color};stop-opacity:${opacity}" />`
+        `<stop offset="${escapeXml(offset)}" style="stop-color:${escapeXml(color)};stop-opacity:${opacity}" />`
     )
     .join('\n    ');
 
   return `
-    <linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">
+    <linearGradient id="${escapeXml(id)}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">
       ${stops}
     </linearGradient>
   `;
@@ -301,12 +301,12 @@ export function createSvgText(
   attributes: Record<string, string | number> = {}
 ): string {
   const escapedContent = escapeXml(content);
-  const classAttr = className ? `class="${className}"` : '';
+  const classAttr = className ? `class="${escapeXml(className)}"` : '';
   const additionalAttrs = Object.entries(attributes)
-    .map(([key, value]) => `${key}="${value}"`)
+    .map(([key, value]) => `${escapeXml(key)}="${escapeXml(String(value))}"`)
     .join(' ');
 
-  return `<text x="${x}" y="${y}" ${classAttr} ${additionalAttrs}>${escapedContent}</text>`;
+  return `<text x="${escapeXml(String(x))}" y="${escapeXml(String(y))}" ${classAttr} ${additionalAttrs}>${escapedContent}</text>`;
 }
 
 /**

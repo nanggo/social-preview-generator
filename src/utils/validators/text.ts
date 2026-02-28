@@ -12,7 +12,7 @@ import {
 /**
  * Validate text input to prevent injection attacks.
  */
-export function validateTextInput(text: string, fieldName: string = 'text'): string {
+export function validateTextInput(text: string, fieldName: string = 'text'): SanitizedText {
   if (typeof text !== 'string') {
     throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `${fieldName} must be a string`);
   }
@@ -36,7 +36,7 @@ export function validateTextInput(text: string, fieldName: string = 'text'): str
     );
   }
 
-  return sanitizedText;
+  return sanitizedText as SanitizedText;
 }
 
 /**
@@ -72,9 +72,7 @@ export function sanitizeControlChars(text: string): string {
  * Validate and sanitize text content.
  */
 export function sanitizeText(text: string): SanitizedText {
-  const validated = validateTextInput(text, 'text');
-  // Control character sanitization is now centralized in validateTextInput
-  return validated as SanitizedText;
+  return validateTextInput(text, 'text');
 }
 
 function isSafeTextInput(text: string): boolean {
