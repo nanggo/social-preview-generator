@@ -462,9 +462,9 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
     maxFreeSockets: Math.floor(SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS / 5),
     timeout: SECURITY_CONFIG.HTTP_TIMEOUT,
     lookup: enhancedSecureLookup,
-    // Additional TLS security settings
-    secureProtocol: 'TLSv1_2_method',
-    ciphers: 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384',
+    // TLS security settings
+    minVersion: 'TLSv1.2',
+    ciphers: 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
     honorCipherOrder: true,
     checkServerIdentity: (hostname: string, cert: tls.PeerCertificate) => {
       // Perform additional hostname verification

@@ -2,12 +2,9 @@ import sharp from 'sharp';
 import { ExtractedMetadata, TemplateConfig, SanitizedOptions } from '../types';
 import { createTransparentCanvas } from '../utils/validators';
 import { logImageFetchError } from '../utils/logger';
-import { secureResize } from '../utils/image-security';
+import { secureResize, withSecureSharp } from '../utils/image-security';
 import { fetchImage } from './metadata-extractor';
 import { createBlankCanvas } from './image-generator';
-
-// Pre-load image security module at module level for performance
-const imageSecurityPromise = import('../utils/image-security');
 
 export async function processImageForTemplate(
   metadata: ExtractedMetadata,
@@ -39,7 +36,6 @@ export async function processImageForTemplate(
     const imageBuffer = await fetchImage(metadata.image, options.security);
 
     // Use withSecureSharp for automatic pool management
-    const { withSecureSharp } = await imageSecurityPromise;
     return await withSecureSharp(imageBuffer, async (secureImage) => {
       let processedImage = secureResize(secureImage, width, height, {
         fit: 'cover',

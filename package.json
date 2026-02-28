@@ -4,11 +4,17 @@
   "description": "Generate beautiful social media preview images from any URL",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "jest --passWithNoTests",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "format": "prettier --write 'src/**/*.ts'",
     "prepublishOnly": "npm run build && npm test"
   },
@@ -43,8 +49,7 @@
     "dompurify": "^3.2.6",
     "file-type": "^21.0.0",
     "open-graph-scraper": "^6.10.0",
-    "sharp": "^0.34.3",
-    "uuid": "^13.0.0"
+    "sharp": "^0.34.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -52,8 +57,6 @@
     "@types/jest": "^30.0.0",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^25.0.2",
-    "@types/sharp": "^0.32.0",
-    "@types/uuid": "^11.0.0",
     "@typescript-eslint/eslint-plugin": "^8.39.0",
     "@typescript-eslint/parser": "^8.39.0",
     "eslint": "^9.32.0",
