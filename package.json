@@ -2,6 +2,7 @@
   "name": "@nanggo/social-preview",
   "version": "0.2.4",
   "description": "Generate beautiful social media preview images from any URL",
+  "packageManager": "pnpm@10.11.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -16,7 +17,7 @@
     "test": "vitest run",
     "lint": "eslint src",
     "format": "prettier --write 'src/**/*.ts'",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "pnpm run build && pnpm test"
   },
   "keywords": [
     "og-image",
@@ -51,9 +52,14 @@
     "open-graph-scraper": "^6.10.0",
     "sharp": "^0.34.3"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/dompurify": "^3.0.5",
     "@types/jsdom": "^28.0.0",
     "@types/node": "^25.0.2",
     "@typescript-eslint/eslint-plugin": "^8.39.0",

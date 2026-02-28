@@ -11,13 +11,13 @@
 Tests live in `test/` (`unit/`, `integration/`, `performance/`) with fixtures in `test/fixtures/`; Vitest is configured in `vitest.config.ts`. `examples/` contains runnable demos/middleware. Generated artifacts like `dist/`, `coverage/`, and `examples/output/` are gitignored.
 
 ## Build, Test, and Development Commands
-- `npm ci` (or `npm install`) install dependencies (requires Node `>=20`)
-- `npm run build` compile to `dist/` with `tsc`
-- `npm run dev` run `tsc --watch`
-- `npm test` run Vitest
-- `npm run lint` lint `src/**/*.ts` with ESLint (`eslint.config.mjs`)
-- `npm run format` format `src/**/*.ts` with Prettier
-- `cd examples && npm install && npm start` run the example server (optional)
+- `pnpm install` install dependencies (requires Node `>=20`)
+- `pnpm run build` compile to `dist/` with `tsc`
+- `pnpm run dev` run `tsc --watch`
+- `pnpm test` run Vitest
+- `pnpm run lint` lint `src/**/*.ts` with ESLint (`eslint.config.mjs`)
+- `pnpm run format` format `src/**/*.ts` with Prettier
+- `cd examples && pnpm install && pnpm start` run the example server (optional)
 
 ## Coding Style & Naming Conventions
 - TypeScript is `strict`; avoid `any` where practical (`@typescript-eslint/no-explicit-any` is a warning in source, off in tests).
@@ -26,7 +26,7 @@ Tests live in `test/` (`unit/`, `integration/`, `performance/`) with fixtures in
 
 ## Testing Guidelines
 - Place tests as `*.test.ts` / `*.spec.ts` under `test/**` (or `src/**/__tests__/**`).
-- Some integration tests may hit the network; use `SKIP_NETWORK_TESTS=true npm test` where supported (see `test/integration/real-urls.test.ts`).
+- Some integration tests may hit the network; use `SKIP_NETWORK_TESTS=true pnpm test` where supported (see `test/integration/real-urls.test.ts`).
 - For visual/template changes, include a before/after sample image in the PR description (do not commit large binaries).
 
 ## Commit & Pull Request Guidelines

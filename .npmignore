@@ -41,6 +41,7 @@ test-output.jpg
 # Node
 node_modules/
 npm-debug.log*
+pnpm-debug.log*
 
 # Coverage
 coverage/
