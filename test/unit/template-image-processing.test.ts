@@ -15,7 +15,6 @@ vi.mock('sharp', () => {
     blur: vi.fn().mockReturnThis(),
     modulate: vi.fn().mockReturnThis(),
     composite: vi.fn().mockReturnThis(),
-    withMetadata: vi.fn().mockReturnThis(),
     jpeg: vi.fn().mockReturnThis(),
     toBuffer: vi.fn().mockResolvedValue(Buffer.from('fake-image-data')),
     metadata: vi.fn().mockResolvedValue({ width: 1200, height: 630 }),

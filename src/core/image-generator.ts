@@ -67,7 +67,6 @@ export async function generateImage(
           left: 0,
         },
       ])
-      .withMetadata({})
       .jpeg({
         quality,
         progressive: true,
