@@ -329,9 +329,10 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
     );
   }
 
-  // Phase 2: Parse OG data from fetched HTML (no extra network request on parse failure)
+  // Phase 2: Parse OG data from fetched HTML
+  // Note: ogs rejects calls with both `html` and `url` — only pass `html`
   try {
-    const { error, result } = await ogs({ html, url });
+    const { error, result } = await ogs({ html });
 
     if (error) {
       throw new Error('Failed to parse Open Graph data');
@@ -339,28 +340,11 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
 
     return result;
   } catch (parseError) {
-    logger.warn('OG parsing failed, attempting lenient re-parse', {
-      operation: 'metadata-extraction',
-      url,
-      error: parseError instanceof Error ? parseError.message : String(parseError),
-    });
-
-    // Fallback: retry ogs parse on already-fetched HTML (no re-fetch)
-    try {
-      const { error: ogError, result } = await ogs({ html, url });
-
-      if (ogError) {
-        throw new Error('Failed to parse Open Graph data from fallback');
-      }
-
-      return result;
-    } catch (fallbackError) {
-      throw new PreviewGeneratorError(
-        ErrorType.FETCH_ERROR,
-        `Failed to parse metadata from ${url}`,
-        fallbackError
-      );
-    }
+    throw new PreviewGeneratorError(
+      ErrorType.FETCH_ERROR,
+      `Failed to parse metadata from ${url}`,
+      parseError
+    );
   }
 }
 
