@@ -48,7 +48,7 @@
   "dependencies": {
     "axios": "^1.11.0",
     "dompurify": "^3.2.6",
-    "file-type": "^21.0.0",
+    "file-type": "^22.0.1",
     "open-graph-scraper": "^6.10.0",
     "sharp": "^0.34.3"
   },
@@ -66,10 +66,10 @@
     "@typescript-eslint/parser": "^8.39.0",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^10.0.2",
-    "jsdom": "^28.1.0",
+    "jsdom": "^29.1.1",
     "parse5": "^8.0.0",
     "prettier": "^3.6.2",
-    "typescript": "^5.9.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.0.18"
   }
 }
