@@ -195,15 +195,20 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
     const { fileTypeFromBuffer } = fileTypeModule;
     const detected = await fileTypeFromBuffer(imageBuffer);
 
-    if (!detected || !ALLOWED_MIME_TYPES.has(detected.mime)) {
-      throw new PreviewGeneratorError(
-        ErrorType.IMAGE_ERROR,
-        `Unsupported image format detected by file-type: ${detected?.mime || 'unknown'}. Only JPEG, PNG, WebP, GIF, BMP, and TIFF are supported.`
-      );
+    if (detected) {
+      if (!ALLOWED_MIME_TYPES.has(detected.mime)) {
+        throw new PreviewGeneratorError(
+          ErrorType.IMAGE_ERROR,
+          `Unsupported image format detected by file-type: ${detected.mime}. Only JPEG, PNG, WebP, GIF, BMP, and TIFF are supported.`
+        );
+      }
+
+      // file-type succeeded
+      return;
     }
-    
-    // file-type succeeded
-    return;
+
+    // Some valid-but-minimal fixtures are not classifiable by file-type.
+    // Let the manual magic-byte fallback below make the final decision.
   } catch (error) {
     // If it's already our error, re-throw
     if (error instanceof PreviewGeneratorError) {
