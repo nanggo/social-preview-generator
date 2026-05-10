@@ -481,7 +481,13 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
     });
 
     // Check content-type header if available (extract base MIME type, ignoring charset etc.)
-    const rawContentType = response.headers?.['content-type']?.toLowerCase();
+    const contentTypeHeader = response.headers?.['content-type'];
+    let rawContentType: string | undefined;
+    if (Array.isArray(contentTypeHeader)) {
+      rawContentType = contentTypeHeader[0]?.toLowerCase();
+    } else if (typeof contentTypeHeader === 'string') {
+      rawContentType = contentTypeHeader.toLowerCase();
+    }
     const contentType = rawContentType?.split(';')[0]?.trim();
     if (contentType && !allowedMimeTypes.has(contentType)) {
       const allowed = Array.from(allowedMimeTypes).map(t => t.replace('image/', '')).join(', ');
