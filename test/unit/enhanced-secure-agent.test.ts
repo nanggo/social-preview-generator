@@ -491,6 +491,26 @@ describe('Enhanced Secure Agent', () => {
       cleanup();
     });
 
+    it('should clear all cache entries without shutting down cache cleanup', async () => {
+      const cleanup = mockDNSLookup('clear-all-test.com', [
+        { address: '1.2.3.4', family: 4 }
+      ]);
+
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      await validateRequestSecurity('https://clear-all-test.com/test');
+      expect(getDNSCacheStats().size).toBe(1);
+
+      const clearIntervalSpy = vi.spyOn(global, 'clearInterval');
+      invalidateDNSCache();
+
+      expect(getDNSCacheStats().size).toBe(0);
+      expect(clearIntervalSpy).not.toHaveBeenCalled();
+
+      clearIntervalSpy.mockRestore();
+      cleanup();
+    });
+
     it('should limit cache size to prevent memory exhaustion', async () => {
       mockIsPrivateOrReservedIP.mockReturnValue(false);
       

@@ -2,8 +2,13 @@
  * Tests for validation utilities
  */
 
-import { validateColor, validateDimensions, createTransparentCanvas } from '../../../src/utils/validators';
-import { PreviewGeneratorError, ErrorType } from '../../../src/types';
+import {
+  validateColor,
+  validateDimensions,
+  createTransparentCanvas,
+  sanitizeOptions,
+} from '../../../src/utils/validators';
+import { PreviewGeneratorError, ErrorType, PreviewOptions } from '../../../src/types';
 
 describe('Validators', () => {
   describe('validateColor', () => {
@@ -139,6 +144,78 @@ describe('Validators', () => {
       expect(() => validateDimensions(50, 100)).toThrow(PreviewGeneratorError);
       expect(() => validateDimensions(5000, 1000)).toThrow(PreviewGeneratorError);
       expect(() => validateDimensions(NaN, 100)).toThrow(PreviewGeneratorError);
+    });
+  });
+
+  describe('sanitizeOptions', () => {
+    test('should not mutate nested caller options while normalizing values', () => {
+      const options: PreviewOptions = {
+        colors: {
+          text: 'WHITE',
+          background: 'DarkSlateBlue',
+          accent: '#4a9eff',
+        },
+        fallback: {
+          text: '  fallback text  ',
+        },
+        security: {
+          timeout: 1234,
+        },
+        fonts: [
+          {
+            family: 'Inter',
+            weight: '700',
+          },
+        ],
+      };
+      const originalColors = options.colors;
+      const originalFallback = options.fallback;
+      const originalSecurity = options.security;
+      const originalFonts = options.fonts;
+
+      const sanitized = sanitizeOptions(options);
+
+      expect(sanitized.colors?.text).toBe('white');
+      expect(sanitized.colors?.background).toBe('darkslateblue');
+      expect(sanitized.fallback?.text).toBe('fallback text');
+
+      expect(options.colors).toBe(originalColors);
+      expect(options.fallback).toBe(originalFallback);
+      expect(options.security).toBe(originalSecurity);
+      expect(options.fonts).toBe(originalFonts);
+      expect(options.colors?.text).toBe('WHITE');
+      expect(options.colors?.background).toBe('DarkSlateBlue');
+      expect(options.fallback?.text).toBe('  fallback text  ');
+
+      expect(sanitized.colors).not.toBe(originalColors);
+      expect(sanitized.fallback).not.toBe(originalFallback);
+      expect(sanitized.security).not.toBe(originalSecurity);
+      expect(sanitized.fonts).not.toBe(originalFonts);
+      expect(sanitized.fonts?.[0]).not.toBe(originalFonts?.[0]);
+    });
+
+    test('should reject invalid font option shapes with validation errors', () => {
+      expect(() =>
+        sanitizeOptions({
+          fonts: { family: 'Inter' },
+        } as unknown as PreviewOptions)
+      ).toThrow(PreviewGeneratorError);
+
+      expect(() =>
+        sanitizeOptions({
+          fonts: [null],
+        } as unknown as PreviewOptions)
+      ).toThrow(PreviewGeneratorError);
+
+      try {
+        sanitizeOptions({
+          fonts: { family: 'Inter' },
+        } as unknown as PreviewOptions);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+        expect((error as PreviewGeneratorError).message).toContain('Fonts option must be an array');
+      }
     });
   });
 

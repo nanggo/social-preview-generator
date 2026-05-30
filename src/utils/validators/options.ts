@@ -20,10 +20,39 @@ export function validateOptions(options: PreviewOptions): void {
  * Central validation gateway - all external input must pass through this.
  */
 export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
-  // Deep validation of all nested properties
   const sanitized: PreviewOptions = {
     ...options,
   };
+
+  // Copy nested objects before normalizing so validation never mutates caller-owned options.
+  if (options.colors) {
+    sanitized.colors = { ...options.colors };
+  }
+  if (options.fallback) {
+    sanitized.fallback = { ...options.fallback };
+  }
+  if (options.security) {
+    sanitized.security = { ...options.security };
+  }
+  if (options.fonts !== undefined) {
+    if (!Array.isArray(options.fonts)) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Fonts option must be an array, got: ${typeof options.fonts}`
+      );
+    }
+
+    sanitized.fonts = options.fonts.map((font, index) => {
+      if (!font || typeof font !== 'object' || Array.isArray(font)) {
+        throw new PreviewGeneratorError(
+          ErrorType.VALIDATION_ERROR,
+          `Font configuration at index ${index} must be an object`
+        );
+      }
+
+      return { ...font };
+    });
+  }
 
   // Validate colors if present - ALL color properties must be validated
   if (sanitized.colors) {

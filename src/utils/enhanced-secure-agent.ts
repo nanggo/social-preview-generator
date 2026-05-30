@@ -174,6 +174,13 @@ class SecureDNSCache {
   }
 
   /**
+   * Clear cached DNS entries without shutting down cleanup lifecycle.
+   */
+  clear(): void {
+    this.cache.clear();
+  }
+
+  /**
    * Clear cache and cleanup
    */
   destroy(): void {
@@ -560,7 +567,7 @@ export function invalidateDNSCache(hostname?: string) {
     dnsCache.invalidate(hostname);
     logger.info(`DNS cache invalidated for hostname: ${hostname}`);
   } else {
-    dnsCache.destroy();
+    dnsCache.clear();
     logger.info('DNS cache completely cleared');
   }
 }
