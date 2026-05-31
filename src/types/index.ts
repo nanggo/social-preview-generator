@@ -40,6 +40,16 @@ export interface PreviewOptions {
 }
 
 /**
+ * Metadata supplied directly by the caller for static/publish-time preview generation.
+ */
+export interface PreviewMetadataInput extends Partial<ExtractedMetadata> {
+  /** Page or post title */
+  title: string;
+  /** Canonical URL for the page or post */
+  url: string;
+}
+
+/**
  * Security configuration options
  */
 export interface SecurityOptions {

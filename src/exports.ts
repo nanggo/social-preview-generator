@@ -1,5 +1,6 @@
 export {
   PreviewOptions,
+  PreviewMetadataInput,
   ExtractedMetadata,
   GeneratedPreview,
   TemplateConfig,
@@ -12,4 +13,3 @@ export { startCacheCleanup, stopCacheCleanup, isCacheCleanupRunning } from './ut
 export { getInflightRequestStats, clearInflightRequests } from './core/metadata-extractor';
 
 export { getCacheStats, clearAllCaches, shutdownSharpCaches } from './utils/sharp-cache';
-

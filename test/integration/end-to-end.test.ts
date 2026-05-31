@@ -1,5 +1,12 @@
 import { vi } from 'vitest';
-import { clearAllCaches, clearInflightRequests, generatePreview, generatePreviewWithDetails } from '../../src/index';
+import {
+  clearAllCaches,
+  clearInflightRequests,
+  generatePreview,
+  generatePreviewFromMetadata,
+  generatePreviewFromMetadataWithDetails,
+  generatePreviewWithDetails,
+} from '../../src/index';
 import { PreviewOptions } from '../../src/types';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
@@ -32,7 +39,7 @@ describe('End-to-End Integration Tests', () => {
     clearAllCaches();
     clearInflightRequests();
     metadataCache.clear();
-    
+
     // Setup default mocks
     const mockSharpInstance = {
       resize: vi.fn().mockReturnThis(),
@@ -41,11 +48,12 @@ describe('End-to-End Integration Tests', () => {
       composite: vi.fn().mockReturnThis(),
       jpeg: vi.fn().mockReturnThis(),
       png: vi.fn().mockReturnThis(),
+      metadata: vi.fn().mockResolvedValue({ width: 1200, height: 630, format: 'png' }),
       toBuffer: vi.fn().mockResolvedValue(Buffer.from('generated-image')),
     };
 
     mockedSharp.mockReturnValue(mockSharpInstance as any);
-    
+
     // Setup default axios response
     mockedAxios.get.mockResolvedValue({
       data: `
@@ -79,7 +87,7 @@ describe('End-to-End Integration Tests', () => {
   describe('generatePreview', () => {
     it('should generate preview image successfully', async () => {
       const url = 'https://example.com';
-      
+
       const result = await generatePreview(url);
 
       expect(result).toBeInstanceOf(Buffer);
@@ -111,12 +119,12 @@ describe('End-to-End Integration Tests', () => {
       const result = await generatePreview(url, options);
 
       expect(result).toBeInstanceOf(Buffer);
-      
+
       const sharpInstance = mockedSharp.mock.results[0].value;
-      expect(sharpInstance.jpeg).toHaveBeenCalledWith({ 
+      expect(sharpInstance.jpeg).toHaveBeenCalledWith({
         quality: 85,
         progressive: true,
-        mozjpeg: true 
+        mozjpeg: true,
       });
     });
 
@@ -181,9 +189,9 @@ describe('End-to-End Integration Tests', () => {
     it('should generate modern template successfully', async () => {
       const url = 'https://example.com';
       const options: PreviewOptions = { template: 'modern' };
-      
+
       const result = await generatePreview(url, options);
-      
+
       expect(result).toBeInstanceOf(Buffer);
       expect(result.length).toBeGreaterThan(10);
     });
@@ -191,9 +199,9 @@ describe('End-to-End Integration Tests', () => {
     it('should generate classic template successfully', async () => {
       const url = 'https://example.com';
       const options: PreviewOptions = { template: 'classic' };
-      
+
       const result = await generatePreview(url, options);
-      
+
       expect(result).toBeInstanceOf(Buffer);
       expect(result.length).toBeGreaterThan(10);
     });
@@ -201,19 +209,19 @@ describe('End-to-End Integration Tests', () => {
     it('should generate minimal template successfully', async () => {
       const url = 'https://example.com';
       const options: PreviewOptions = { template: 'minimal' };
-      
+
       const result = await generatePreview(url, options);
-      
+
       expect(result).toBeInstanceOf(Buffer);
       expect(result.length).toBeGreaterThan(10);
     });
 
     it('should handle template-specific color options', async () => {
       const url = 'https://example.com';
-      
+
       // Test each template with custom colors
       const templates: Array<'modern' | 'classic' | 'minimal'> = ['modern', 'classic', 'minimal'];
-      
+
       for (const template of templates) {
         const options: PreviewOptions = {
           template,
@@ -223,9 +231,9 @@ describe('End-to-End Integration Tests', () => {
             background: '#f5f5f5',
           },
         };
-        
+
         const result = await generatePreview(url, options);
-        
+
         expect(result).toBeInstanceOf(Buffer);
         expect(result.length).toBeGreaterThan(10);
       }
@@ -233,13 +241,15 @@ describe('End-to-End Integration Tests', () => {
 
     it('should handle long content across all templates', async () => {
       const url = 'https://example.com';
-      
+
       // Mock long content metadata for all template iterations
       mockedOgs.mockResolvedValue({
         error: false,
         result: {
-          ogTitle: 'This is an extremely long title that should be properly handled by all template types with appropriate wrapping and truncation',
-          ogDescription: 'This is a very long description that contains a lot of text and should be properly wrapped and truncated according to each template\'s specific design requirements and text handling capabilities',
+          ogTitle:
+            'This is an extremely long title that should be properly handled by all template types with appropriate wrapping and truncation',
+          ogDescription:
+            "This is a very long description that contains a lot of text and should be properly wrapped and truncated according to each template's specific design requirements and text handling capabilities",
           ogSiteName: 'Very Long Site Name That Might Need Truncation',
         },
         html: '<html></html>',
@@ -247,10 +257,10 @@ describe('End-to-End Integration Tests', () => {
       });
 
       const templates: Array<'modern' | 'classic' | 'minimal'> = ['modern', 'classic', 'minimal'];
-      
+
       for (const template of templates) {
         const result = await generatePreview(url, { template });
-        
+
         expect(result).toBeInstanceOf(Buffer);
         expect(result.length).toBeGreaterThan(10);
       }
@@ -282,6 +292,122 @@ describe('End-to-End Integration Tests', () => {
         template: 'modern',
         cached: false,
       });
+    });
+  });
+
+  describe('generatePreviewFromMetadata', () => {
+    it('should generate preview image without fetching page metadata', async () => {
+      const result = await generatePreviewFromMetadata(
+        {
+          title: 'Static Blog Post',
+          description: 'Generated while publishing the post.',
+          siteName: 'Example Blog',
+          url: 'https://blog.example.com/posts/static-blog-post',
+        },
+        {
+          template: 'minimal',
+          width: 800,
+          height: 420,
+        }
+      );
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(mockedOgs).not.toHaveBeenCalled();
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+      expect(mockedSharp).toHaveBeenCalled();
+    });
+
+    it('should return detailed preview information from direct metadata', async () => {
+      const result = await generatePreviewFromMetadataWithDetails(
+        {
+          title: 'Direct Metadata Post',
+          description: 'No crawler required.',
+          url: 'https://blog.example.com/posts/direct-metadata-post',
+        },
+        {
+          template: 'classic',
+          width: 1000,
+          height: 525,
+        }
+      );
+
+      expect(result).toMatchObject({
+        buffer: expect.any(Buffer),
+        format: 'jpeg',
+        dimensions: {
+          width: 1000,
+          height: 525,
+        },
+        metadata: expect.objectContaining({
+          title: 'Direct Metadata Post',
+          description: 'No crawler required.',
+          url: 'https://blog.example.com/posts/direct-metadata-post',
+          domain: 'blog.example.com',
+          siteName: 'blog.example.com',
+        }),
+        template: 'classic',
+        cached: false,
+      });
+      expect(mockedOgs).not.toHaveBeenCalled();
+    });
+
+    it('should fetch direct metadata image without scraping page metadata', async () => {
+      const pngImageBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        'base64'
+      );
+      mockedAxios.get.mockResolvedValueOnce({
+        data: pngImageBuffer,
+        headers: {
+          'content-type': 'image/png',
+        },
+      });
+
+      const result = await generatePreviewFromMetadata({
+        title: 'Post With Cover Image',
+        description: 'Use the cover image as the preview background.',
+        siteName: 'Example Blog',
+        url: 'https://blog.example.com/posts/with-cover',
+        image: 'https://cdn.example.com/covers/with-cover.png',
+      });
+
+      expect(result).toBeInstanceOf(Buffer);
+      expect(mockedOgs).not.toHaveBeenCalled();
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        'https://cdn.example.com/covers/with-cover.png',
+        expect.objectContaining({
+          responseType: 'arraybuffer',
+          headers: expect.objectContaining({
+            'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
+          }),
+        })
+      );
+      expect(mockedSharp).toHaveBeenCalledWith(pngImageBuffer, expect.any(Object));
+    });
+
+    it('should cache direct metadata previews by metadata content', async () => {
+      const metadata = {
+        title: 'Cached Static Post',
+        description: 'Generated once during publishing.',
+        url: 'https://blog.example.com/posts/cached-static-post',
+      };
+
+      const first = await generatePreviewFromMetadataWithDetails(metadata, { cache: true });
+      const second = await generatePreviewFromMetadataWithDetails(metadata, { cache: true });
+
+      expect(first.cached).toBe(false);
+      expect(second.cached).toBe(true);
+      expect(second.buffer).toBeInstanceOf(Buffer);
+    });
+
+    it('should reject invalid canonical URLs', async () => {
+      await expect(
+        generatePreviewFromMetadata({
+          title: 'Invalid URL Post',
+          url: 'not-a-url',
+        })
+      ).rejects.toThrow();
     });
   });
 
@@ -327,17 +453,13 @@ describe('End-to-End Integration Tests', () => {
     });
 
     it('should handle multiple concurrent requests', async () => {
-      const urls = [
-        'https://example1.com',
-        'https://example2.com',
-        'https://example3.com',
-      ];
+      const urls = ['https://example1.com', 'https://example2.com', 'https://example3.com'];
 
-      const promises = urls.map(url => generatePreview(url));
+      const promises = urls.map((url) => generatePreview(url));
       const results = await Promise.all(promises);
 
       expect(results).toHaveLength(3);
-      results.forEach(result => {
+      results.forEach((result) => {
         expect(result).toBeInstanceOf(Buffer);
       });
     });
