@@ -5,6 +5,7 @@
 
 import {
   PreviewOptions,
+  PreviewMetadataInput,
   SanitizedOptions,
   ExtractedMetadata,
   GeneratedPreview,
@@ -15,7 +16,12 @@ import {
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
 import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { templates } from './templates/registry';
-import { validateDimensions, sanitizeOptions } from './utils/validators';
+import {
+  validateDimensions,
+  sanitizeOptions,
+  sanitizeControlChars,
+  validateUrlInput,
+} from './utils/validators';
 import { initializeSharpSecurity } from './utils/image-security';
 import { generateDefaultOverlay } from './core/overlay-generator';
 import { processImageForTemplate } from './core/template-image-processing';
@@ -33,6 +39,114 @@ export * from './exports';
 
 const FALLBACK_PREVIEW_CACHE_TTL_MS = 30_000;
 
+function createFinalOptions(options: PreviewOptions = {}): SanitizedOptions {
+  return sanitizeOptions({
+    template: 'modern',
+    width: DEFAULT_DIMENSIONS.width,
+    height: DEFAULT_DIMENSIONS.height,
+    quality: 90,
+    cache: false,
+    ...options,
+  });
+}
+
+function getTemplate(templateName: SanitizedOptions['template']): TemplateConfig {
+  const template = templates[templateName || 'modern'];
+
+  if (!template) {
+    throw new PreviewGeneratorError(
+      ErrorType.TEMPLATE_ERROR,
+      `Template "${templateName}" not found`
+    );
+  }
+
+  return template;
+}
+
+function createPreviewResult(
+  buffer: Buffer,
+  metadata: ExtractedMetadata,
+  finalOptions: SanitizedOptions
+): GeneratedPreview {
+  return {
+    buffer,
+    format: 'jpeg',
+    dimensions: {
+      width: finalOptions.width || DEFAULT_DIMENSIONS.width,
+      height: finalOptions.height || DEFAULT_DIMENSIONS.height,
+    },
+    metadata,
+    template: finalOptions.template || 'modern',
+    cached: false,
+  };
+}
+
+function normalizeOptionalMetadataText(
+  value: string | undefined,
+  fieldName: string
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `${fieldName} must be a string`);
+  }
+
+  const normalized = sanitizeControlChars(value)
+    .replace(/[\n\r]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return normalized || undefined;
+}
+
+function normalizeRequiredMetadataText(value: string | undefined, fieldName: string): string {
+  const normalized = normalizeOptionalMetadataText(value, fieldName);
+
+  if (!normalized) {
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `${fieldName} is required`);
+  }
+
+  return normalized;
+}
+
+function normalizeMetadataInput(metadata: PreviewMetadataInput): ExtractedMetadata {
+  const url = validateUrlInput(metadata.url);
+  const urlObj = new URL(url);
+  const title = normalizeRequiredMetadataText(metadata.title, 'metadata.title');
+
+  return {
+    title,
+    description: normalizeOptionalMetadataText(metadata.description, 'metadata.description'),
+    image: metadata.image ? validateUrlInput(metadata.image) : undefined,
+    siteName:
+      normalizeOptionalMetadataText(metadata.siteName, 'metadata.siteName') ||
+      urlObj.hostname.replace('www.', ''),
+    favicon: metadata.favicon
+      ? validateUrlInput(metadata.favicon)
+      : `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`,
+    author: normalizeOptionalMetadataText(metadata.author, 'metadata.author'),
+    publishedDate: normalizeOptionalMetadataText(metadata.publishedDate, 'metadata.publishedDate'),
+    url,
+    domain: normalizeOptionalMetadataText(metadata.domain, 'metadata.domain') || urlObj.hostname,
+    locale: normalizeOptionalMetadataText(metadata.locale, 'metadata.locale') || 'en_US',
+  };
+}
+
+function createMetadataPreviewCacheKey(metadata: ExtractedMetadata): string {
+  return `metadata:${JSON.stringify(metadata)}`;
+}
+
+async function renderPreviewFromMetadata(
+  metadata: ExtractedMetadata,
+  finalOptions: SanitizedOptions
+): Promise<GeneratedPreview> {
+  const template = getTemplate(finalOptions.template);
+  const buffer = await generateImageWithSanitizedOptions(metadata, template, finalOptions);
+  return createPreviewResult(buffer, metadata, finalOptions);
+}
+
 /**
  * Generate a social preview image from a URL
  * @param url - The URL to generate preview for
@@ -41,6 +155,21 @@ const FALLBACK_PREVIEW_CACHE_TTL_MS = 30_000;
  */
 export async function generatePreview(url: string, options: PreviewOptions = {}): Promise<Buffer> {
   const result = await generatePreviewWithDetails(url, options);
+  return result.buffer;
+}
+
+/**
+ * Generate a social preview image from caller-provided metadata.
+ * Use this for static/publish-time blog preview generation when metadata is already known.
+ * @param metadata - Post/page metadata to render
+ * @param options - Configuration options
+ * @returns Buffer containing the generated image
+ */
+export async function generatePreviewFromMetadata(
+  metadata: PreviewMetadataInput,
+  options: PreviewOptions = {}
+): Promise<Buffer> {
+  const result = await generatePreviewFromMetadataWithDetails(metadata, options);
   return result.buffer;
 }
 
@@ -71,15 +200,33 @@ async function generateImageWithSanitizedOptions(
   try {
     validateDimensions(width, height);
 
-    const baseImage = await processImageForTemplate(metadata, template, width, height, sanitizedOptions);
+    const baseImage = await processImageForTemplate(
+      metadata,
+      template,
+      width,
+      height,
+      sanitizedOptions
+    );
 
     let overlayBuffer: Buffer;
 
     if (template.overlayGenerator) {
-      const overlaySvg = template.overlayGenerator(metadata, width, height, sanitizedOptions, template);
+      const overlaySvg = template.overlayGenerator(
+        metadata,
+        width,
+        height,
+        sanitizedOptions,
+        template
+      );
       overlayBuffer = svgCache.getCachedSVG(overlaySvg) ?? svgCache.cacheSVG(overlaySvg);
     } else {
-      overlayBuffer = await generateDefaultOverlay(metadata, template, width, height, sanitizedOptions);
+      overlayBuffer = await generateDefaultOverlay(
+        metadata,
+        template,
+        width,
+        height,
+        sanitizedOptions
+      );
     }
 
     const finalImage = await baseImage
@@ -93,7 +240,7 @@ async function generateImageWithSanitizedOptions(
       .jpeg({
         quality,
         progressive: true,
-        mozjpeg: true
+        mozjpeg: true,
       })
       .toBuffer();
 
@@ -120,15 +267,7 @@ export async function generatePreviewWithDetails(
       startCacheCleanup();
     }
 
-    // Merge defaults then validate+sanitize in a single pass
-    const finalOptions = sanitizeOptions({
-      template: 'modern',
-      width: DEFAULT_DIMENSIONS.width,
-      height: DEFAULT_DIMENSIONS.height,
-      quality: 90,
-      cache: false,
-      ...options,
-    });
+    const finalOptions = createFinalOptions(options);
 
     const shouldCache = finalOptions.cache === true;
     if (shouldCache) {
@@ -176,35 +315,7 @@ export async function generatePreviewWithDetails(
       throw error;
     }
 
-    // Get template configuration
-    const templateName = finalOptions.template || 'modern';
-    const template = templates[templateName];
-
-    if (!template) {
-      throw new PreviewGeneratorError(
-        ErrorType.TEMPLATE_ERROR,
-        `Template "${templateName}" not found`
-      );
-    }
-
-    // Generate image based on template - use pre-sanitized options with defaults applied
-    const buffer = await generateImageWithSanitizedOptions(
-      metadata,
-      template,
-      finalOptions
-    );
-
-    const result: GeneratedPreview = {
-      buffer,
-      format: 'jpeg',
-      dimensions: {
-        width: finalOptions.width || DEFAULT_DIMENSIONS.width,
-        height: finalOptions.height || DEFAULT_DIMENSIONS.height,
-      },
-      metadata,
-      template: finalOptions.template || 'modern',
-      cached: false,
-    };
+    const result = await renderPreviewFromMetadata(metadata, finalOptions);
     if (shouldCache) {
       setCachedPreview(url, finalOptions, result);
     }
@@ -216,6 +327,48 @@ export async function generatePreviewWithDetails(
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
       `Failed to generate preview with details for ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      error
+    );
+  }
+}
+
+/**
+ * Generate a preview from caller-provided metadata with full result details.
+ */
+export async function generatePreviewFromMetadataWithDetails(
+  metadataInput: PreviewMetadataInput,
+  options: PreviewOptions = {}
+): Promise<GeneratedPreview> {
+  try {
+    // Lazily start cache cleanup on first actual usage (not at import time)
+    if (!isCacheCleanupRunning()) {
+      startCacheCleanup();
+    }
+
+    const finalOptions = createFinalOptions(options);
+    const metadata = normalizeMetadataInput(metadataInput);
+
+    const shouldCache = finalOptions.cache === true;
+    const cacheKey = createMetadataPreviewCacheKey(metadata);
+    if (shouldCache) {
+      const cached = getCachedPreview(cacheKey, finalOptions);
+      if (cached) {
+        return { ...cached, cached: true };
+      }
+    }
+
+    const result = await renderPreviewFromMetadata(metadata, finalOptions);
+    if (shouldCache) {
+      setCachedPreview(cacheKey, finalOptions, result);
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof PreviewGeneratorError) {
+      throw error;
+    }
+    throw new PreviewGeneratorError(
+      ErrorType.IMAGE_ERROR,
+      `Failed to generate preview from metadata: ${error instanceof Error ? error.message : String(error)}`,
       error
     );
   }

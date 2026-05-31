@@ -1,41 +1,39 @@
-# 📸 Social Preview Generator
+# Social Preview Generator
 
-> Generate beautiful social media preview images from any URL
+Generate Open Graph/social preview images from URLs or known page metadata.
 
 [![npm version](https://img.shields.io/npm/v/@nanggo/social-preview.svg)](https://www.npmjs.com/package/@nanggo/social-preview)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js CI](https://github.com/nanggo/social-preview-generator/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/nanggo/social-preview-generator/actions/workflows/npm-publish.yml)
 
-## ✨ Features
+## Features
 
-- 🔍 **Automatic Metadata Extraction** - Extracts Open Graph and Twitter Card metadata from any URL
-- 🎨 **Beautiful Templates** - Modern, customizable templates for stunning previews
-- 🖼️ **Smart Image Processing** - Automatically processes and optimizes images
-- 🔄 **Intelligent Fallbacks** - Generates attractive previews even when metadata is missing
-- ⚡ **High Performance** - Built with Sharp for blazing-fast image processing
-- 🎯 **TypeScript Support** - Full TypeScript support with comprehensive type definitions
-- 🌏 **Korean Language Support** - Optimized for Korean text rendering
+- Extract Open Graph and Twitter Card metadata from a URL
+- Generate images directly from supplied metadata for static publishing flows
+- Render with built-in `modern`, `classic`, and `minimal` templates
+- Process and optimize images with Sharp
+- Fall back to generated previews when metadata is incomplete
+- Ship TypeScript definitions
+- Support Korean text rendering
 
-## 📦 Installation
+## Installation
 
 ```bash
 npm install @nanggo/social-preview
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ```javascript
 const { generatePreview } = require('@nanggo/social-preview');
 
-// Simple usage
 const imageBuffer = await generatePreview('https://github.com');
 
-// Save to file
 const fs = require('fs').promises;
 await fs.writeFile('preview.jpg', imageBuffer);
 ```
 
-## 📖 API
+## API
 
 ### `generatePreview(url, options?)`
 
@@ -50,29 +48,71 @@ Generates a social preview image from a URL.
 
 - `Promise<Buffer>`: Image buffer in JPEG format
 
+### `generatePreviewFromMetadata(metadata, options?)`
+
+Generates a social preview image from metadata you already have. It does not fetch or scrape the
+page URL, which makes it useful for static blog publishing pipelines where title, description,
+canonical URL, and cover image are known at publish/build time.
+
+#### Parameters
+
+- `metadata` (PreviewMetadataInput): Page or post metadata to render
+- `options` (PreviewOptions): Optional configuration
+
+#### Returns
+
+- `Promise<Buffer>`: Image buffer in JPEG format
+
 ### Options
 
 ```typescript
 interface PreviewOptions {
-  template?: 'modern' | 'classic' | 'minimal';  // Template to use (default: 'modern')
-  width?: number;                                // Image width (default: 1200)
-  height?: number;                               // Image height (default: 630)
-  quality?: number;                              // JPEG quality 1-100 (default: 90)
-  cache?: boolean;                               // Cache generated results in memory (default: false)
+  template?: 'modern' | 'classic' | 'minimal'; // Template to use (default: 'modern')
+  width?: number; // Image width (default: 1200)
+  height?: number; // Image height (default: 630)
+  quality?: number; // JPEG quality 1-100 (default: 90)
+  cache?: boolean; // Cache generated results in memory (default: false)
   fallback?: {
-    strategy?: 'auto' | 'custom' | 'generate';   // Fallback strategy
-    image?: string;                               // Custom fallback image path
-    text?: string;                                // Custom fallback text
+    strategy?: 'auto' | 'custom' | 'generate'; // Fallback strategy
+    image?: string; // Custom fallback image path
+    text?: string; // Custom fallback text
   };
   colors?: {
-    background?: string;                          // Background color
-    text?: string;                                // Text color
-    accent?: string;                              // Accent color
+    background?: string; // Background color
+    text?: string; // Text color
+    accent?: string; // Accent color
   };
 }
 ```
 
-## 💡 Examples
+### Static Blog Publishing
+
+Generate the image once while publishing a post, then point `og:image` at the written file.
+
+```javascript
+const { generatePreviewFromMetadata } = require('@nanggo/social-preview');
+const fs = require('fs').promises;
+
+const buffer = await generatePreviewFromMetadata(
+  {
+    title: 'How to Generate Open Graph Images',
+    description: 'Create a social preview image while publishing a blog post.',
+    siteName: 'My Blog',
+    url: 'https://example.com/posts/open-graph-images',
+    image: 'https://example.com/images/open-graph-cover.jpg',
+  },
+  {
+    template: 'modern',
+    width: 1200,
+    height: 630,
+    quality: 90,
+  }
+);
+
+await fs.writeFile('public/og/open-graph-images.jpg', buffer);
+```
+
+## Examples
 
 ### Basic Usage
 
@@ -93,9 +133,9 @@ const buffer = await generatePreview('https://example.com', {
   colors: {
     background: '#2c3e50',
     accent: '#3498db',
-    text: '#ffffff'
+    text: '#ffffff',
   },
-  quality: 95
+  quality: 95,
 });
 ```
 
@@ -105,30 +145,33 @@ const buffer = await generatePreview('https://example.com', {
 const buffer = await generatePreview('https://example.com', {
   fallback: {
     strategy: 'generate',
-    text: 'My Custom Preview'
-  }
+    text: 'My Custom Preview',
+  },
 });
 ```
 
-## 🎨 Templates
+## Templates
 
 ### Modern (Default)
+
 - Clean, contemporary design
 - Gradient overlays
 - Centered text layout
 - Perfect for tech and modern websites
 
 ### Classic
+
 - Traditional card layout
 - Image on top, text below
 - Great for news and blog sites
 
 ### Minimal
+
 - Simple, text-focused design
 - Minimal decorations
 - Ideal for documentation sites
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 social-preview-generator/
@@ -151,7 +194,7 @@ social-preview-generator/
 │   └── index.ts                         # Main entry point
 ```
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -161,17 +204,17 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [Sharp](https://sharp.pixelplumbing.com/) - High performance image processing
 - [Open Graph Scraper](https://github.com/jshemas/openGraphScraper) - Metadata extraction
 - [Axios](https://axios-http.com/) - HTTP client
 
-## 🔗 Links
+## Links
 
 - [npm Package](https://www.npmjs.com/package/@nanggo/social-preview)
 - [GitHub Repository](https://github.com/nanggo/social-preview-generator)
@@ -179,4 +222,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-Made with ❤️ by [nanggo](https://github.com/nanggo)
+Made by [nanggo](https://github.com/nanggo)
