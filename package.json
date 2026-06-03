@@ -1,6 +1,6 @@
 {
   "name": "@nanggo/social-preview",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Generate beautiful social media preview images from any URL",
   "packageManager": "pnpm@10.11.0",
   "main": "dist/index.js",
@@ -32,7 +32,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nanggo/social-preview-generator"
+    "url": "git+https://github.com/nanggo/social-preview-generator.git"
   },
   "bugs": {
     "url": "https://github.com/nanggo/social-preview-generator/issues"
