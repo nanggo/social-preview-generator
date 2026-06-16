@@ -13,7 +13,7 @@
  * - TTL-based cleanup to prevent memory leaks
  */
 
-import sharp, { Sharp } from 'sharp';
+import sharp from 'sharp';
 import crypto from 'crypto';
 import { SHARP_SECURITY_CONFIG } from '../constants/security';
 import { logger } from './logger';
@@ -233,7 +233,7 @@ class CanvasCache extends SharpLRUCache<string> {
     });
   }
 
-  getCachedCanvas(width: number, height: number, options: CanvasOptions): Sharp | undefined {
+  getCachedCanvas(width: number, height: number, options: CanvasOptions): sharp.Sharp | undefined {
     const key = this.generateCanvasKey(width, height, options);
     const cachedSvg = this.get(key);
     
@@ -269,7 +269,7 @@ export const canvasCache = new CanvasCache();
 /**
  * Cached SVG processing with automatic cache management
  */
-export async function createCachedSVG(svgContent: string): Promise<Sharp> {
+export async function createCachedSVG(svgContent: string): Promise<sharp.Sharp> {
   // Try to get from cache first
   let buffer = svgCache.getCachedSVG(svgContent);
   
@@ -311,7 +311,7 @@ export async function createCachedCanvas(
   width: number, 
   height: number, 
   options: CanvasOptions
-): Promise<Sharp> {
+): Promise<sharp.Sharp> {
   // Try cache first
   let canvas = canvasCache.getCachedCanvas(width, height, options);
   

@@ -10,27 +10,6 @@ import DOMPurify from 'dompurify';
 import * as os from 'os';
 import { getCachedMetadata } from './sharp-cache';
 import { logger } from './logger';
-
-// Singleton JSDOM/DOMPurify instance to avoid expensive re-creation per call.
-// Periodically recreated to prevent JSDOM window memory accumulation in long-running processes.
-let cachedPurify: ReturnType<typeof DOMPurify> | null = null;
-let purifyCallCount = 0;
-const PURIFY_RECREATE_THRESHOLD = 1000;
-
-function getDOMPurify(): ReturnType<typeof DOMPurify> {
-  if (!cachedPurify || purifyCallCount >= PURIFY_RECREATE_THRESHOLD) {
-    const window = new JSDOM('').window;
-    cachedPurify = DOMPurify(window);
-    purifyCallCount = 0;
-  }
-  purifyCallCount++;
-  return cachedPurify;
-}
-
-// Cache file-type module to avoid repeated dynamic imports
-// Use typeof import to ensure type safety with actual module structure
-let fileTypeModule: typeof import('file-type') | null = null;
-let fileTypeImportPromise: Promise<typeof import('file-type')> | null = null;
 import {
   MAX_INPUT_PIXELS,
   MAX_IMAGE_WIDTH,
@@ -54,6 +33,39 @@ import {
 // All security limits are now defined in src/constants/security.ts
 
 type AllowedImageFormat = typeof ALLOWED_IMAGE_FORMATS extends Set<infer T> ? T : never;
+
+interface FileTypeResult {
+  readonly ext: string;
+  readonly mime: string;
+}
+
+interface FileTypeModule {
+  fileTypeFromBuffer(buffer: Uint8Array | ArrayBuffer): Promise<FileTypeResult | undefined>;
+}
+
+type NativeImport = (specifier: string) => Promise<unknown>;
+
+// Singleton JSDOM/DOMPurify instance to avoid expensive re-creation per call.
+// Periodically recreated to prevent JSDOM window memory accumulation in long-running processes.
+let cachedPurify: ReturnType<typeof DOMPurify> | null = null;
+let purifyCallCount = 0;
+const PURIFY_RECREATE_THRESHOLD = 1000;
+
+function getDOMPurify(): ReturnType<typeof DOMPurify> {
+  if (!cachedPurify || purifyCallCount >= PURIFY_RECREATE_THRESHOLD) {
+    const window = new JSDOM('').window;
+    cachedPurify = DOMPurify(window);
+    purifyCallCount = 0;
+  }
+  purifyCallCount++;
+  return cachedPurify;
+}
+
+// Cache file-type module to avoid repeated dynamic imports.
+// Keep native import() intact because file-type is ESM-only while this package emits CommonJS.
+const nativeImport = new Function('specifier', 'return import(specifier)') as NativeImport;
+let fileTypeModule: FileTypeModule | null = null;
+let fileTypeImportPromise: Promise<FileTypeModule> | null = null;
 
 /**
  * Initialize Sharp with security settings
@@ -187,7 +199,7 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
     // Use cached module or import if not cached
     if (!fileTypeModule) {
       if (!fileTypeImportPromise) {
-        fileTypeImportPromise = import('file-type');
+        fileTypeImportPromise = nativeImport('file-type').then((module) => module as FileTypeModule);
       }
       fileTypeModule = await fileTypeImportPromise;
     }
