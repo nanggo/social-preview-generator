@@ -269,11 +269,12 @@ async function extractMetadataInternal(
   securityOptions?: SecurityOptions,
   abortSignal?: AbortSignal
 ): Promise<ExtractedMetadata> {
-  // Validate URL with SSRF protection and security options
-  const validatedUrl = await validateUrl(url, securityOptions);
-
-  // Extract Open Graph data
-  const ogData = await fetchOpenGraphData(validatedUrl, securityOptions, abortSignal);
+  // DNS validation and the HTTP response share one total request deadline.
+  const { data: ogData, validatedUrl } = await fetchOpenGraphData(
+    url,
+    securityOptions,
+    abortSignal
+  );
 
   // Parse and normalize metadata
   const metadata = parseMetadata(ogData, validatedUrl);
@@ -287,7 +288,11 @@ async function extractMetadataInternal(
 /**
  * Validate and normalize URL with SSRF protection
  */
-async function validateUrl(url: string, securityOptions?: SecurityOptions): Promise<string> {
+async function validateUrl(
+  url: string,
+  securityOptions?: SecurityOptions,
+  abortSignal?: AbortSignal
+): Promise<string> {
   try {
     const urlObj = new URL(url);
 
@@ -302,7 +307,7 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
     }
 
     // Enhanced security validation with TOCTOU protection
-    const securityValidation = await validateRequestSecurity(url);
+    const securityValidation = await validateRequestSecurity(url, abortSignal);
     if (!securityValidation.allowed) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
@@ -317,6 +322,9 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
 
     return urlObj.toString();
   } catch (error) {
+    if (abortSignal?.aborted) {
+      throw abortSignal.reason ?? error;
+    }
     if (error instanceof PreviewGeneratorError) {
       throw error;
     }
@@ -327,7 +335,11 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
 /**
  * Fetch Open Graph data using open-graph-scraper
  */
-async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Record<string, unknown>> {
+async function fetchOpenGraphData(
+  url: string,
+  securityOptions?: SecurityOptions,
+  abortSignal?: AbortSignal
+): Promise<{ data: Record<string, unknown>; validatedUrl: string }> {
   const requestTimeout = securityOptions?.timeout || 8000;
   // Create secure axios config with redirect validation and secure agent
   const axiosConfig = {
@@ -348,19 +360,31 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
 
   // Phase 1: Fetch HTML through secure agent
   let html: string;
+  let validatedUrl: string;
   try {
-    const response = await runControlledNetworkRequest(
+    const fetched = await runControlledNetworkRequest(
       requestTimeout,
       abortSignal,
-      signal => axios.get(url, { ...axiosConfig, signal })
+      async signal => {
+        const requestUrl = await validateUrl(url, securityOptions, signal);
+        const response = await axios.get(requestUrl, { ...axiosConfig, signal });
+        return { response, validatedUrl: requestUrl };
+      }
     );
 
-    if (typeof response.data !== 'string') {
+    if (typeof fetched.response.data !== 'string') {
       throw new Error('Expected HTML response but received non-string data');
     }
 
-    html = response.data;
+    html = fetched.response.data;
+    validatedUrl = fetched.validatedUrl;
   } catch (fetchError) {
+    if (
+      fetchError instanceof PreviewGeneratorError &&
+      fetchError.type === ErrorType.VALIDATION_ERROR
+    ) {
+      throw fetchError;
+    }
     // Network-level failure — no HTML to parse, fail immediately without retry
     const controlMessage = getNetworkControlErrorMessage(fetchError);
     throw new PreviewGeneratorError(
@@ -379,7 +403,7 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       throw new Error('Failed to parse Open Graph data');
     }
 
-    return result;
+    return { data: result, validatedUrl };
   } catch (parseError) {
     throw new PreviewGeneratorError(
       ErrorType.FETCH_ERROR,
@@ -500,9 +524,6 @@ function cleanText(text: string): string {
  */
 export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Buffer> {
   try {
-    // Validate URL with SSRF protection before fetching
-    const validatedUrl = await validateUrl(imageUrl, securityOptions);
-
     // Check SVG allowance
     const allowedMimeTypes = securityOptions?.allowSvg
       ? new Set([...BASE_ALLOWED_MIME_TYPES, 'image/svg+xml'])
@@ -512,24 +533,27 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
     const response = await runControlledNetworkRequest(
       requestTimeout,
       abortSignal,
-      signal => axios.get(validatedUrl, {
-        responseType: 'arraybuffer',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
-        },
-        timeout: requestTimeout, // Socket inactivity timeout; the wrapper also enforces a total deadline.
-        maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
-        maxContentLength: MAX_IMAGE_SIZE,
-        maxBodyLength: MAX_IMAGE_SIZE,
-        httpAgent: getEnhancedSecureHttpAgent(),
-        httpsAgent: getEnhancedSecureHttpsAgent(),
-        proxy: false,
-        signal,
-        beforeRedirect: createRedirectValidator(
-          'Image redirect',
-          securityOptions?.httpsOnly === true
-        ),
-      })
+      async signal => {
+        const validatedUrl = await validateUrl(imageUrl, securityOptions, signal);
+        return axios.get(validatedUrl, {
+          responseType: 'arraybuffer',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
+          },
+          timeout: requestTimeout, // Socket inactivity timeout; the wrapper also enforces a total deadline.
+          maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
+          maxContentLength: MAX_IMAGE_SIZE,
+          maxBodyLength: MAX_IMAGE_SIZE,
+          httpAgent: getEnhancedSecureHttpAgent(),
+          httpsAgent: getEnhancedSecureHttpsAgent(),
+          proxy: false,
+          signal,
+          beforeRedirect: createRedirectValidator(
+            'Image redirect',
+            securityOptions?.httpsOnly === true
+          ),
+        });
+      }
     );
 
     // Check content-type header if available (extract base MIME type, ignoring charset etc.)

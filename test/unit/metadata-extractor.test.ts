@@ -5,6 +5,7 @@ import { mockHtmlWithOg, mockHtmlMinimal, mockHtmlWithTwitter } from '../fixture
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import * as imageSecurity from '../../src/utils/image-security';
+import { validateRequestSecurity } from '../../src/utils/enhanced-secure-agent';
 
 vi.mock('axios');
 vi.mock('open-graph-scraper');
@@ -23,6 +24,7 @@ vi.mock('../../src/utils/enhanced-secure-agent', () => ({
 const mockedAxios = axios as vi.Mocked<typeof axios>;
 const mockedOgs = ogs as vi.MockedFunction<typeof ogs>;
 const mockedImageSecurity = imageSecurity as vi.Mocked<typeof imageSecurity>;
+const mockedValidateRequestSecurity = vi.mocked(validateRequestSecurity);
 
 describe('Metadata Extractor', () => {
   beforeEach(() => {
@@ -66,6 +68,10 @@ describe('Metadata Extractor', () => {
         author: undefined,
         publishedDate: undefined,
       });
+      expect(mockedValidateRequestSecurity).toHaveBeenCalledWith(
+        testUrl,
+        expect.any(AbortSignal)
+      );
     });
 
     it('should handle Twitter Card metadata', async () => {
@@ -372,6 +378,7 @@ describe('Metadata Extractor', () => {
 
     it('should fetch image successfully', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const abortController = new AbortController();
       // Mock JPEG image data with proper magic bytes
       const mockImageData = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, ...Array(100).fill(0)]);
 
@@ -379,7 +386,9 @@ describe('Metadata Extractor', () => {
         data: mockImageData,
       });
 
-      const result = await fetchImage(imageUrl);
+      const result = await fetchImage(imageUrl, undefined, abortController.signal);
+
+      const securitySignal = mockedValidateRequestSecurity.mock.calls.at(-1)?.[1];
 
       expect(result).toEqual(mockImageData);
       expect(mockedAxios.get).toHaveBeenCalledWith(imageUrl, expect.objectContaining({
@@ -392,9 +401,16 @@ describe('Metadata Extractor', () => {
         maxContentLength: 15 * 1024 * 1024,
         maxBodyLength: 15 * 1024 * 1024,
         proxy: false,
+        signal: securitySignal,
         httpAgent: { kind: 'http' },
         httpsAgent: { kind: 'https' },
       }));
+      expect(mockedValidateRequestSecurity).toHaveBeenCalledWith(
+        imageUrl,
+        securitySignal
+      );
+      expect(securitySignal).toBeInstanceOf(AbortSignal);
+      expect(securitySignal).not.toBe(abortController.signal);
     });
 
     it('should throw error on fetch failure', async () => {
