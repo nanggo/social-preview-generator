@@ -32,6 +32,7 @@ vi.mock('../../src/utils/ip-validation', () => ({
 }));
 
 import { isPrivateOrReservedIP } from '../../src/utils/ip-validation';
+import { ErrorType, PreviewGeneratorError } from '../../src/types';
 const mockIsPrivateOrReservedIP = isPrivateOrReservedIP as vi.MockedFunction<typeof isPrivateOrReservedIP>;
 
 async function useProductionIPClassifier(): Promise<void> {
@@ -484,6 +485,7 @@ describe('Enhanced Secure Agent', () => {
       const result = await validateRequestSecurity('https://mixed.com/test');
       
       expect(result.allowed).toBe(false);
+      expect(result.failureKind).toBe('policy');
       expect(result.blockedIPs).toContain('192.168.1.1');
       expect(result.allowedIPs).toContain('8.8.8.8');
       expect(result.allowedIPs).toContain('1.1.1.1');
@@ -513,11 +515,44 @@ describe('Enhanced Secure Agent', () => {
       const result = await validateRequestSecurity('https://nonexistent.invalid/test');
       
       expect(result.allowed).toBe(false);
+      expect(result.failureKind).toBe('operational');
       expect(result.reason).toContain('Security validation error');
     });
   });
 
   describe('Agent Configuration', () => {
+    it('marks blocked DNS lookup callbacks as validation policy errors', async () => {
+      const cleanup = mockDNSLookup('private-redirect.example', [
+        { address: '192.168.1.1', family: 4 },
+      ]);
+
+      try {
+        await useProductionIPClassifier();
+        const agent = createEnhancedSecureHttpAgent();
+        const lookup = (agent as unknown as {
+          options: {
+            lookup: (
+              hostname: string,
+              options: dns.LookupOneOptions,
+              callback: (error: NodeJS.ErrnoException | null) => void
+            ) => void;
+          };
+        }).options.lookup;
+
+        const error = await new Promise<NodeJS.ErrnoException | null>(resolve => {
+          lookup('private-redirect.example', {}, resolve);
+        });
+
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect(error).toMatchObject({
+          type: ErrorType.VALIDATION_ERROR,
+          code: 'ECONNREFUSED',
+        });
+      } finally {
+        cleanup();
+      }
+    });
+
     it('should create HTTP agent with security settings', () => {
       const agent = createEnhancedSecureHttpAgent();
       

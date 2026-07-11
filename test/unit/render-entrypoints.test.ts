@@ -67,7 +67,13 @@ import {
 import { createFallbackImage, generateImage } from '../../src/core/image-generator';
 import { clearAllCaches } from '../../src/utils/sharp-cache';
 import { previewCache, stopCacheCleanup } from '../../src/utils/cache';
-import { type ExtractedMetadata, type TemplateConfig } from '../../src/types';
+import {
+  ErrorType,
+  PreviewGeneratorError,
+  type ExtractedMetadata,
+  type TemplateConfig,
+} from '../../src/types';
+import { createSecurityPolicyError } from '../../src/utils/security-policy-error';
 
 const metadata: ExtractedMetadata = {
   title: 'Limiter test',
@@ -181,6 +187,38 @@ describe('render limiter entrypoints', () => {
 
     pendingImage.resolve(Buffer.from('fetched-image'));
     await rendering;
+    expect(renderMocks.withRenderSlot).toHaveBeenCalledOnce();
+  });
+
+  it('propagates background-image security policy violations', async () => {
+    renderMocks.fetchImage.mockRejectedValueOnce(
+      createSecurityPolicyError(
+        'Image redirect blocked by HTTPS-only mode'
+      )
+    );
+
+    await expect(
+      generateImageWithTemplate(
+        { ...metadata, image: 'https://example.com/background.jpg' },
+        backgroundTemplate,
+        { security: { httpsOnly: true } }
+      )
+    ).rejects.toMatchObject({ type: ErrorType.VALIDATION_ERROR });
+    expect(renderMocks.withRenderSlot).not.toHaveBeenCalled();
+  });
+
+  it('renders without a malformed scraped background image', async () => {
+    renderMocks.fetchImage.mockRejectedValueOnce(
+      new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Invalid URL: https://')
+    );
+
+    await expect(
+      generateImageWithTemplate(
+        { ...metadata, image: 'https://' },
+        backgroundTemplate,
+        {}
+      )
+    ).resolves.toEqual(Buffer.from('rendered'));
     expect(renderMocks.withRenderSlot).toHaveBeenCalledOnce();
   });
 

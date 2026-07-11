@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { extractMetadata, validateMetadata, applyFallbacks, fetchImage } from '../../src/core/metadata-extractor';
-import { ErrorType, ExtractedMetadata } from '../../src/types';
+import { ErrorType, ExtractedMetadata, PreviewGeneratorError } from '../../src/types';
 import { mockHtmlWithOg, mockHtmlMinimal, mockHtmlWithTwitter } from '../fixtures/mock-html';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
@@ -71,6 +71,38 @@ describe('Metadata Extractor', () => {
       expect(mockedValidateRequestSecurity).toHaveBeenCalledWith(
         new URL(testUrl).toString(),
         expect.any(AbortSignal)
+      );
+    });
+
+    it('should classify operational DNS validation failures as fetch errors', async () => {
+      mockedValidateRequestSecurity.mockResolvedValueOnce({
+        allowed: false,
+        blockedIPs: [],
+        allowedIPs: [],
+        reason: 'Security validation error: getaddrinfo ENOTFOUND',
+        failureKind: 'operational',
+      } as Awaited<ReturnType<typeof validateRequestSecurity>>);
+
+      await expect(extractMetadata('https://dns-failure.example/path')).rejects.toMatchObject({
+        type: ErrorType.FETCH_ERROR,
+      });
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
+    it('should restore socket policy violations wrapped by the HTTP client', async () => {
+      const policyError = new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        'Connection blocked: private redirect target'
+      );
+      const transportError = Object.assign(new Error('Redirect request failed'), {
+        cause: policyError,
+      });
+      mockedAxios.get.mockRejectedValueOnce(
+        Object.assign(new Error('Axios request failed'), { cause: transportError })
+      );
+
+      await expect(extractMetadata('https://redirect-origin.example/path')).rejects.toBe(
+        policyError
       );
     });
 

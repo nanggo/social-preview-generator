@@ -375,6 +375,16 @@ export async function generatePreviewWithDetails(
         metadata = applyFallbacks(metadata, url);
       }
     } catch (error) {
+      // Input and security-policy violations must remain observable to callers.
+      // Falling back here would turn a rejected URL (for example, HTTP in
+      // HTTPS-only mode or a blocked SSRF target) into a successful response.
+      if (
+        error instanceof PreviewGeneratorError &&
+        error.type === ErrorType.VALIDATION_ERROR
+      ) {
+        throw error;
+      }
+
       // If metadata extraction fails completely, use fallback
       if (
         finalOptions.fallback?.strategy === 'generate' ||
