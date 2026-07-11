@@ -6,7 +6,6 @@
 import { 
   initializeSharpSecurity, 
   validateImageBuffer, 
-  processImageWithTimeout,
   createSecureSharpInstance,
   createSecureSharpWithCleanMetadata,
   validateSharpLimits,
@@ -50,35 +49,6 @@ describe('Sharp Security Configuration - Enhanced', () => {
     it('should allow operations within limits', () => {
       expect(() => validateSharpLimits(1920, 1080)).not.toThrow();
       expect(() => validateSharpLimits(4096, 4096)).not.toThrow();
-    });
-  });
-
-  describe('Timeout protection', () => {
-    it('should timeout long-running operations', async () => {
-      let timer: NodeJS.Timeout | undefined;
-      const slowOperation = () => new Promise<string>(resolve => {
-        timer = setTimeout(() => resolve('done'), 5000); // 5 seconds
-        timer.unref?.();
-      });
-
-      await expect(
-        processImageWithTimeout(slowOperation, 100) // 100ms timeout
-      ).rejects.toThrow('timed out');
-
-      if (timer) clearTimeout(timer);
-    }, 10000);
-
-    it('should complete fast operations normally', async () => {
-      const fastOperation = () => Promise.resolve('completed');
-
-      const result = await processImageWithTimeout(fastOperation, 1000);
-      expect(result).toBe('completed');
-    });
-
-    it('should use default timeout when not specified', async () => {
-      const operation = () => Promise.resolve('default');
-      const result = await processImageWithTimeout(operation);
-      expect(result).toBe('default');
     });
   });
 

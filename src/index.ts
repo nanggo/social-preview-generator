@@ -33,6 +33,8 @@ import { createCachedSVG } from './utils/sharp-cache';
 import { startCacheCleanup, isCacheCleanupRunning } from './utils/cache';
 import { MAX_TEXT_LENGTH } from './constants/security';
 import { exceedsTextLength } from './utils/validators/text';
+import { withRenderSlot } from './utils/render-limiter';
+import { isSharpProcessingTimeout } from './utils/sharp-timeout';
 
 // Initialize Sharp security settings (no side-effect timers at import time)
 initializeSharpSecurity();
@@ -261,63 +263,66 @@ async function generateImageWithSanitizedOptions(
   const height = sanitizedOptions.height || DEFAULT_DIMENSIONS.height;
   const quality = sanitizedOptions.quality || 90;
 
-  try {
-    validateDimensions(width, height);
-
-    let processedImage = await processImageForTemplate(
-      metadata,
-      template,
-      width,
-      height,
-      sanitizedOptions
-    );
-    let overlayBuffer = await createOverlayBuffer(
-      processedImage.effectiveMetadata,
-      template,
-      width,
-      height,
-      sanitizedOptions
-    );
-
-    let finalImage: Buffer;
+  return withRenderSlot(async () => {
     try {
-      finalImage = await renderProcessedImage(processedImage, overlayBuffer, quality);
-    } catch (processingError) {
-      if (!processedImage.usedBackgroundImage) {
-        throw processingError;
-      }
+      validateDimensions(width, height);
 
-      // Sharp evaluates image pipelines lazily, so decoding/resizing can fail
-      // only while producing the final buffer. Retry once with the same
-      // metadata minus the failed background image.
-      processedImage = await processImageForTemplate(
-        { ...processedImage.effectiveMetadata, image: undefined },
+      let processedImage = await processImageForTemplate(
+        metadata,
         template,
         width,
         height,
         sanitizedOptions
       );
-      overlayBuffer = await createOverlayBuffer(
+      let overlayBuffer = await createOverlayBuffer(
         processedImage.effectiveMetadata,
         template,
         width,
         height,
         sanitizedOptions
       );
-      finalImage = await renderProcessedImage(processedImage, overlayBuffer, quality);
-    }
 
-    return {
-      buffer: finalImage,
-      effectiveMetadata: processedImage.effectiveMetadata,
-    };
-  } catch (error) {
-    throw new PreviewGeneratorError(
-      ErrorType.IMAGE_ERROR,
-      `Failed to generate image with template: ${error instanceof Error ? error.message : String(error)}`,
-      error
-    );
-  }
+      let finalImage: Buffer;
+      try {
+        finalImage = await renderProcessedImage(processedImage, overlayBuffer, quality);
+      } catch (processingError) {
+        if (!processedImage.usedBackgroundImage || isSharpProcessingTimeout(processingError)) {
+          throw processingError;
+        }
+
+        // Sharp evaluates image pipelines lazily, so decoding/resizing can fail
+        // only while producing the final buffer. Retry once with the same
+        // metadata minus the failed background image. Native Sharp timeouts are
+        // never retried because doing so doubles work after resource exhaustion.
+        processedImage = await processImageForTemplate(
+          { ...processedImage.effectiveMetadata, image: undefined },
+          template,
+          width,
+          height,
+          sanitizedOptions
+        );
+        overlayBuffer = await createOverlayBuffer(
+          processedImage.effectiveMetadata,
+          template,
+          width,
+          height,
+          sanitizedOptions
+        );
+        finalImage = await renderProcessedImage(processedImage, overlayBuffer, quality);
+      }
+
+      return {
+        buffer: finalImage,
+        effectiveMetadata: processedImage.effectiveMetadata,
+      };
+    } catch (error) {
+      throw new PreviewGeneratorError(
+        ErrorType.IMAGE_ERROR,
+        `Failed to generate image with template: ${error instanceof Error ? error.message : String(error)}`,
+        error
+      );
+    }
+  });
 }
 
 /**

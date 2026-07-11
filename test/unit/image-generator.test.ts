@@ -13,6 +13,7 @@ describe('Image Generator', () => {
     
     // Setup default sharp mock chain
     const mockSharpInstance = {
+      timeout: vi.fn().mockReturnThis(),
       resize: vi.fn().mockReturnThis(),
       blur: vi.fn().mockReturnThis(),
       modulate: vi.fn().mockReturnThis(),
@@ -44,6 +45,7 @@ describe('Image Generator', () => {
       };
 
       const mockSharpInstance = {
+        timeout: vi.fn().mockReturnThis(),
         composite: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('fallback-image')),
@@ -79,6 +81,7 @@ describe('Image Generator', () => {
       const options: PreviewOptions = {};
 
       const mockSharpInstance = {
+        timeout: vi.fn().mockReturnThis(),
         composite: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockResolvedValue(Buffer.from('fallback-image')),
@@ -96,6 +99,7 @@ describe('Image Generator', () => {
   describe('error handling', () => {
     it('should handle sharp errors gracefully', async () => {
       const mockSharpInstance = {
+        timeout: vi.fn().mockReturnThis(),
         composite: vi.fn().mockReturnThis(),
         jpeg: vi.fn().mockReturnThis(),
         toBuffer: vi.fn().mockRejectedValue(new Error('Sharp processing error')),
