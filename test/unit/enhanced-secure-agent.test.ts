@@ -33,6 +33,13 @@ vi.mock('../../src/utils/ip-validation', () => ({
 import { isPrivateOrReservedIP } from '../../src/utils/ip-validation';
 const mockIsPrivateOrReservedIP = isPrivateOrReservedIP as vi.MockedFunction<typeof isPrivateOrReservedIP>;
 
+async function useProductionIPClassifier(): Promise<void> {
+  const actualModule = await vi.importActual<typeof import('../../src/utils/ip-validation')>(
+    '../../src/utils/ip-validation'
+  );
+  mockIsPrivateOrReservedIP.mockImplementation(actualModule.isPrivateOrReservedIP);
+}
+
 // Test utilities
 function mockDNSLookup(hostname: string, addresses: dns.LookupAddress[]) {
   const originalLookup = dns.lookup;
@@ -316,11 +323,7 @@ describe('Enhanced Secure Agent', () => {
         { address: '::ffff:192.168.1.1', family: 6 }
       ]);
 
-      // Use the real validation function
-      const { isPrivateOrReservedIP: actualFunction } = await import('../../src/utils/ip-validation');
-      mockIsPrivateOrReservedIP.mockImplementation((ip: string) => {
-        return actualFunction(ip);
-      });
+      await useProductionIPClassifier();
 
       // The enhanced agent should detect and block this
       const result = await validateRequestSecurity('https://localhost/test');
@@ -344,11 +347,7 @@ describe('Enhanced Secure Agent', () => {
           { address: testCase.address, family: testCase.family }
         ]);
 
-        // Use the real isPrivateOrReservedIP function instead of mock
-        const { isPrivateOrReservedIP: actualFunction } = await import('../../src/utils/ip-validation');
-        mockIsPrivateOrReservedIP.mockImplementation((ip: string) => {
-          return actualFunction(ip);
-        });
+        await useProductionIPClassifier();
 
         const result = await validateRequestSecurity(`https://${testCase.hostname}/test`);
         expect(result.allowed).toBe(false);
@@ -739,6 +738,8 @@ describe('Enhanced Secure Agent', () => {
     });
 
     it('should handle malformed IP addresses in DNS responses', async () => {
+      await useProductionIPClassifier();
+
       // Mock DNS to return invalid IP format
       const originalLookup = dns.lookup;
       (dns.lookup as any) = vi.fn((host, options, callback) => {

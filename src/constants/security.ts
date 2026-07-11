@@ -7,34 +7,33 @@
 // NETWORK SECURITY CONSTANTS
 // =============================================================================
 
-/** Private IP ranges to block for SSRF protection */
+/** IPv4 networks to block for SSRF protection */
 export const BLOCKED_IP_RANGES = [
-  // IPv4 Private ranges
-  { start: '0.0.0.0', end: '0.255.255.255', description: 'Current network' },
-  { start: '10.0.0.0', end: '10.255.255.255', description: 'Private Class A' },
-  { start: '127.0.0.0', end: '127.255.255.255', description: 'Loopback' },
-  { start: '169.254.0.0', end: '169.254.255.255', description: 'Link-local' },
-  { start: '172.16.0.0', end: '172.31.255.255', description: 'Private Class B' },
-  { start: '192.0.0.0', end: '192.0.0.255', description: 'IETF Protocol Assignments' },
-  { start: '192.0.2.0', end: '192.0.2.255', description: 'TEST-NET-1' },
-  { start: '192.88.99.0', end: '192.88.99.255', description: '6to4 Relay' },
-  { start: '192.168.0.0', end: '192.168.255.255', description: 'Private Class C' },
-  { start: '198.18.0.0', end: '198.19.255.255', description: 'Network Testing' },
-  { start: '198.51.100.0', end: '198.51.100.255', description: 'TEST-NET-2' },
-  { start: '203.0.113.0', end: '203.0.113.255', description: 'TEST-NET-3' },
-  { start: '224.0.0.0', end: '255.255.255.255', description: 'Multicast/Reserved' },
-  
-  // Carrier-Grade NAT (RFC 6598)
-  { start: '100.64.0.0', end: '100.127.255.255', description: 'Carrier-Grade NAT' },
+  { network: '0.0.0.0', prefix: 8, description: 'Current network' },
+  { network: '10.0.0.0', prefix: 8, description: 'Private Class A' },
+  { network: '100.64.0.0', prefix: 10, description: 'Carrier-Grade NAT' },
+  { network: '127.0.0.0', prefix: 8, description: 'Loopback' },
+  { network: '169.254.0.0', prefix: 16, description: 'Link-local' },
+  { network: '172.16.0.0', prefix: 12, description: 'Private Class B' },
+  { network: '192.0.0.0', prefix: 24, description: 'IETF Protocol Assignments' },
+  { network: '192.0.2.0', prefix: 24, description: 'TEST-NET-1' },
+  { network: '192.88.99.0', prefix: 24, description: '6to4 Relay' },
+  { network: '192.168.0.0', prefix: 16, description: 'Private Class C' },
+  { network: '198.18.0.0', prefix: 15, description: 'Network Testing' },
+  { network: '198.51.100.0', prefix: 24, description: 'TEST-NET-2' },
+  { network: '203.0.113.0', prefix: 24, description: 'TEST-NET-3' },
+  { network: '224.0.0.0', prefix: 3, description: 'Multicast/Reserved' },
 ] as const;
 
 /** Blocked IPv6 ranges */
 export const BLOCKED_IPV6_RANGES = [
-  '::1/128',        // Loopback
-  '::/128',         // Unspecified
-  'fc00::/7',       // Unique Local
-  'fe80::/10',      // Link-local
-  'ff00::/8',       // Multicast
+  '::/96', // Deprecated IPv4-compatible addresses, including unspecified and loopback
+  'fc00::/7', // Unique Local
+  'fe80::/10', // Link-local
+  'fec0::/10', // Deprecated Site-local
+  'ff00::/8', // Multicast
+  '2001:db8::/32', // Documentation
+  '2002::/16', // 6to4
 ] as const;
 
 /** Allowed protocols for URLs */

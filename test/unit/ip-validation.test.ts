@@ -1,242 +1,194 @@
 /**
  * IP Address Validation Tests
- * Tests for IPv4/IPv6 private IP address detection
+ * Tests the production SSRF address classifier at CIDR boundaries.
  */
 
-// We'll create a simple function to test the IP validation logic directly
-// since the full SSRF protection involves complex DNS mocking
+import { isPrivateOrReservedIP } from '../../src/utils/ip-validation';
 
 describe('IP Address Validation', () => {
-  // Helper function to simulate the private IP detection logic
-  function isPrivateOrReservedIPv4(ip: string): boolean {
-    const octets = ip.split('.').map(Number);
-    
-    if (octets.length !== 4 || octets.some(isNaN) || octets.some(octet => octet < 0 || octet > 255)) {
-      return true; // Invalid IP format, treat as blocked
-    }
+  describe('IPv4 private and reserved address detection', () => {
+    it.each([
+      ['0.0.0.0', true],
+      ['0.255.255.255', true],
+      ['1.0.0.0', false],
+      ['9.255.255.255', false],
+      ['10.0.0.0', true],
+      ['10.255.255.255', true],
+      ['11.0.0.0', false],
+      ['100.63.255.255', false],
+      ['100.64.0.0', true],
+      ['100.127.255.255', true],
+      ['100.128.0.0', false],
+      ['126.255.255.255', false],
+      ['127.0.0.0', true],
+      ['127.255.255.255', true],
+      ['128.0.0.0', false],
+      ['169.253.255.255', false],
+      ['169.254.0.0', true],
+      ['169.254.255.255', true],
+      ['169.255.0.0', false],
+      ['172.15.255.255', false],
+      ['172.16.0.0', true],
+      ['172.31.255.255', true],
+      ['172.32.0.0', false],
+      ['192.0.0.0', true],
+      ['192.0.0.255', true],
+      ['192.0.1.0', false],
+      ['192.0.1.255', false],
+      ['192.0.2.0', true],
+      ['192.0.2.255', true],
+      ['192.0.3.0', false],
+      ['192.88.98.255', false],
+      ['192.88.99.0', true],
+      ['192.88.99.255', true],
+      ['192.88.100.0', false],
+      ['192.167.255.255', false],
+      ['192.168.0.0', true],
+      ['192.168.255.255', true],
+      ['192.169.0.0', false],
+      ['198.17.255.255', false],
+      ['198.18.0.0', true],
+      ['198.19.255.255', true],
+      ['198.20.0.0', false],
+      ['198.51.99.255', false],
+      ['198.51.100.0', true],
+      ['198.51.100.255', true],
+      ['198.51.101.0', false],
+      ['203.0.112.255', false],
+      ['203.0.113.0', true],
+      ['203.0.113.255', true],
+      ['203.0.114.0', false],
+      ['223.255.255.255', false],
+      ['224.0.0.0', true],
+      ['255.255.255.255', true],
+    ])('classifies %s as blocked=%s', (address, blocked) => {
+      expect(isPrivateOrReservedIP(address)).toBe(blocked);
+    });
 
-    const [a, b] = octets;
-    
-    // IPv4 private and reserved ranges
-    if (a === 0) return true; // 0.0.0.0/8 (reserved)
-    if (a === 10) return true; // 10.0.0.0/8
-    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-    if (a === 192 && b === 168) return true; // 192.168.0.0/16
-    
-    // Carrier-Grade NAT (RFC 6598)
-    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10
-    
-    // Loopback
-    if (a === 127) return true; // 127.0.0.0/8
-    
-    // Link-local
-    if (a === 169 && b === 254) return true; // 169.254.0.0/16
-    
-    // Multicast and reserved
-    if (a >= 224) return true; // 224.0.0.0/3
-    
-    return false;
-  }
-
-  function isPrivateOrReservedIPv6(ip: string): boolean {
-    try {
-      // Normalize IPv6 address - remove brackets if present
-      const normalizedIP = ip.replace(/^\[|\]$/g, '').toLowerCase();
-      
-      // IPv6 private and reserved ranges
-      const privatePrefixes = [
-        '::', // Unspecified address
-        '::1', // Loopback
-        'fe80:', // Link-local
-        'fec0:', // Site-local (deprecated but still reserved)
-        'ff', // Multicast (ff00::/8)
-        'fc', // Unique local addresses (fc00::/7)
-        'fd', // Unique local addresses (fd00::/8)
-        '2001:db8:', // Documentation prefix
-        '2002:', // 6to4 addresses
-        '::ffff:', // IPv4-mapped IPv6 addresses
-      ];
-      
-      // Check against known private/reserved prefixes
-      for (const prefix of privatePrefixes) {
-        if (normalizedIP.startsWith(prefix)) {
-          return true;
-        }
+    it.each(['8.8.8.8', '1.1.1.1', '208.67.222.222', '74.125.224.72'])(
+      'allows public address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(false);
       }
-      
-      // Additional checks for specific ranges
-      // Check for IPv4-mapped addresses that might contain private IPv4
-      if (normalizedIP.startsWith('::ffff:')) {
-        const ipv4Part = normalizedIP.replace('::ffff:', '');
-        // Convert hex to decimal if needed, or check dot notation
-        if (ipv4Part.includes('.')) {
-          return isPrivateOrReservedIPv4(ipv4Part);
-        }
-      }
-      
-      return false;
-    } catch {
-      // If parsing fails, treat as blocked for security
-      return true;
-    }
-  }
+    );
 
-  describe('IPv4 private address detection', () => {
-    it('should detect localhost addresses', () => {
-      expect(isPrivateOrReservedIPv4('127.0.0.1')).toBe(true);
-      expect(isPrivateOrReservedIPv4('127.0.0.2')).toBe(true);
-      expect(isPrivateOrReservedIPv4('127.255.255.255')).toBe(true);
-    });
-
-    it('should detect private network addresses', () => {
-      // 10.0.0.0/8
-      expect(isPrivateOrReservedIPv4('10.0.0.1')).toBe(true);
-      expect(isPrivateOrReservedIPv4('10.255.255.255')).toBe(true);
-      
-      // 172.16.0.0/12
-      expect(isPrivateOrReservedIPv4('172.16.0.1')).toBe(true);
-      expect(isPrivateOrReservedIPv4('172.31.255.255')).toBe(true);
-      expect(isPrivateOrReservedIPv4('172.15.0.1')).toBe(false); // Outside range
-      expect(isPrivateOrReservedIPv4('172.32.0.1')).toBe(false); // Outside range
-      
-      // 192.168.0.0/16
-      expect(isPrivateOrReservedIPv4('192.168.1.1')).toBe(true);
-      expect(isPrivateOrReservedIPv4('192.168.255.255')).toBe(true);
-    });
-
-    it('should detect carrier-grade NAT addresses', () => {
-      expect(isPrivateOrReservedIPv4('100.64.0.1')).toBe(true);
-      expect(isPrivateOrReservedIPv4('100.127.255.255')).toBe(true);
-      expect(isPrivateOrReservedIPv4('100.63.255.255')).toBe(false); // Outside range
-      expect(isPrivateOrReservedIPv4('100.128.0.0')).toBe(false); // Outside range
-    });
-
-    it('should detect link-local addresses', () => {
-      expect(isPrivateOrReservedIPv4('169.254.1.1')).toBe(true);
-      expect(isPrivateOrReservedIPv4('169.254.255.255')).toBe(true);
-    });
-
-    it('should detect multicast and reserved addresses', () => {
-      expect(isPrivateOrReservedIPv4('224.0.0.1')).toBe(true); // Multicast
-      expect(isPrivateOrReservedIPv4('239.255.255.255')).toBe(true); // Multicast
-      expect(isPrivateOrReservedIPv4('240.0.0.1')).toBe(true); // Reserved
-      expect(isPrivateOrReservedIPv4('0.0.0.0')).toBe(true); // Reserved
-    });
-
-    it('should allow public IPv4 addresses', () => {
-      const publicIPs = [
-        '8.8.8.8',         // Google DNS
-        '1.1.1.1',         // Cloudflare DNS
-        '208.67.222.222',  // OpenDNS
-        '74.125.224.72',   // Google
-        '151.101.193.140', // Reddit
-      ];
-
-      publicIPs.forEach(ip => {
-        expect(isPrivateOrReservedIPv4(ip)).toBe(false);
-      });
-    });
-
-    it('should handle invalid IPv4 addresses', () => {
-      const invalidIPs = [
-        '256.1.1.1',       // Invalid octet
-        '1.1.1',           // Too few octets
-        '1.1.1.1.1',       // Too many octets
-        'not.an.ip',       // Non-numeric
-        '',                // Empty
-      ];
-
-      invalidIPs.forEach(ip => {
-        expect(isPrivateOrReservedIPv4(ip)).toBe(true);
-      });
+    it.each([
+      '',
+      '256.1.1.1',
+      '1.1.1',
+      '1.1.1.1.1',
+      'not.an.ip',
+      '01.2.3.4',
+      '1e0.2.3.4',
+      '1..3.4',
+      ' 8.8.8.8',
+    ])('fails closed for malformed IPv4 input %j', (address) => {
+      expect(isPrivateOrReservedIP(address)).toBe(true);
     });
   });
 
-  describe('IPv6 private address detection', () => {
-    it('should detect localhost addresses', () => {
-      expect(isPrivateOrReservedIPv6('::1')).toBe(true);
-      expect(isPrivateOrReservedIPv6('[::1]')).toBe(true); // With brackets
+  describe('IPv6 private and reserved address detection', () => {
+    it.each([
+      ['::', true],
+      ['::1', true],
+      ['[::1]', true],
+      ['fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', false],
+      ['fc00::', true],
+      ['fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', true],
+      ['fe00::', false],
+      ['fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff', false],
+      ['fe80::', true],
+      ['febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff', true],
+      ['fec0::', true],
+      ['feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', true],
+      ['ff00::', true],
+      ['ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', true],
+      ['2001:db7:ffff:ffff:ffff:ffff:ffff:ffff', false],
+      ['2001:db8::', true],
+      ['2001:db8:ffff:ffff:ffff:ffff:ffff:ffff', true],
+      ['2001:db9::', false],
+      ['2001:ffff:ffff:ffff:ffff:ffff:ffff:ffff', false],
+      ['2002::', true],
+      ['2002:ffff:ffff:ffff:ffff:ffff:ffff:ffff', true],
+      ['2003::', false],
+    ])('classifies %s as blocked=%s', (address, blocked) => {
+      expect(isPrivateOrReservedIP(address)).toBe(blocked);
     });
 
-    it('should detect link-local addresses', () => {
-      expect(isPrivateOrReservedIPv6('fe80::1')).toBe(true);
-      expect(isPrivateOrReservedIPv6('fe80::abcd:1234')).toBe(true);
+    it.each([
+      '2001:4860:4860::8888',
+      '2606:4700:4700::1111',
+      '[2606:4700:4700::1111]',
+      '2a00:1450:4014:80c::200e',
+    ])('allows public address %s', (address) => {
+      expect(isPrivateOrReservedIP(address)).toBe(false);
     });
 
-    it('should detect unique local addresses', () => {
-      expect(isPrivateOrReservedIPv6('fc00::1')).toBe(true);
-      expect(isPrivateOrReservedIPv6('fd00::1')).toBe(true);
+    it('handles case-insensitive and scoped IPv6 forms', () => {
+      expect(isPrivateOrReservedIP('Fe80::1')).toBe(true);
+      expect(isPrivateOrReservedIP('fe80::1%lo0')).toBe(true);
     });
 
-    it('should detect multicast addresses', () => {
-      expect(isPrivateOrReservedIPv6('ff00::1')).toBe(true);
-      expect(isPrivateOrReservedIPv6('ff02::1')).toBe(true);
+    it.each(['::ffff:192.168.1.1', '::ffff:c0a8:101', '::ffff:198.19.255.255', '::ffff:c613:ffff'])(
+      'blocks IPv4-mapped reserved address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(true);
+      }
+    );
+
+    it.each(['::ffff:8.8.8.8', '::ffff:808:808'])(
+      'allows IPv4-mapped public address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(false);
+      }
+    );
+
+    it.each([
+      '::ffff:0:127.0.0.1',
+      '::ffff:0:7f00:1',
+      '::ffff:0:192.168.1.1',
+      '0:0:0:0:ffff:0:c0a8:101',
+    ])('blocks IPv4-translated reserved address %s', (address) => {
+      expect(isPrivateOrReservedIP(address)).toBe(true);
     });
 
-    it('should detect documentation addresses', () => {
-      expect(isPrivateOrReservedIPv6('2001:db8::1')).toBe(true);
-      expect(isPrivateOrReservedIPv6('2001:db8:1234::5678')).toBe(true);
-    });
+    it.each(['::ffff:0:8.8.8.8', '::ffff:0:808:808'])(
+      'allows IPv4-translated public address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(false);
+      }
+    );
 
-    it('should detect IPv4-mapped addresses with private IPv4', () => {
-      expect(isPrivateOrReservedIPv6('::ffff:192.168.1.1')).toBe(true);
-      expect(isPrivateOrReservedIPv6('::ffff:127.0.0.1')).toBe(true);
-      expect(isPrivateOrReservedIPv6('::ffff:10.0.0.1')).toBe(true);
-    });
+    it.each(['64:ff9b::127.0.0.1', '64:ff9b::7f00:1', '64:ff9b::192.168.1.1'])(
+      'blocks well-known NAT64 aliases for reserved IPv4 address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(true);
+      }
+    );
 
-    it('should allow public IPv6 addresses', () => {
-      const publicIPv6s = [
-        '2001:4860:4860::8888',  // Google DNS
-        '2606:4700:4700::1111',  // Cloudflare DNS
-        '2001:4860:4802::1a',    // Google
-        '2a00:1450:4014:80c::200e', // Google international
-      ];
+    it.each(['64:ff9b::8.8.8.8', '64:ff9b::808:808'])(
+      'allows well-known NAT64 aliases for public IPv4 address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(false);
+      }
+    );
 
-      publicIPv6s.forEach(ip => {
-        expect(isPrivateOrReservedIPv6(ip)).toBe(false);
-      });
-    });
+    it.each(['::192.168.1.1', '::8.8.8.8'])(
+      'blocks deprecated IPv4-compatible address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(true);
+      }
+    );
 
-    it('should handle unspecified address', () => {
-      expect(isPrivateOrReservedIPv6('::')).toBe(true);
-    });
-
-    it('should handle invalid IPv6 addresses by treating as blocked', () => {
-      const invalidIPv6s = [
-        'invalid::ipv6',
-        'gggg::1',
-        // Note: Some invalid formats may not be caught by simple prefix checks
-      ];
-
-      // Test that at least some invalid formats are caught
-      expect(isPrivateOrReservedIPv6('invalid::ipv6')).toBe(false); // May not be caught by prefix check
-      expect(isPrivateOrReservedIPv6('gggg::1')).toBe(false); // May not be caught by prefix check
-    });
-  });
-
-  describe('Edge cases and boundary conditions', () => {
-    it('should handle boundary conditions for IPv4 private ranges', () => {
-      // 172.x.x.x range boundaries
-      expect(isPrivateOrReservedIPv4('172.15.255.255')).toBe(false); // Just outside
-      expect(isPrivateOrReservedIPv4('172.16.0.0')).toBe(true);      // Start of range
-      expect(isPrivateOrReservedIPv4('172.31.255.255')).toBe(true);  // End of range
-      expect(isPrivateOrReservedIPv4('172.32.0.0')).toBe(false);     // Just outside
-
-      // Multicast boundary
-      expect(isPrivateOrReservedIPv4('223.255.255.255')).toBe(false); // Just outside
-      expect(isPrivateOrReservedIPv4('224.0.0.0')).toBe(true);        // Start of multicast
-    });
-
-    it('should handle IPv6 case sensitivity', () => {
-      expect(isPrivateOrReservedIPv6('FE80::1')).toBe(true); // Upper case
-      expect(isPrivateOrReservedIPv6('fe80::1')).toBe(true); // Lower case
-      expect(isPrivateOrReservedIPv6('Fe80::1')).toBe(true); // Mixed case
-    });
-
-    it('should handle IPv6 bracket notation', () => {
-      expect(isPrivateOrReservedIPv6('[fe80::1]')).toBe(true);
-      expect(isPrivateOrReservedIPv6('[::1]')).toBe(true);
-      expect(isPrivateOrReservedIPv6('[2001:db8::1]')).toBe(true);
+    it.each([
+      'invalid::ipv6',
+      'gggg::1',
+      '2606:4700::zzzz',
+      '[2606:4700:4700::1111',
+      '2606:4700:4700::1111]',
+      '2606:4700::1111::1',
+    ])('fails closed for malformed IPv6 input %j', (address) => {
+      expect(isPrivateOrReservedIP(address)).toBe(true);
     });
   });
 });
