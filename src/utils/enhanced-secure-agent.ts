@@ -442,21 +442,43 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
 /**
  * Enhanced secure DNS lookup with caching and comprehensive validation
  */
+type RuntimeLookupCallback = (
+  ...args:
+    | [NodeJS.ErrnoException | null, string, number]
+    | [NodeJS.ErrnoException | null, dns.LookupAddress[]]
+) => void;
+
 const enhancedSecureLookup: NonNullable<http.AgentOptions['lookup']> = (
   hostname,
   options,
   callback
 ): void => {
-  const returnAllAddresses = options.all === true;
+  const runtimeOptions = options as unknown as
+    | dns.LookupOneOptions
+    | dns.LookupAllOptions
+    | number
+    | RuntimeLookupCallback
+    | null
+    | undefined;
+  const actualCallback =
+    (typeof runtimeOptions === 'function'
+      ? runtimeOptions
+      : (callback as unknown as RuntimeLookupCallback | undefined)) ??
+    ((() => undefined) as RuntimeLookupCallback);
+  const normalizedOptions =
+    typeof runtimeOptions === 'object' && runtimeOptions !== null
+      ? runtimeOptions
+      : {};
+  const returnAllAddresses = normalizedOptions.all === true;
 
   const returnLookupError = (error: NodeJS.ErrnoException): void => {
     if (returnAllAddresses) {
-      callback(error, []);
+      actualCallback(error, []);
       return;
     }
 
     // Never return actual IPs in lookup errors - use placeholder values.
-    callback(error, '0.0.0.0', 4);
+    actualCallback(error, '0.0.0.0', 4);
   };
 
   // Use cached/fresh DNS lookup
@@ -485,7 +507,7 @@ const enhancedSecureLookup: NonNullable<http.AgentOptions['lookup']> = (
         // Node's autoSelectFamily path requests `all: true` and requires the
         // two-argument callback form. Return copies so consumers cannot mutate
         // the validated cache entries.
-        callback(
+        actualCallback(
           null,
           addresses.map(({ address, family }) => ({ address, family }))
         );
@@ -512,7 +534,7 @@ const enhancedSecureLookup: NonNullable<http.AgentOptions['lookup']> = (
         totalAddresses: addresses.length
       });
 
-      callback(null, firstSafeAddress.address, firstSafeAddress.family);
+      actualCallback(null, firstSafeAddress.address, firstSafeAddress.family);
     })
     .catch(err => {
       logger.error('DNS lookup failed', { hostname, error: err });
