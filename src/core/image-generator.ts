@@ -17,6 +17,7 @@ import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
 import { SYSTEM_FONT_STACK } from '../constants/fonts';
 import { fetchImage } from './metadata-extractor';
 import { createTransparentCanvas, validateColor } from '../utils/validators';
+import { withPreparedRenderSlot, withRenderSlot } from '../utils/render-limiter';
 
 /**
  * Default dimensions for social media preview images
@@ -40,53 +41,64 @@ export async function generateImage(
   template: TemplateConfig,
   options: PreviewOptions = {}
 ): Promise<Buffer> {
-  try {
-    const width = options.width || DEFAULT_DIMENSIONS.width;
-    const height = options.height || DEFAULT_DIMENSIONS.height;
-    const quality = options.quality || 90;
+  const width = options.width || DEFAULT_DIMENSIONS.width;
+  const height = options.height || DEFAULT_DIMENSIONS.height;
+  const quality = options.quality || 90;
 
-    // Create base image or use existing image
-    let baseImage: Sharp;
+  const renderPreparedImage = async (imageBuffer?: Buffer): Promise<Buffer> => {
+    try {
+      // Create base image or use existing image
+      let baseImage: Sharp;
 
-    if (metadata.image) {
-      // Use existing image as background
-      const imageBuffer = await fetchImage(metadata.image);
-      baseImage = await processBackgroundImage(imageBuffer, width, height, template);
-    } else {
-      // Create blank canvas with gradient background or transparent canvas based on template settings
-      if (template.imageProcessing?.requiresTransparentCanvas) {
-        baseImage = createTransparentCanvas(width, height);
+      if (imageBuffer) {
+        // Use existing image as background
+        baseImage = await processBackgroundImage(imageBuffer, width, height, template);
       } else {
-        baseImage = await createBlankCanvas(width, height, options);
+        // Create blank canvas with gradient background or transparent canvas based on template settings
+        if (template.imageProcessing?.requiresTransparentCanvas) {
+          baseImage = createTransparentCanvas(width, height);
+        } else {
+          baseImage = await createBlankCanvas(width, height, options);
+        }
       }
+
+      // Generate text overlay SVG
+      const overlayBuffer = await generateTextOverlay(metadata, template, width, height, options);
+
+      // Composite text overlay on base image
+      const finalImage = await baseImage
+        .composite([
+          {
+            input: overlayBuffer,
+            top: 0,
+            left: 0,
+          },
+        ])
+        .jpeg({
+          quality,
+          progressive: true,
+          mozjpeg: true
+        })
+        .toBuffer();
+
+      return finalImage;
+    } catch (error) {
+      if (error instanceof PreviewGeneratorError) {
+        throw error;
+      }
+      throw new PreviewGeneratorError(ErrorType.IMAGE_ERROR, 'Failed to generate image', error);
     }
+  };
 
-    // Generate text overlay SVG
-    const overlayBuffer = await generateTextOverlay(metadata, template, width, height, options);
-
-    // Composite text overlay on base image
-    const finalImage = await baseImage
-      .composite([
-        {
-          input: overlayBuffer,
-          top: 0,
-          left: 0,
-        },
-      ])
-      .jpeg({
-        quality,
-        progressive: true,
-        mozjpeg: true
-      })
-      .toBuffer();
-
-    return finalImage;
-  } catch (error) {
-    if (error instanceof PreviewGeneratorError) {
-      throw error;
-    }
-    throw new PreviewGeneratorError(ErrorType.IMAGE_ERROR, 'Failed to generate image', error);
+  const imageUrl = metadata.image;
+  if (imageUrl) {
+    return withPreparedRenderSlot(
+      () => fetchImage(imageUrl),
+      renderPreparedImage
+    );
   }
+
+  return withRenderSlot(() => renderPreparedImage());
 }
 
 /**

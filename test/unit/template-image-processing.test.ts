@@ -11,6 +11,7 @@ import { modernTemplate } from '../../src/templates/modern';
 // Mock sharp to test configuration without actual image processing
 vi.mock('sharp', () => {
   const mockSharp = {
+    timeout: vi.fn().mockReturnThis(),
     resize: vi.fn().mockReturnThis(),
     blur: vi.fn().mockReturnThis(),
     modulate: vi.fn().mockReturnThis(),

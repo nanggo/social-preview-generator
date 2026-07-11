@@ -45,6 +45,7 @@ describe('End-to-End Integration Tests', () => {
 
     // Setup default mocks
     const mockSharpInstance = {
+      timeout: vi.fn().mockReturnThis(),
       resize: vi.fn().mockReturnThis(),
       blur: vi.fn().mockReturnThis(),
       modulate: vi.fn().mockReturnThis(),
@@ -397,6 +398,44 @@ describe('End-to-End Integration Tests', () => {
           expect.any(Object)
         );
         expect(result.metadata.image).toBeUndefined();
+      } finally {
+        templates.modern = originalTemplate;
+      }
+    });
+
+    it('does not retry a blank canvas after a native Sharp timeout', async () => {
+      const originalTemplate = templates.modern;
+      const overlayGenerator = vi.fn(
+        () => '<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg" />'
+      );
+      templates.modern = { ...originalTemplate, overlayGenerator };
+      const pngImageBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        'base64'
+      );
+      mockedAxios.get.mockResolvedValueOnce({
+        data: pngImageBuffer,
+        headers: { 'content-type': 'image/png' },
+      });
+      const sharpInstance = mockedSharp();
+      sharpInstance.toBuffer
+        .mockResolvedValueOnce(Buffer.from('rasterized-overlay'))
+        .mockRejectedValueOnce(new Error('timeout: 12% complete'))
+        .mockResolvedValue(Buffer.from('unexpected-retry'));
+
+      try {
+        await expect(
+          generatePreviewFromMetadataWithDetails({
+            title: 'Post With Slow Cover',
+            url: 'https://blog.example.com/posts/slow-cover',
+            image: 'https://cdn.example.com/covers/slow-cover.png',
+          })
+        ).rejects.toMatchObject({
+          type: ErrorType.IMAGE_ERROR,
+          message: expect.stringContaining('timeout: 12% complete'),
+        });
+        expect(overlayGenerator).toHaveBeenCalledTimes(1);
+        expect(sharpInstance.toBuffer).toHaveBeenCalledTimes(2);
       } finally {
         templates.modern = originalTemplate;
       }
@@ -776,6 +815,7 @@ describe('End-to-End Integration Tests', () => {
 
       // Mock sharp to fail
       const mockSharpInstance = {
+        timeout: vi.fn().mockReturnThis(),
         resize: vi.fn().mockReturnThis(),
         blur: vi.fn().mockReturnThis(),
         modulate: vi.fn().mockReturnThis(),

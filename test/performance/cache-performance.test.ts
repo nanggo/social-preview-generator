@@ -35,6 +35,7 @@ describe('Sharp Caching Performance Tests', () => {
     
     // Setup default mocks
     const mockSharpInstance = {
+      timeout: vi.fn().mockReturnThis(),
       resize: vi.fn().mockReturnThis(),
       blur: vi.fn().mockReturnThis(),
       modulate: vi.fn().mockReturnThis(),

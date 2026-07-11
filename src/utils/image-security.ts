@@ -28,6 +28,7 @@ import {
   SHARP_CACHE_CONFIG,
   SHARP_SECURITY_CONFIG,
 } from '../constants/security';
+import { applySharpProcessingTimeout } from './sharp-timeout';
 
 // Import centralized constants from security module
 // All security limits are now defined in src/constants/security.ts
@@ -433,7 +434,7 @@ export function sanitizeSvgContent(svgContent: string): string {
  */
 export function createSecureSharpInstance(imageBuffer: Buffer): Sharp {
   // This will be called after validateImageBuffer, so we know it's safe
-  return sharp(imageBuffer, SHARP_SECURITY_CONFIG);
+  return applySharpProcessingTimeout(sharp(imageBuffer, SHARP_SECURITY_CONFIG));
 }
 
 /**
@@ -444,35 +445,8 @@ export async function withSecureSharp<T>(
   imageBuffer: Buffer,
   operation: (sharp: Sharp) => Promise<T>
 ): Promise<T> {
-  const sharpInstance = sharp(imageBuffer, SHARP_SECURITY_CONFIG);
+  const sharpInstance = applySharpProcessingTimeout(sharp(imageBuffer, SHARP_SECURITY_CONFIG));
   return await operation(sharpInstance);
-}
-
-/**
- * Process image with timeout protection to prevent DoS attacks
- */
-export async function processImageWithTimeout<T>(
-  operation: () => Promise<T>,
-  timeoutMs: number = PROCESSING_TIMEOUT
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new PreviewGeneratorError(
-        ErrorType.IMAGE_ERROR,
-        `Image processing timed out after ${timeoutMs}ms. This may indicate a malicious image designed to cause resource exhaustion.`
-      ));
-    }, timeoutMs);
-
-    operation()
-      .then(result => {
-        clearTimeout(timer);
-        resolve(result);
-      })
-      .catch(error => {
-        clearTimeout(timer);
-        reject(error);
-      });
-  });
 }
 
 /**
@@ -511,7 +485,7 @@ export function secureResize(
  * Create a Sharp instance with metadata removal for privacy and security
  */
 export function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): Sharp {
-  return sharp(imageBuffer, SHARP_SECURITY_CONFIG)
+  return applySharpProcessingTimeout(sharp(imageBuffer, SHARP_SECURITY_CONFIG))
     // Remove EXIF and other metadata by default - use empty metadata
     .withMetadata({});
 }
@@ -524,7 +498,9 @@ export async function withSecureSharpCleanMetadata<T>(
   imageBuffer: Buffer,
   operation: (sharp: Sharp) => Promise<T>
 ): Promise<T> {
-  const sharpInstance = sharp(imageBuffer, SHARP_SECURITY_CONFIG).withMetadata({});
+  const sharpInstance = applySharpProcessingTimeout(
+    sharp(imageBuffer, SHARP_SECURITY_CONFIG)
+  ).withMetadata({});
   return await operation(sharpInstance);
 }
 
