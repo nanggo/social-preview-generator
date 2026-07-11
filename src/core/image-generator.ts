@@ -26,6 +26,12 @@ export const DEFAULT_DIMENSIONS = {
   height: 630,
 };
 
+export interface FallbackImageResult {
+  buffer: Buffer;
+  metadata: ExtractedMetadata;
+  template: 'fallback';
+}
+
 /**
  * Generate image buffer from metadata and template
  */
@@ -327,6 +333,17 @@ export async function createFallbackImage(
   url: string,
   options: PreviewOptions = {}
 ): Promise<Buffer> {
+  const result = await createFallbackImageWithDetails(url, options);
+  return result.buffer;
+}
+
+/**
+ * Create a fallback image and report the exact render inputs.
+ */
+export async function createFallbackImageWithDetails(
+  url: string,
+  options: PreviewOptions = {}
+): Promise<FallbackImageResult> {
   try {
     const urlObj = new URL(url);
     const domain = urlObj.hostname;
@@ -362,7 +379,13 @@ export async function createFallbackImage(
       },
     };
 
-    return await generateImage(fallbackMetadata, fallbackTemplate, options);
+    const buffer = await generateImage(fallbackMetadata, fallbackTemplate, options);
+
+    return {
+      buffer,
+      metadata: { ...fallbackMetadata },
+      template: 'fallback',
+    };
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,

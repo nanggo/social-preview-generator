@@ -12,6 +12,7 @@ import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import sharp from 'sharp';
 import { metadataCache } from '../../src/utils/cache';
+import { templates } from '../../src/templates/registry';
 
 vi.mock('axios');
 vi.mock('open-graph-scraper');
@@ -295,6 +296,227 @@ describe('End-to-End Integration Tests', () => {
         cached: false,
       });
     });
+
+    it('removes a failed image from the overlay input and reported metadata', async () => {
+      const originalTemplate = templates.modern;
+      const overlayGenerator = vi.fn(
+        () => '<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg" />'
+      );
+      templates.modern = { ...originalTemplate, overlayGenerator };
+      mockedAxios.get.mockRejectedValueOnce(new Error('Image fetch failed'));
+
+      try {
+        const result = await generatePreviewFromMetadataWithDetails({
+          title: 'Post With Broken Cover',
+          url: 'https://blog.example.com/posts/broken-cover',
+          image: 'https://cdn.example.com/covers/broken.png',
+        });
+
+        expect(overlayGenerator).toHaveBeenLastCalledWith(
+          expect.objectContaining({ image: undefined }),
+          expect.any(Number),
+          expect.any(Number),
+          expect.any(Object),
+          expect.any(Object)
+        );
+        expect(result.metadata.image).toBeUndefined();
+      } finally {
+        templates.modern = originalTemplate;
+      }
+    });
+
+    it('keeps a successfully processed image in the overlay input and reported metadata', async () => {
+      const originalTemplate = templates.modern;
+      const overlayGenerator = vi.fn(
+        () => '<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg" />'
+      );
+      templates.modern = { ...originalTemplate, overlayGenerator };
+      const imageUrl = 'https://cdn.example.com/covers/working.png';
+      const pngImageBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        'base64'
+      );
+      mockedAxios.get.mockResolvedValueOnce({
+        data: pngImageBuffer,
+        headers: { 'content-type': 'image/png' },
+      });
+
+      try {
+        const result = await generatePreviewFromMetadataWithDetails({
+          title: 'Post With Working Cover',
+          url: 'https://blog.example.com/posts/working-cover',
+          image: imageUrl,
+        });
+
+        expect(overlayGenerator).toHaveBeenLastCalledWith(
+          expect.objectContaining({ image: imageUrl }),
+          expect.any(Number),
+          expect.any(Number),
+          expect.any(Object),
+          expect.any(Object)
+        );
+        expect(result.metadata.image).toBe(imageUrl);
+      } finally {
+        templates.modern = originalTemplate;
+      }
+    });
+
+    it('falls back to a blank canvas when image processing fails', async () => {
+      const originalTemplate = templates.modern;
+      const overlayGenerator = vi.fn(
+        () => '<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg" />'
+      );
+      templates.modern = { ...originalTemplate, overlayGenerator };
+      const imageUrl = 'https://cdn.example.com/covers/unprocessable.png';
+      const pngImageBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        'base64'
+      );
+      mockedAxios.get.mockResolvedValueOnce({
+        data: pngImageBuffer,
+        headers: { 'content-type': 'image/png' },
+      });
+      const sharpInstance = mockedSharp();
+      sharpInstance.toBuffer
+        .mockResolvedValueOnce(Buffer.from('rasterized-overlay'))
+        .mockRejectedValueOnce(new Error('Resize failed'))
+        .mockResolvedValue(Buffer.from('generated-image'));
+
+      try {
+        const result = await generatePreviewFromMetadataWithDetails({
+          title: 'Post With Unprocessable Cover',
+          url: 'https://blog.example.com/posts/unprocessable-cover',
+          image: imageUrl,
+        });
+
+        expect(overlayGenerator).toHaveBeenLastCalledWith(
+          expect.objectContaining({ image: undefined }),
+          expect.any(Number),
+          expect.any(Number),
+          expect.any(Object),
+          expect.any(Object)
+        );
+        expect(result.metadata.image).toBeUndefined();
+      } finally {
+        templates.modern = originalTemplate;
+      }
+    });
+
+    it('does not treat a custom overlay error as an image processing fallback', async () => {
+      const originalTemplate = templates.modern;
+      const overlayGenerator = vi
+        .fn()
+        .mockImplementationOnce(() => {
+          throw new Error('Custom overlay failed');
+        })
+        .mockReturnValue(
+          '<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg" />'
+        );
+      templates.modern = { ...originalTemplate, overlayGenerator };
+      const pngImageBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        'base64'
+      );
+      mockedAxios.get.mockResolvedValueOnce({
+        data: pngImageBuffer,
+        headers: { 'content-type': 'image/png' },
+      });
+
+      try {
+        await expect(
+          generatePreviewFromMetadataWithDetails({
+            title: 'Post With Custom Overlay',
+            url: 'https://blog.example.com/posts/custom-overlay',
+            image: 'https://cdn.example.com/covers/custom-overlay.png',
+          })
+        ).rejects.toMatchObject({
+          type: ErrorType.IMAGE_ERROR,
+          message: expect.stringContaining('Custom overlay failed'),
+        });
+        expect(overlayGenerator).toHaveBeenCalledTimes(1);
+      } finally {
+        templates.modern = originalTemplate;
+      }
+    });
+
+    it('does not treat a malformed custom overlay as an image processing fallback', async () => {
+      const originalTemplate = templates.modern;
+      const overlayGenerator = vi
+        .fn()
+        .mockReturnValueOnce('<svg><broken></svg>')
+        .mockReturnValue(
+          '<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg" />'
+        );
+      templates.modern = { ...originalTemplate, overlayGenerator };
+      const pngImageBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        'base64'
+      );
+      mockedAxios.get.mockResolvedValueOnce({
+        data: pngImageBuffer,
+        headers: { 'content-type': 'image/png' },
+      });
+      const sharpInstance = mockedSharp();
+      sharpInstance.toBuffer
+        .mockRejectedValueOnce(new Error('XML parse error'))
+        .mockResolvedValue(Buffer.from('generated-image'));
+
+      try {
+        await expect(
+          generatePreviewFromMetadataWithDetails({
+            title: 'Post With Malformed Overlay',
+            url: 'https://blog.example.com/posts/malformed-overlay',
+            image: 'https://cdn.example.com/covers/malformed-overlay.png',
+          })
+        ).rejects.toMatchObject({
+          type: ErrorType.IMAGE_ERROR,
+          message: expect.stringContaining('XML parse error'),
+        });
+        expect(overlayGenerator).toHaveBeenCalledTimes(1);
+      } finally {
+        templates.modern = originalTemplate;
+      }
+    });
+
+    it.each(['generate', 'auto'] as const)(
+      'reports the rendered %s fallback template and metadata on misses and cache hits',
+      async (strategy) => {
+        const url = `https://${strategy}-fallback-contract.example/post`;
+        mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
+        mockedOgs.mockRejectedValueOnce(new Error('OGS error'));
+
+        const first = await generatePreviewWithDetails(url, {
+          cache: true,
+          fallback: {
+            strategy,
+            text: 'Rendered Fallback Title',
+          },
+        });
+        const second = await generatePreviewWithDetails(url, {
+          cache: true,
+          fallback: {
+            strategy,
+            text: 'Rendered Fallback Title',
+          },
+        });
+
+        expect(first).toMatchObject({
+          template: 'fallback',
+          cached: false,
+          metadata: {
+            title: 'Rendered Fallback Title',
+            url,
+            domain: `${strategy}-fallback-contract.example`,
+            siteName: `${strategy}-fallback-contract.example`,
+          },
+        });
+        expect(second).toMatchObject({
+          template: 'fallback',
+          cached: true,
+          metadata: first.metadata,
+        });
+      }
+    );
   });
 
   describe('generatePreviewFromMetadata', () => {

@@ -14,7 +14,7 @@ import {
   PreviewGeneratorError,
 } from './types';
 import { extractMetadata, validateMetadata, applyFallbacks } from './core/metadata-extractor';
-import { createFallbackImage, DEFAULT_DIMENSIONS } from './core/image-generator';
+import { createFallbackImageWithDetails, DEFAULT_DIMENSIONS } from './core/image-generator';
 import { templates } from './templates/registry';
 import {
   validateDimensions,
@@ -24,9 +24,12 @@ import {
 } from './utils/validators';
 import { initializeSharpSecurity } from './utils/image-security';
 import { generateDefaultOverlay } from './core/overlay-generator';
-import { processImageForTemplate } from './core/template-image-processing';
+import {
+  processImageForTemplate,
+  type ProcessedTemplateImage,
+} from './core/template-image-processing';
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
-import { svgCache } from './utils/sharp-cache';
+import { createCachedSVG } from './utils/sharp-cache';
 import { startCacheCleanup, isCacheCleanupRunning } from './utils/cache';
 import { MAX_TEXT_LENGTH } from './constants/security';
 import { exceedsTextLength } from './utils/validators/text';
@@ -152,8 +155,8 @@ async function renderPreviewFromMetadata(
   finalOptions: SanitizedOptions
 ): Promise<GeneratedPreview> {
   const template = getTemplate(finalOptions.template);
-  const buffer = await generateImageWithSanitizedOptions(metadata, template, finalOptions);
-  return createPreviewResult(buffer, metadata, finalOptions);
+  const rendered = await generateImageWithSanitizedOptions(metadata, template, finalOptions);
+  return createPreviewResult(rendered.buffer, rendered.effectiveMetadata, finalOptions);
 }
 
 /**
@@ -191,7 +194,59 @@ export async function generateImageWithTemplate(
   options: PreviewOptions
 ): Promise<Buffer> {
   const sanitizedOptions = sanitizeOptions(options);
-  return generateImageWithSanitizedOptions(metadata, template, sanitizedOptions);
+  const rendered = await generateImageWithSanitizedOptions(metadata, template, sanitizedOptions);
+  return rendered.buffer;
+}
+
+interface RenderedImage {
+  buffer: Buffer;
+  effectiveMetadata: ExtractedMetadata;
+}
+
+async function createOverlayBuffer(
+  effectiveMetadata: ExtractedMetadata,
+  template: TemplateConfig,
+  width: number,
+  height: number,
+  sanitizedOptions: SanitizedOptions
+): Promise<Buffer> {
+  if (template.overlayGenerator) {
+    const overlaySvg = template.overlayGenerator(
+      effectiveMetadata,
+      width,
+      height,
+      sanitizedOptions,
+      template
+    );
+    // Materialize custom SVG overlays before entering the background-image
+    // retry path. Otherwise Sharp can defer an SVG parse error until the final
+    // composite and incorrectly classify it as a failed background image.
+    const overlayImage = await createCachedSVG(overlaySvg);
+    return overlayImage.toBuffer();
+  }
+
+  return generateDefaultOverlay(effectiveMetadata, template, width, height, sanitizedOptions);
+}
+
+function renderProcessedImage(
+  processedImage: ProcessedTemplateImage,
+  overlayBuffer: Buffer,
+  quality: number
+): Promise<Buffer> {
+  return processedImage.baseImage
+    .composite([
+      {
+        input: overlayBuffer,
+        top: 0,
+        left: 0,
+      },
+    ])
+    .jpeg({
+      quality,
+      progressive: true,
+      mozjpeg: true,
+    })
+    .toBuffer();
 }
 
 /**
@@ -201,7 +256,7 @@ async function generateImageWithSanitizedOptions(
   metadata: ExtractedMetadata,
   template: TemplateConfig,
   sanitizedOptions: SanitizedOptions
-): Promise<Buffer> {
+): Promise<RenderedImage> {
   const width = sanitizedOptions.width || DEFAULT_DIMENSIONS.width;
   const height = sanitizedOptions.height || DEFAULT_DIMENSIONS.height;
   const quality = sanitizedOptions.quality || 90;
@@ -209,51 +264,53 @@ async function generateImageWithSanitizedOptions(
   try {
     validateDimensions(width, height);
 
-    const baseImage = await processImageForTemplate(
+    let processedImage = await processImageForTemplate(
       metadata,
       template,
       width,
       height,
       sanitizedOptions
     );
+    let overlayBuffer = await createOverlayBuffer(
+      processedImage.effectiveMetadata,
+      template,
+      width,
+      height,
+      sanitizedOptions
+    );
 
-    let overlayBuffer: Buffer;
+    let finalImage: Buffer;
+    try {
+      finalImage = await renderProcessedImage(processedImage, overlayBuffer, quality);
+    } catch (processingError) {
+      if (!processedImage.usedBackgroundImage) {
+        throw processingError;
+      }
 
-    if (template.overlayGenerator) {
-      const overlaySvg = template.overlayGenerator(
-        metadata,
-        width,
-        height,
-        sanitizedOptions,
-        template
-      );
-      overlayBuffer = svgCache.getCachedSVG(overlaySvg) ?? svgCache.cacheSVG(overlaySvg);
-    } else {
-      overlayBuffer = await generateDefaultOverlay(
-        metadata,
+      // Sharp evaluates image pipelines lazily, so decoding/resizing can fail
+      // only while producing the final buffer. Retry once with the same
+      // metadata minus the failed background image.
+      processedImage = await processImageForTemplate(
+        { ...processedImage.effectiveMetadata, image: undefined },
         template,
         width,
         height,
         sanitizedOptions
       );
+      overlayBuffer = await createOverlayBuffer(
+        processedImage.effectiveMetadata,
+        template,
+        width,
+        height,
+        sanitizedOptions
+      );
+      finalImage = await renderProcessedImage(processedImage, overlayBuffer, quality);
     }
 
-    const finalImage = await baseImage
-      .composite([
-        {
-          input: overlayBuffer,
-          top: 0,
-          left: 0,
-        },
-      ])
-      .jpeg({
-        quality,
-        progressive: true,
-        mozjpeg: true,
-      })
-      .toBuffer();
-
-    return finalImage;
+    return {
+      buffer: finalImage,
+      effectiveMetadata: processedImage.effectiveMetadata,
+    };
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
@@ -302,18 +359,16 @@ export async function generatePreviewWithDetails(
         finalOptions.fallback?.strategy === 'generate' ||
         finalOptions.fallback?.strategy === 'auto'
       ) {
-        const buffer = await createFallbackImage(url, finalOptions);
-        // Create minimal metadata for fallback
-        const fallbackMetadata = applyFallbacks({}, url);
+        const fallback = await createFallbackImageWithDetails(url, finalOptions);
         const fallbackResult: GeneratedPreview = {
-          buffer,
+          buffer: fallback.buffer,
           format: 'jpeg',
           dimensions: {
             width: finalOptions.width || DEFAULT_DIMENSIONS.width,
             height: finalOptions.height || DEFAULT_DIMENSIONS.height,
           },
-          metadata: fallbackMetadata,
-          template: finalOptions.template || 'modern',
+          metadata: fallback.metadata,
+          template: fallback.template,
           cached: false,
         };
         if (shouldCache) {
