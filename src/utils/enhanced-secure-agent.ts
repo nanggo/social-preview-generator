@@ -442,27 +442,44 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
 /**
  * Enhanced secure DNS lookup with caching and comprehensive validation
  */
-const enhancedSecureLookup = (
-  hostname: string,
-  options: dns.LookupOneOptions | dns.LookupAllOptions | number | undefined,
-  callback?: (err: NodeJS.ErrnoException | null, address: string, family: number) => void
-): void => {
-  // Normalize parameters
-  let actualCallback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
+type RuntimeLookupCallback = (
+  ...args:
+    | [NodeJS.ErrnoException | null, string, number]
+    | [NodeJS.ErrnoException | null, dns.LookupAddress[]]
+) => void;
 
-  if (typeof options === 'function') {
-    actualCallback = options as unknown as (
-      err: NodeJS.ErrnoException | null,
-      address: string,
-      family: number
-    ) => void;
-  } else {
-    actualCallback = (callback || (() => {})) as (
-      err: NodeJS.ErrnoException | null,
-      address: string,
-      family: number
-    ) => void;
-  }
+const enhancedSecureLookup: NonNullable<http.AgentOptions['lookup']> = (
+  hostname,
+  options,
+  callback
+): void => {
+  const runtimeOptions = options as unknown as
+    | dns.LookupOneOptions
+    | dns.LookupAllOptions
+    | number
+    | RuntimeLookupCallback
+    | null
+    | undefined;
+  const actualCallback =
+    (typeof runtimeOptions === 'function'
+      ? runtimeOptions
+      : (callback as unknown as RuntimeLookupCallback | undefined)) ??
+    ((() => undefined) as RuntimeLookupCallback);
+  const normalizedOptions =
+    typeof runtimeOptions === 'object' && runtimeOptions !== null
+      ? runtimeOptions
+      : {};
+  const returnAllAddresses = normalizedOptions.all === true;
+
+  const returnLookupError = (error: NodeJS.ErrnoException): void => {
+    if (returnAllAddresses) {
+      actualCallback(error, []);
+      return;
+    }
+
+    // Never return actual IPs in lookup errors - use placeholder values.
+    actualCallback(error, '0.0.0.0', 4);
+  };
 
   // Use cached/fresh DNS lookup
   dnsCache.lookup(hostname)
@@ -483,8 +500,18 @@ const enhancedSecureLookup = (
           `Total resolved: ${addresses.length}, blocked: ${validation.blockedIPs.length}`
         );
 
-        // Never return actual IPs in security errors - use placeholder values
-        return actualCallback(securityError, '0.0.0.0', 4);
+        return returnLookupError(securityError);
+      }
+
+      if (returnAllAddresses) {
+        // Node's autoSelectFamily path requests `all: true` and requires the
+        // two-argument callback form. Return copies so consumers cannot mutate
+        // the validated cache entries.
+        actualCallback(
+          null,
+          addresses.map(({ address, family }) => ({ address, family }))
+        );
+        return;
       }
 
       // Return first safe address - only from validated allowed IPs
@@ -497,7 +524,7 @@ const enhancedSecureLookup = (
         const criticalError = createNetworkPolicyError(
           `Critical security error: No safe addresses found for ${hostname}`
         );
-        return actualCallback(criticalError, '0.0.0.0', 4);
+        return returnLookupError(criticalError);
       }
 
       logger.debug('DNS lookup successful', {
@@ -511,7 +538,7 @@ const enhancedSecureLookup = (
     })
     .catch(err => {
       logger.error('DNS lookup failed', { hostname, error: err });
-      actualCallback(err as NodeJS.ErrnoException, '0.0.0.0', 4);
+      returnLookupError(err as NodeJS.ErrnoException);
     });
 };
 

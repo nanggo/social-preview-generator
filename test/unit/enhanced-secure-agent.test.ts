@@ -553,6 +553,135 @@ describe('Enhanced Secure Agent', () => {
       }
     });
 
+    it('should honor the all lookup callback contract used by autoSelectFamily', async () => {
+      const cleanup = mockDNSLookup('lookup-all.example', [
+        { address: '8.8.8.8', family: 4 },
+        { address: '2001:4860:4860::8888', family: 6 },
+      ]);
+      cleanupFunctions.push(cleanup);
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      const agent = createEnhancedSecureHttpAgent();
+      const lookup = (
+        agent.options as { lookup: NonNullable<http.AgentOptions['lookup']> }
+      ).lookup;
+      const addresses = await new Promise<dns.LookupAddress[]>((resolve, reject) => {
+        lookup('lookup-all.example', { all: true }, (error, resolvedAddresses) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(resolvedAddresses);
+        });
+      });
+
+      expect(addresses).toEqual([
+        { address: '8.8.8.8', family: 4 },
+        { address: '2001:4860:4860::8888', family: 6 },
+      ]);
+      expect(mockIsPrivateOrReservedIP).toHaveBeenCalledTimes(2);
+    });
+
+    it('should preserve the scalar lookup callback contract', async () => {
+      const cleanup = mockDNSLookup('lookup-one.example', [
+        { address: '8.8.4.4', family: 4 },
+        { address: '2001:4860:4860::8844', family: 6 },
+      ]);
+      cleanupFunctions.push(cleanup);
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      const agent = createEnhancedSecureHttpAgent();
+      const lookup = (
+        agent.options as { lookup: NonNullable<http.AgentOptions['lookup']> }
+      ).lookup;
+      const result = await new Promise<dns.LookupAddress>((resolve, reject) => {
+        lookup('lookup-one.example', { all: false }, (error, address, family) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ address, family });
+        });
+      });
+
+      expect(result).toEqual({ address: '8.8.4.4', family: 4 });
+      expect(mockIsPrivateOrReservedIP).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['callback-only', 'undefined-options'] as const)(
+      'should preserve the legacy %s lookup invocation',
+      async invocation => {
+        const hostname = `lookup-${invocation}.example`;
+        const cleanup = mockDNSLookup(hostname, [{ address: '9.9.9.9', family: 4 }]);
+        cleanupFunctions.push(cleanup);
+        mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+        const agent = createEnhancedSecureHttpAgent();
+        const lookup = (
+          agent.options as { lookup: NonNullable<http.AgentOptions['lookup']> }
+        ).lookup as unknown as (
+          hostname: string,
+          optionsOrCallback:
+            | dns.LookupOneOptions
+            | ((error: NodeJS.ErrnoException | null, address: string, family: number) => void)
+            | undefined,
+          callback?: (
+            error: NodeJS.ErrnoException | null,
+            address: string,
+            family: number
+          ) => void
+        ) => void;
+
+        const result = await new Promise<dns.LookupAddress>((resolve, reject) => {
+          const callback = (
+            error: NodeJS.ErrnoException | null,
+            address: string,
+            family: number
+          ) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve({ address, family });
+          };
+
+          if (invocation === 'callback-only') {
+            lookup(hostname, callback);
+          } else {
+            lookup(hostname, undefined, callback);
+          }
+        });
+
+        expect(result).toEqual({ address: '9.9.9.9', family: 4 });
+      }
+    );
+
+    it('should block the all lookup result when any resolved address is private', async () => {
+      const cleanup = mockDNSLookup('lookup-all-mixed.example', [
+        { address: '8.8.8.8', family: 4 },
+        { address: '192.168.1.20', family: 4 },
+      ]);
+      cleanupFunctions.push(cleanup);
+      mockIsPrivateOrReservedIP.mockImplementation(address => address === '192.168.1.20');
+
+      const agent = createEnhancedSecureHttpAgent();
+      const lookup = (
+        agent.options as { lookup: NonNullable<http.AgentOptions['lookup']> }
+      ).lookup;
+      const result = await new Promise<{
+        error: NodeJS.ErrnoException | null;
+        addresses: dns.LookupAddress[];
+      }>(resolve => {
+        lookup('lookup-all-mixed.example', { all: true }, (error, addresses) => {
+          resolve({ error, addresses });
+        });
+      });
+
+      expect(result.error).toMatchObject({ code: 'ECONNREFUSED' });
+      expect(result.addresses).toEqual([]);
+      expect(mockIsPrivateOrReservedIP).toHaveBeenCalledTimes(2);
+    });
+
     it('should create HTTP agent with security settings', () => {
       const agent = createEnhancedSecureHttpAgent();
       
