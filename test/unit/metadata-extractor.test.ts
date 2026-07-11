@@ -69,7 +69,7 @@ describe('Metadata Extractor', () => {
         publishedDate: undefined,
       });
       expect(mockedValidateRequestSecurity).toHaveBeenCalledWith(
-        testUrl,
+        new URL(testUrl).toString(),
         expect.any(AbortSignal)
       );
     });

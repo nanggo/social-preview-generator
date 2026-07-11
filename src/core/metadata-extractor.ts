@@ -285,14 +285,8 @@ async function extractMetadataInternal(
   return metadata;
 }
 
-/**
- * Validate and normalize URL with SSRF protection
- */
-async function validateUrl(
-  url: string,
-  securityOptions?: SecurityOptions,
-  abortSignal?: AbortSignal
-): Promise<string> {
+/** Validate cheap URL syntax and policy before consuming a network permit. */
+function validateUrlBeforeNetwork(url: string, securityOptions?: SecurityOptions): string {
   try {
     const urlObj = new URL(url);
 
@@ -306,29 +300,48 @@ async function validateUrl(
       throw new Error('HTTP URLs are not allowed when HTTPS-only mode is enabled.');
     }
 
+    return urlObj.toString();
+  } catch (error) {
+    if (error instanceof PreviewGeneratorError) {
+      throw error;
+    }
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `Invalid URL: ${url}`, error);
+  }
+}
+
+/** Perform DNS-backed SSRF validation inside the controlled request deadline. */
+async function validateUrlSecurity(
+  validatedUrl: string,
+  abortSignal: AbortSignal
+): Promise<string> {
+  try {
     // Enhanced security validation with TOCTOU protection
-    const securityValidation = await validateRequestSecurity(url, abortSignal);
+    const securityValidation = await validateRequestSecurity(validatedUrl, abortSignal);
     if (!securityValidation.allowed) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
         `URL blocked by security validation: ${securityValidation.reason}`,
-        { 
-          url, 
+        {
+          url: validatedUrl,
           blockedIPs: securityValidation.blockedIPs,
           allowedIPs: securityValidation.allowedIPs
         }
       );
     }
 
-    return urlObj.toString();
+    return validatedUrl;
   } catch (error) {
-    if (abortSignal?.aborted) {
+    if (abortSignal.aborted) {
       throw abortSignal.reason ?? error;
     }
     if (error instanceof PreviewGeneratorError) {
       throw error;
     }
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `Invalid URL: ${url}`, error);
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `Invalid URL: ${validatedUrl}`,
+      error
+    );
   }
 }
 
@@ -340,6 +353,7 @@ async function fetchOpenGraphData(
   securityOptions?: SecurityOptions,
   abortSignal?: AbortSignal
 ): Promise<{ data: Record<string, unknown>; validatedUrl: string }> {
+  const normalizedUrl = validateUrlBeforeNetwork(url, securityOptions);
   const requestTimeout = securityOptions?.timeout || 8000;
   // Create secure axios config with redirect validation and secure agent
   const axiosConfig = {
@@ -366,7 +380,7 @@ async function fetchOpenGraphData(
       requestTimeout,
       abortSignal,
       async signal => {
-        const requestUrl = await validateUrl(url, securityOptions, signal);
+        const requestUrl = await validateUrlSecurity(normalizedUrl, signal);
         const response = await axios.get(requestUrl, { ...axiosConfig, signal });
         return { response, validatedUrl: requestUrl };
       }
@@ -524,6 +538,8 @@ function cleanText(text: string): string {
  */
 export async function fetchImage(imageUrl: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Buffer> {
   try {
+    const normalizedUrl = validateUrlBeforeNetwork(imageUrl, securityOptions);
+
     // Check SVG allowance
     const allowedMimeTypes = securityOptions?.allowSvg
       ? new Set([...BASE_ALLOWED_MIME_TYPES, 'image/svg+xml'])
@@ -534,7 +550,7 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       requestTimeout,
       abortSignal,
       async signal => {
-        const validatedUrl = await validateUrl(imageUrl, securityOptions, signal);
+        const validatedUrl = await validateUrlSecurity(normalizedUrl, signal);
         return axios.get(validatedUrl, {
           responseType: 'arraybuffer',
           headers: {

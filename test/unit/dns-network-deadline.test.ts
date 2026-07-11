@@ -13,6 +13,7 @@ import {
 import {
   __testNetworkRequestLimiter,
   NetworkRequestDeadlineError,
+  runControlledNetworkRequest,
 } from '../../src/utils/network-request-control';
 import { ErrorType, PreviewGeneratorError } from '../../src/types';
 
@@ -57,6 +58,14 @@ function deferNativeDNSLookup() {
       pendingCallback(error, []);
     },
   };
+}
+
+function deferredWork() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(resolvePromise => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 async function flushAsyncWork(): Promise<void> {
@@ -157,6 +166,35 @@ describe('DNS preflight network deadline composition', () => {
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       deferredDNS.rejectForCleanup();
+    }
+  });
+
+  it('rejects a non-HTTP URL without entering a saturated request queue', async () => {
+    (dns.lookup as any) = vi.fn();
+    const activeWork = Array.from({ length: 50 }, deferredWork);
+    const activeRequests = activeWork.map(work =>
+      runControlledNetworkRequest(60_000, undefined, async () => work.promise)
+    );
+    const invalidRequest = extractMetadata('ftp://invalid.example/resource');
+    const capturedError = invalidRequest.then(
+      () => undefined,
+      error => error as PreviewGeneratorError
+    );
+
+    try {
+      await flushAsyncWork();
+      expect(__testNetworkRequestLimiter!.getStats()).toMatchObject({ active: 50, queued: 0 });
+
+      const error = await capturedError;
+      expect(error).toMatchObject({ type: ErrorType.VALIDATION_ERROR });
+      expect(dns.lookup).not.toHaveBeenCalled();
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    } finally {
+      for (const work of activeWork) {
+        work.resolve();
+      }
+      await Promise.allSettled(activeRequests);
+      await capturedError;
     }
   });
 });
