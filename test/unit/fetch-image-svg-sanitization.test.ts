@@ -7,6 +7,8 @@ import { fetchImage } from '../../src/core/metadata-extractor';
 vi.mock('axios');
 vi.mock('../../src/utils/enhanced-secure-agent', () => ({
   getEnhancedSecureAgentForUrl: vi.fn(() => undefined),
+  getEnhancedSecureHttpAgent: vi.fn(() => undefined),
+  getEnhancedSecureHttpsAgent: vi.fn(() => undefined),
   validateRequestSecurity: vi.fn().mockResolvedValue({
     allowed: true,
     blockedIPs: [],

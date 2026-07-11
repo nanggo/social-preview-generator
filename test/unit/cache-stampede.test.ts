@@ -19,6 +19,8 @@ vi.mock('axios');
 vi.mock('open-graph-scraper');
 vi.mock('../../src/utils/enhanced-secure-agent', () => ({
   getEnhancedSecureAgentForUrl: vi.fn(() => null),
+  getEnhancedSecureHttpAgent: vi.fn(() => null),
+  getEnhancedSecureHttpsAgent: vi.fn(() => null),
   validateRequestSecurity: vi.fn(() => Promise.resolve({ allowed: true }))
 }));
 

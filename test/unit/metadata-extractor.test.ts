@@ -10,7 +10,9 @@ vi.mock('axios');
 vi.mock('open-graph-scraper');
 vi.mock('../../src/utils/image-security');
 vi.mock('../../src/utils/enhanced-secure-agent', () => ({
-  getEnhancedSecureAgentForUrl: vi.fn(() => undefined),
+  getEnhancedSecureAgentForUrl: vi.fn(() => ({ kind: 'protocol-selected' })),
+  getEnhancedSecureHttpAgent: vi.fn(() => ({ kind: 'http' })),
+  getEnhancedSecureHttpsAgent: vi.fn(() => ({ kind: 'https' })),
   validateRequestSecurity: vi.fn().mockResolvedValue({
     allowed: true,
     blockedIPs: [],
@@ -129,6 +131,76 @@ describe('Metadata Extractor', () => {
 
       await expect(extractMetadata(testUrl)).rejects.toThrow('Failed to fetch data');
     });
+
+    it('disables implicit environment proxies and configures protocol-specific secure agents', async () => {
+      const testUrl = 'https://proxy-boundary.example/page';
+
+      mockedAxios.get.mockResolvedValueOnce({ data: mockHtmlMinimal });
+      mockedOgs.mockResolvedValueOnce({
+        error: false,
+        result: { dcTitle: 'Proxy boundary' },
+        html: mockHtmlMinimal,
+        response: {} as any,
+      });
+
+      await extractMetadata(testUrl);
+
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        `${testUrl}`,
+        expect.objectContaining({
+          proxy: false,
+          httpAgent: { kind: 'http' },
+          httpsAgent: { kind: 'https' },
+        })
+      );
+    });
+
+    it('blocks HTTPS-only requests from redirecting to HTTP', async () => {
+      const testUrl = 'https://redirect-boundary.example/page';
+
+      mockedAxios.get.mockResolvedValueOnce({ data: mockHtmlMinimal });
+      mockedOgs.mockResolvedValueOnce({
+        error: false,
+        result: { dcTitle: 'Redirect boundary' },
+        html: mockHtmlMinimal,
+        response: {} as any,
+      });
+
+      await extractMetadata(testUrl, { httpsOnly: true });
+
+      const requestConfig = mockedAxios.get.mock.calls[0][1];
+      const beforeRedirect = requestConfig?.beforeRedirect;
+
+      expect(beforeRedirect).toBeTypeOf('function');
+      expect(() =>
+        beforeRedirect?.(
+          {
+            protocol: 'https:',
+            hostname: 'proxy.example',
+            path: 'http://redirect.example/',
+            href: 'http://redirect.example/',
+          },
+          { headers: {}, statusCode: 302 }
+        )
+      ).toThrow('HTTPS-only mode');
+      expect(() =>
+        beforeRedirect?.(
+          {
+            protocol: 'https:',
+            hostname: 'proxy.example',
+            path: 'https://redirect.example/',
+            href: 'https://redirect.example/',
+          },
+          { headers: {}, statusCode: 302 }
+        )
+      ).not.toThrow();
+      expect(() =>
+        beforeRedirect?.(
+          { protocol: 'https:', hostname: 'redirect.example', path: '/' },
+          { headers: {}, statusCode: 302 }
+        )
+      ).toThrow('canonical redirect URL is missing');
+    });
   });
 
   describe('validateMetadata', () => {
@@ -193,6 +265,9 @@ describe('Metadata Extractor', () => {
         maxRedirects: 3,
         maxContentLength: 15 * 1024 * 1024,
         maxBodyLength: 15 * 1024 * 1024,
+        proxy: false,
+        httpAgent: { kind: 'http' },
+        httpsAgent: { kind: 'https' },
       }));
     });
 

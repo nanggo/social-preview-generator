@@ -5,9 +5,13 @@
 
 import ogs from 'open-graph-scraper';
 import axios from 'axios';
-import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions, RedirectOptions } from '../types';
+import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions } from '../types';
 import { validateUrlInput } from '../utils/validators';
-import { getEnhancedSecureAgentForUrl, validateRequestSecurity } from '../utils/enhanced-secure-agent';
+import {
+  getEnhancedSecureHttpAgent,
+  getEnhancedSecureHttpsAgent,
+  validateRequestSecurity,
+} from '../utils/enhanced-secure-agent';
 import { validateImageBuffer } from '../utils/image-security';
 import { metadataCache } from '../utils/cache';
 import { logger } from '../utils/logger';
@@ -29,22 +33,34 @@ const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 /**
  * Build redirect validation callback for SSRF protection
  */
-function createRedirectValidator(context: string) {
+function createRedirectValidator(context: string, httpsOnly: boolean = false) {
   return (
     options: Record<string, unknown>,
     _responseDetails: { headers: Record<string, string>; statusCode: number }
   ) => {
-    const redirectOptions = options as unknown as RedirectOptions;
-    const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${
-      redirectOptions.port ? `:${redirectOptions.port}` : ''
-    }${redirectOptions.path || ''}${redirectOptions.search || ''}`;
+    if (typeof options.href !== 'string' || options.href.length === 0) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `${context} blocked: canonical redirect URL is missing`
+      );
+    }
+
+    const redirectUrl = options.href;
+    let validatedRedirectUrl: string;
     try {
-      validateUrlInput(redirectUrl);
+      validatedRedirectUrl = validateUrlInput(redirectUrl);
     } catch (error) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
         `${context} to unsafe URL blocked: ${redirectUrl}`,
         error
+      );
+    }
+
+    if (httpsOnly && new URL(validatedRedirectUrl).protocol !== 'https:') {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `${context} blocked by HTTPS-only mode: ${validatedRedirectUrl}`
       );
     }
   };
@@ -304,10 +320,11 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
     maxRedirects: securityOptions?.maxRedirects ?? 3,
     maxContentLength: 1 * 1024 * 1024,
     maxBodyLength: 1 * 1024 * 1024,
-    httpAgent: getEnhancedSecureAgentForUrl(url),
-    httpsAgent: getEnhancedSecureAgentForUrl(url),
+    httpAgent: getEnhancedSecureHttpAgent(),
+    httpsAgent: getEnhancedSecureHttpsAgent(),
+    proxy: false as const,
     signal: abortSignal,
-    beforeRedirect: createRedirectValidator('Redirect'),
+    beforeRedirect: createRedirectValidator('Redirect', securityOptions?.httpsOnly === true),
   };
 
   // Phase 1: Fetch HTML through secure agent
@@ -474,10 +491,14 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
       maxContentLength: MAX_IMAGE_SIZE,
       maxBodyLength: MAX_IMAGE_SIZE,
-      httpAgent: getEnhancedSecureAgentForUrl(validatedUrl),
-      httpsAgent: getEnhancedSecureAgentForUrl(validatedUrl),
+      httpAgent: getEnhancedSecureHttpAgent(),
+      httpsAgent: getEnhancedSecureHttpsAgent(),
+      proxy: false,
       signal: abortSignal, // Add abort signal for request cancellation
-      beforeRedirect: createRedirectValidator('Image redirect'),
+      beforeRedirect: createRedirectValidator(
+        'Image redirect',
+        securityOptions?.httpsOnly === true
+      ),
     });
 
     // Check content-type header if available (extract base MIME type, ignoring charset etc.)
