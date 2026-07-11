@@ -1,8 +1,6 @@
 import type { Sharp } from 'sharp';
 import {
-  ErrorType,
   ExtractedMetadata,
-  PreviewGeneratorError,
   SanitizedOptions,
   TemplateConfig,
 } from '../types';
@@ -11,6 +9,7 @@ import { logImageFetchError } from '../utils/logger';
 import { secureResize, withSecureSharp } from '../utils/image-security';
 import { fetchImage } from './metadata-extractor';
 import { createBlankCanvas } from './image-generator';
+import { isSecurityPolicyError } from '../utils/security-policy-error';
 
 export interface ProcessedTemplateImage {
   baseImage: Sharp;
@@ -39,10 +38,7 @@ export async function prepareImageForTemplate(
     const imageBuffer = await fetchImage(metadata.image, options.security);
     return { effectiveMetadata, imageBuffer };
   } catch (fetchError) {
-    if (
-      fetchError instanceof PreviewGeneratorError &&
-      fetchError.type === ErrorType.VALIDATION_ERROR
-    ) {
+    if (isSecurityPolicyError(fetchError)) {
       throw fetchError;
     }
 

@@ -73,6 +73,7 @@ import {
   type ExtractedMetadata,
   type TemplateConfig,
 } from '../../src/types';
+import { createSecurityPolicyError } from '../../src/utils/security-policy-error';
 
 const metadata: ExtractedMetadata = {
   title: 'Limiter test',
@@ -191,8 +192,7 @@ describe('render limiter entrypoints', () => {
 
   it('propagates background-image security policy violations', async () => {
     renderMocks.fetchImage.mockRejectedValueOnce(
-      new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
+      createSecurityPolicyError(
         'Image redirect blocked by HTTPS-only mode'
       )
     );
@@ -205,6 +205,21 @@ describe('render limiter entrypoints', () => {
       )
     ).rejects.toMatchObject({ type: ErrorType.VALIDATION_ERROR });
     expect(renderMocks.withRenderSlot).not.toHaveBeenCalled();
+  });
+
+  it('renders without a malformed scraped background image', async () => {
+    renderMocks.fetchImage.mockRejectedValueOnce(
+      new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Invalid URL: https://')
+    );
+
+    await expect(
+      generateImageWithTemplate(
+        { ...metadata, image: 'https://' },
+        backgroundTemplate,
+        {}
+      )
+    ).resolves.toEqual(Buffer.from('rendered'));
+    expect(renderMocks.withRenderSlot).toHaveBeenCalledOnce();
   });
 
 });

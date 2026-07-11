@@ -23,6 +23,7 @@ import {
   NetworkRequestQueueFullError,
   runControlledNetworkRequest,
 } from '../utils/network-request-control';
+import { createSecurityPolicyError } from '../utils/security-policy-error';
 
 // Allowed MIME types for images
 const BASE_ALLOWED_MIME_TYPES = new Set([
@@ -90,8 +91,7 @@ function createRedirectValidator(context: string, httpsOnly: boolean = false) {
     _responseDetails: { headers: Record<string, string>; statusCode: number }
   ) => {
     if (typeof options.href !== 'string' || options.href.length === 0) {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
+      throw createSecurityPolicyError(
         `${context} blocked: canonical redirect URL is missing`
       );
     }
@@ -101,16 +101,14 @@ function createRedirectValidator(context: string, httpsOnly: boolean = false) {
     try {
       validatedRedirectUrl = validateUrlInput(redirectUrl);
     } catch (error) {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
+      throw createSecurityPolicyError(
         `${context} to unsafe URL blocked: ${redirectUrl}`,
         error
       );
     }
 
     if (httpsOnly && new URL(validatedRedirectUrl).protocol !== 'https:') {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
+      throw createSecurityPolicyError(
         `${context} blocked by HTTPS-only mode: ${validatedRedirectUrl}`
       );
     }
@@ -329,7 +327,9 @@ function validateUrlBeforeNetwork(url: string, securityOptions?: SecurityOptions
 
     // Check HTTPS-only requirement
     if (securityOptions?.httpsOnly && urlObj.protocol !== 'https:') {
-      throw new Error('HTTP URLs are not allowed when HTTPS-only mode is enabled.');
+      throw createSecurityPolicyError(
+        'HTTP URLs are not allowed when HTTPS-only mode is enabled.'
+      );
     }
 
     return urlObj.toString();
@@ -362,8 +362,7 @@ async function validateUrlSecurity(
         );
       }
 
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
+      throw createSecurityPolicyError(
         `URL blocked by security validation: ${securityValidation.reason}`,
         {
           url: validatedUrl,

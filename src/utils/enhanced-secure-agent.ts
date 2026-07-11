@@ -13,7 +13,8 @@ import tls from 'tls';
 import { isPrivateOrReservedIP } from './ip-validation';
 import { logger } from './logger';
 import { SECURITY_CONFIG } from '../constants/security';
-import { ErrorType, PreviewGeneratorError } from '../types';
+import { PreviewGeneratorError } from '../types';
+import { createSecurityPolicyError } from './security-policy-error';
 
 interface CachedDNSResult {
   addresses: dns.LookupAddress[];
@@ -56,8 +57,7 @@ function createDNSLookupError(message: string, code: string): NodeJS.ErrnoExcept
 function createNetworkPolicyError(
   message: string
 ): PreviewGeneratorError & NodeJS.ErrnoException {
-  const error = new PreviewGeneratorError(
-    ErrorType.VALIDATION_ERROR,
+  const error = createSecurityPolicyError(
     message
   ) as PreviewGeneratorError & NodeJS.ErrnoException;
   error.code = 'ECONNREFUSED';
