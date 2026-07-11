@@ -18,6 +18,14 @@ import crypto from 'crypto';
 import { SHARP_SECURITY_CONFIG } from '../constants/security';
 import { logger } from './logger';
 
+// Generated SVGs declare their dimensions in CSS pixels. Sharp's default SVG
+// density preserves those dimensions, while the higher density used to inspect
+// untrusted external images scales generated canvases and overlays up.
+const GENERATED_SVG_SHARP_CONFIG = {
+  ...SHARP_SECURITY_CONFIG,
+  density: 72,
+};
+
 interface CacheEntry<T> {
   value: T;
   createdAt: number;
@@ -238,7 +246,7 @@ class CanvasCache extends SharpLRUCache<string> {
     const cachedSvg = this.get(key);
     
     // Create fresh Sharp instance from cached SVG content
-    return cachedSvg ? sharp(Buffer.from(cachedSvg), SHARP_SECURITY_CONFIG) : undefined;
+    return cachedSvg ? sharp(Buffer.from(cachedSvg), GENERATED_SVG_SHARP_CONFIG) : undefined;
   }
 
   cacheCanvas(width: number, height: number, options: CanvasOptions, svgContent: string): void {
@@ -282,7 +290,7 @@ export async function createCachedSVG(svgContent: string): Promise<sharp.Sharp> 
   }
 
   // Create Sharp instance from cached buffer
-  return sharp(buffer, SHARP_SECURITY_CONFIG);
+  return sharp(buffer, GENERATED_SVG_SHARP_CONFIG);
 }
 
 /**
@@ -319,7 +327,7 @@ export async function createCachedCanvas(
     // Cache miss - create canvas and cache the SVG content
     const svgContent = createCanvasSVG(width, height, options);
     canvasCache.cacheCanvas(width, height, options, svgContent);
-    canvas = sharp(Buffer.from(svgContent), SHARP_SECURITY_CONFIG);
+    canvas = sharp(Buffer.from(svgContent), GENERATED_SVG_SHARP_CONFIG);
     logger?.debug?.('Canvas cache miss - cached new canvas SVG');
   } else {
     logger?.debug?.('Canvas cache hit');

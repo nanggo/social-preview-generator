@@ -507,10 +507,11 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       );
     }
 
-    // Validate image for security (pixel bombs, malformed files, etc.)
-    await validateImageBuffer(imageBuffer, securityOptions?.allowSvg);
+    // Validate image for security (pixel bombs, malformed files, etc.).
+    // SVG validation returns DOMPurify-cleaned bytes; raster bytes remain unchanged.
+    const validatedImageBuffer = await validateImageBuffer(imageBuffer, securityOptions?.allowSvg);
 
-    return imageBuffer;
+    return validatedImageBuffer;
   } catch (error) {
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,

@@ -34,6 +34,13 @@ import {
 
 type AllowedImageFormat = typeof ALLOWED_IMAGE_FORMATS extends Set<infer T> ? T : never;
 
+// DOMPurify applies ALLOWED_URI_REGEXP to every attribute that is not marked URI-safe.
+// Preserve ordinary SVG geometry/text values while keeping paint attributes subject to
+// the external-reference policy because fill and stroke may contain url(...) values.
+const NON_URI_SVG_ATTRIBUTES = ALLOWED_SVG_ATTRIBUTES.filter(
+  attribute => attribute !== 'fill' && attribute !== 'stroke'
+);
+
 interface FileTypeResult {
   readonly ext: string;
   readonly mime: string;
@@ -96,12 +103,13 @@ export function initializeSharpSecurity(): void {
 }
 
 /**
- * Validate image buffer before processing
+ * Validate image buffer before processing and return the safe bytes to process.
+ * SVG input may be sanitized, while raster input is returned unchanged.
  */
 export async function validateImageBuffer(
   imageBuffer: Buffer,
   allowSvg: boolean = false
-): Promise<void> {
+): Promise<Buffer> {
   // Check file size
   if (imageBuffer.length > MAX_FILE_SIZE) {
     throw new PreviewGeneratorError(
@@ -114,8 +122,7 @@ export async function validateImageBuffer(
   const isSvgCandidate =
     allowSvg && imageBuffer.toString('utf8', 0, 512).toLowerCase().includes('<svg');
   if (isSvgCandidate) {
-    await validateSvgContent(imageBuffer);
-    return; // Skip Sharp validation for SVG
+    return validateSvgContent(imageBuffer); // Skip Sharp validation for SVG
   }
 
   // Hybrid validation: try file-type first, fallback to magic bytes
@@ -178,6 +185,8 @@ export async function validateImageBuffer(
       `Invalid or corrupted image file: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+
+  return imageBuffer;
 }
 
 /**
@@ -254,9 +263,9 @@ async function validateImageFormat(imageBuffer: Buffer): Promise<void> {
 }
 
 /**
- * Validate SVG content for security risks using DOMPurify
+ * Validate SVG content for security risks using DOMPurify and return cleaned bytes
  */
-export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
+export async function validateSvgContent(svgBuffer: Buffer): Promise<Buffer> {
   const svgContent = svgBuffer.toString('utf8');
 
   // Check SVG size limits first
@@ -276,7 +285,8 @@ export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
       USE_PROFILES: { svg: true, svgFilters: true },
       ALLOWED_TAGS: [...ALLOWED_SVG_TAGS],
       ALLOWED_ATTR: [...ALLOWED_SVG_ATTRIBUTES],
-      // Only allow fragment identifiers (internal document links), no external URIs
+      ADD_URI_SAFE_ATTR: [...NON_URI_SVG_ATTRIBUTES],
+      // Allow colors and local fragment references, but no external resources
       ALLOWED_URI_REGEXP: ALLOWED_SVG_URI_PATTERN,
       
       // Explicitly forbid dangerous tags (in addition to not allowing them)
@@ -370,6 +380,8 @@ export async function validateSvgContent(svgBuffer: Buffer): Promise<void> {
         'SVG validation failed: content does not appear to be a valid SVG after sanitization'
       );
     }
+
+    return Buffer.from(cleanSvg, 'utf8');
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;
@@ -396,6 +408,7 @@ export function sanitizeSvgContent(svgContent: string): string {
       USE_PROFILES: { svg: true, svgFilters: true },
       ALLOWED_TAGS: [...ALLOWED_SVG_TAGS],
       ALLOWED_ATTR: [...ALLOWED_SVG_ATTRIBUTES],
+      ADD_URI_SAFE_ATTR: [...NON_URI_SVG_ATTRIBUTES],
       ALLOWED_URI_REGEXP: ALLOWED_SVG_URI_PATTERN,
       FORBID_TAGS: [...FORBIDDEN_SVG_TAGS],
       FORBID_ATTR: [...FORBIDDEN_SVG_ATTRIBUTES],
