@@ -9,8 +9,9 @@ import http from 'http';
 import dns from 'dns';
 import net from 'net';
 import { 
-	  createEnhancedSecureHttpAgent,
-	  createEnhancedSecureHttpsAgent,
+	  __testDNSLookupLimiter,
+		  createEnhancedSecureHttpAgent,
+		  createEnhancedSecureHttpsAgent,
   getDNSCacheStats,
   invalidateDNSCache,
   validateRequestSecurity
@@ -79,6 +80,56 @@ function mockDNSLookup(hostname: string, addresses: dns.LookupAddress[]) {
     } catch (error) {
       console.warn('Failed to restore DNS lookup:', error);
     }
+  };
+}
+
+type DeferredDNSCallback = (
+  error: NodeJS.ErrnoException | null,
+  addresses: dns.LookupAddress[]
+) => void;
+
+function mockDeferredDNSLookups() {
+  const originalLookup = dns.lookup;
+  const startedHostnames: string[] = [];
+  const callbacks: Array<DeferredDNSCallback | undefined> = [];
+
+  (dns.lookup as any) = vi.fn((
+    hostname: string,
+    _options: unknown,
+    callback: DeferredDNSCallback
+  ) => {
+    startedHostnames.push(hostname);
+    callbacks.push(callback);
+  });
+
+  return {
+    startedHostnames,
+    get callbackCount() {
+      return callbacks.length;
+    },
+    resolve(index: number, addresses: dns.LookupAddress[] = [{ address: '8.8.8.8', family: 4 }]) {
+      const callback = callbacks[index];
+      if (!callback) {
+        throw new Error(`DNS callback ${index} is unavailable`);
+      }
+      callbacks[index] = undefined;
+      callback(null, addresses);
+    },
+    rejectAll() {
+      for (let index = 0; index < callbacks.length; index += 1) {
+        const callback = callbacks[index];
+        if (!callback) {
+          continue;
+        }
+        callbacks[index] = undefined;
+        const error = new Error('test cleanup') as NodeJS.ErrnoException;
+        error.code = 'ENOTFOUND';
+        callback(error, []);
+      }
+    },
+    restore() {
+      dns.lookup = originalLookup;
+    },
   };
 }
 
@@ -525,6 +576,257 @@ describe('Enhanced Secure Agent', () => {
       
       const stats = getDNSCacheStats();
       expect(stats.size).toBeLessThanOrEqual(stats.maxSize);
+    });
+  });
+
+  describe('DNS admission control', () => {
+    it('bounds native DNS lookups and starts queued lookups in FIFO order', async () => {
+      const deferredDNS = mockDeferredDNSLookups();
+      const controllers = Array.from({ length: 10 }, () => new AbortController());
+      cleanupFunctions.push(() => {
+        controllers.forEach(controller => controller.abort());
+        deferredDNS.rejectAll();
+        deferredDNS.restore();
+      });
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      const requests = Array.from({ length: 10 }, (_, index) =>
+        validateRequestSecurity(
+          `https://dns-limit-${index}.example/test`,
+          controllers[index].signal
+        )
+      );
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deferredDNS.startedHostnames).toHaveLength(8);
+      expect(deferredDNS.startedHostnames).toEqual(
+        Array.from({ length: 8 }, (_, index) => `dns-limit-${index}.example`)
+      );
+
+      for (let index = 0; index < requests.length; index += 1) {
+        await vi.waitFor(() => expect(deferredDNS.callbackCount).toBeGreaterThan(index));
+        deferredDNS.resolve(index, [{ address: `8.8.8.${index + 1}`, family: 4 }]);
+      }
+
+      const results = await Promise.all(requests);
+      expect(results.every(result => result.allowed)).toBe(true);
+      expect(deferredDNS.startedHostnames).toEqual(
+        Array.from({ length: 10 }, (_, index) => `dns-limit-${index}.example`)
+      );
+
+      deferredDNS.restore();
+    });
+
+    it('does not release an active permit until the uncancellable native lookup settles', async () => {
+      const deferredDNS = mockDeferredDNSLookups();
+      const activeLimit = __testDNSLookupLimiter!.getStats().activeLimit;
+      const controllers = Array.from({ length: activeLimit + 1 }, () => new AbortController());
+      cleanupFunctions.push(() => {
+        controllers.forEach(controller => controller.abort());
+        deferredDNS.rejectAll();
+        deferredDNS.restore();
+      });
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      const firstRequest = validateRequestSecurity(
+        'https://dns-active-abort-0.example/test',
+        controllers[0].signal
+      );
+      void firstRequest.catch(() => undefined);
+      const otherActiveRequests = Array.from({ length: activeLimit - 1 }, (_, offset) => {
+        const index = offset + 1;
+        return validateRequestSecurity(
+          `https://dns-active-abort-${index}.example/test`,
+          controllers[index].signal
+        );
+      });
+      otherActiveRequests.forEach(request => void request.catch(() => undefined));
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(deferredDNS.startedHostnames).toHaveLength(activeLimit);
+
+      const queuedRequest = validateRequestSecurity(
+        `https://dns-active-abort-${activeLimit}.example/test`,
+        controllers[activeLimit].signal
+      );
+      void queuedRequest.catch(() => undefined);
+      await Promise.resolve();
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({
+        active: activeLimit,
+        queued: 1,
+      });
+
+      const abortReason = new Error('active DNS caller aborted');
+      const rejected = expect(firstRequest).rejects.toBe(abortReason);
+      controllers[0].abort(abortReason);
+      await rejected;
+      expect(deferredDNS.startedHostnames).toHaveLength(activeLimit);
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({
+        active: activeLimit,
+        queued: 1,
+      });
+
+      deferredDNS.resolve(0);
+      await vi.waitFor(() =>
+        expect(deferredDNS.startedHostnames).toHaveLength(activeLimit + 1)
+      );
+      expect(deferredDNS.startedHostnames.at(-1)).toBe(
+        `dns-active-abort-${activeLimit}.example`
+      );
+
+      for (let index = 1; index <= activeLimit; index += 1) {
+        deferredDNS.resolve(index);
+      }
+      const results = await Promise.all([...otherActiveRequests, queuedRequest]);
+      expect(results.every(result => result.allowed)).toBe(true);
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({ active: 0, queued: 0 });
+
+      deferredDNS.restore();
+    });
+
+    it('removes an aborted queued lookup without disturbing FIFO order', async () => {
+      const deferredDNS = mockDeferredDNSLookups();
+      const activeLimit = __testDNSLookupLimiter!.getStats().activeLimit;
+      const controllers = Array.from({ length: activeLimit + 2 }, () => new AbortController());
+      cleanupFunctions.push(() => {
+        controllers.forEach(controller => controller.abort());
+        deferredDNS.rejectAll();
+        deferredDNS.restore();
+      });
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      const activeRequests = Array.from({ length: activeLimit }, (_, index) =>
+        validateRequestSecurity(
+          `https://dns-queued-abort-${index}.example/test`,
+          controllers[index].signal
+        )
+      );
+      activeRequests.forEach(request => void request.catch(() => undefined));
+      const abortedQueuedRequest = validateRequestSecurity(
+        `https://dns-queued-abort-${activeLimit}.example/test`,
+        controllers[activeLimit].signal
+      );
+      void abortedQueuedRequest.catch(() => undefined);
+      const nextQueuedRequest = validateRequestSecurity(
+        `https://dns-queued-abort-${activeLimit + 1}.example/test`,
+        controllers[activeLimit + 1].signal
+      );
+      void nextQueuedRequest.catch(() => undefined);
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({
+        active: activeLimit,
+        queued: 2,
+      });
+
+      const abortReason = new Error('queued DNS caller aborted');
+      const rejected = expect(abortedQueuedRequest).rejects.toBe(abortReason);
+      controllers[activeLimit].abort(abortReason);
+      await rejected;
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({
+        active: activeLimit,
+        queued: 1,
+      });
+
+      deferredDNS.resolve(0);
+      await vi.waitFor(() =>
+        expect(deferredDNS.startedHostnames).toHaveLength(activeLimit + 1)
+      );
+      expect(deferredDNS.startedHostnames.at(-1)).toBe(
+        `dns-queued-abort-${activeLimit + 1}.example`
+      );
+
+      for (let index = 1; index <= activeLimit; index += 1) {
+        deferredDNS.resolve(index);
+      }
+      const results = await Promise.all([...activeRequests, nextQueuedRequest]);
+      expect(results.every(result => result.allowed)).toBe(true);
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({ active: 0, queued: 0 });
+
+      deferredDNS.restore();
+    });
+
+    it('fails fast once the bounded DNS queue is full', async () => {
+      const deferredDNS = mockDeferredDNSLookups();
+      const limiterStats = __testDNSLookupLimiter!.getStats();
+      const requestCount = limiterStats.activeLimit + limiterStats.queuedLimit + 1;
+      const controllers = Array.from({ length: requestCount }, () => new AbortController());
+      cleanupFunctions.push(() => {
+        controllers.forEach(controller => controller.abort());
+        deferredDNS.rejectAll();
+        deferredDNS.restore();
+      });
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      const requests = Array.from({ length: requestCount }, (_, index) =>
+        validateRequestSecurity(
+          `https://dns-queue-full-${index}.example/test`,
+          controllers[index].signal
+        )
+      );
+      requests.forEach(request => void request.catch(() => undefined));
+
+      await Promise.resolve();
+      await Promise.resolve();
+      const overflowResult = await requests.at(-1)!;
+      expect(overflowResult.allowed).toBe(false);
+      expect(overflowResult.reason).toContain('DNS lookup queue limit reached');
+      expect(deferredDNS.startedHostnames).toHaveLength(limiterStats.activeLimit);
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({
+        active: limiterStats.activeLimit,
+        queued: limiterStats.queuedLimit,
+      });
+
+      controllers.slice(0, -1).forEach(controller => controller.abort());
+      await Promise.allSettled(requests.slice(0, -1));
+      expect(__testDNSLookupLimiter!.getStats()).toMatchObject({
+        active: limiterStats.activeLimit,
+        queued: 0,
+      });
+
+      deferredDNS.rejectAll();
+      await vi.waitFor(() =>
+        expect(__testDNSLookupLimiter!.getStats()).toMatchObject({ active: 0, queued: 0 })
+      );
+
+      deferredDNS.restore();
+    });
+
+    it('returns at the DNS deadline but retains the active permit until native settlement', async () => {
+      vi.useFakeTimers();
+      const deferredDNS = mockDeferredDNSLookups();
+      cleanupFunctions.push(() => {
+        deferredDNS.rejectAll();
+        deferredDNS.restore();
+      });
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+
+      try {
+        const request = validateRequestSecurity('https://dns-deadline.example/test');
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(__testDNSLookupLimiter!.getStats()).toMatchObject({ active: 1, queued: 0 });
+
+        await vi.advanceTimersByTimeAsync(__testDNSLookupLimiter!.getStats().timeoutMs);
+        const result = await request;
+        expect(result.allowed).toBe(false);
+        expect(result.reason).toContain('DNS lookup timed out after 30000ms');
+        expect(__testDNSLookupLimiter!.getStats()).toMatchObject({ active: 1, queued: 0 });
+
+        deferredDNS.resolve(0);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(__testDNSLookupLimiter!.getStats()).toMatchObject({ active: 0, queued: 0 });
+      } finally {
+        deferredDNS.rejectAll();
+        deferredDNS.restore();
+        vi.useRealTimers();
+      }
     });
   });
 

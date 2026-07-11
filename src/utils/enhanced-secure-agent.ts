@@ -28,6 +28,167 @@ interface SecurityValidationResult {
   reason?: string;
 }
 
+const MAX_ACTIVE_DNS_LOOKUPS = 8;
+const MAX_QUEUED_DNS_LOOKUPS = 1000;
+const DNS_LOOKUP_TIMEOUT_MS = SECURITY_CONFIG.HTTP_TIMEOUT;
+
+type ReleaseDNSLookupPermit = () => void;
+
+interface DNSLookupQueueEntry {
+  signal: AbortSignal;
+  resolve: (release: ReleaseDNSLookupPermit) => void;
+  reject: (error: unknown) => void;
+  onAbort: () => void;
+}
+
+let activeDNSLookups = 0;
+const dnsLookupQueue: DNSLookupQueueEntry[] = [];
+
+function createDNSLookupError(message: string, code: string): NodeJS.ErrnoException {
+  const error = new Error(message) as NodeJS.ErrnoException;
+  error.code = code;
+  error.syscall = 'getaddrinfo';
+  return error;
+}
+
+function getDNSLookupAbortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? createDNSLookupError('DNS lookup aborted', 'ABORT_ERR');
+}
+
+function createDNSLookupReleasePermit(): ReleaseDNSLookupPermit {
+  let released = false;
+
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    activeDNSLookups = Math.max(0, activeDNSLookups - 1);
+    drainDNSLookupQueue();
+  };
+}
+
+function grantDNSLookupPermit(entry: DNSLookupQueueEntry): boolean {
+  entry.signal.removeEventListener('abort', entry.onAbort);
+  if (entry.signal.aborted) {
+    entry.reject(getDNSLookupAbortReason(entry.signal));
+    return false;
+  }
+
+  activeDNSLookups += 1;
+  entry.resolve(createDNSLookupReleasePermit());
+  return true;
+}
+
+function drainDNSLookupQueue(): void {
+  while (activeDNSLookups < MAX_ACTIVE_DNS_LOOKUPS && dnsLookupQueue.length > 0) {
+    const entry = dnsLookupQueue.shift();
+    if (entry) {
+      grantDNSLookupPermit(entry);
+    }
+  }
+}
+
+function acquireDNSLookupPermit(signal: AbortSignal): Promise<ReleaseDNSLookupPermit> {
+  if (signal.aborted) {
+    return Promise.reject(getDNSLookupAbortReason(signal));
+  }
+
+  if (activeDNSLookups < MAX_ACTIVE_DNS_LOOKUPS && dnsLookupQueue.length === 0) {
+    activeDNSLookups += 1;
+    return Promise.resolve(createDNSLookupReleasePermit());
+  }
+
+  if (dnsLookupQueue.length >= MAX_QUEUED_DNS_LOOKUPS) {
+    return Promise.reject(
+      createDNSLookupError(
+        `DNS lookup queue limit reached (${MAX_QUEUED_DNS_LOOKUPS}). Server is busy, please try again later.`,
+        'EAI_AGAIN'
+      )
+    );
+  }
+
+  return new Promise<ReleaseDNSLookupPermit>((resolve, reject) => {
+    const entry: DNSLookupQueueEntry = {
+      signal,
+      resolve,
+      reject,
+      onAbort: () => {
+        const index = dnsLookupQueue.indexOf(entry);
+        if (index !== -1) {
+          dnsLookupQueue.splice(index, 1);
+        }
+        signal.removeEventListener('abort', entry.onAbort);
+        reject(getDNSLookupAbortReason(signal));
+      },
+    };
+
+    dnsLookupQueue.push(entry);
+    signal.addEventListener('abort', entry.onAbort, { once: true });
+    drainDNSLookupQueue();
+  });
+}
+
+interface DNSLookupAbortContext {
+  signal: AbortSignal;
+  aborted: Promise<never>;
+  cleanup: () => void;
+}
+
+function createDNSLookupAbortContext(callerSignal?: AbortSignal): DNSLookupAbortContext {
+  const controller = new AbortController();
+  const abort = (error: unknown) => {
+    if (!controller.signal.aborted) {
+      controller.abort(error);
+    }
+  };
+  const onCallerAbort = () => {
+    abort(callerSignal?.reason ?? createDNSLookupError('DNS lookup aborted', 'ABORT_ERR'));
+  };
+
+  if (callerSignal?.aborted) {
+    onCallerAbort();
+  } else {
+    callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
+  }
+
+  const timeoutId = controller.signal.aborted
+    ? undefined
+    : setTimeout(() => {
+        abort(
+          createDNSLookupError(
+            `DNS lookup timed out after ${DNS_LOOKUP_TIMEOUT_MS}ms`,
+            'EAI_AGAIN'
+          )
+        );
+      }, DNS_LOOKUP_TIMEOUT_MS);
+  timeoutId?.unref?.();
+
+  const aborted = new Promise<never>((_, reject) => {
+    if (controller.signal.aborted) {
+      reject(getDNSLookupAbortReason(controller.signal));
+      return;
+    }
+
+    controller.signal.addEventListener(
+      'abort',
+      () => reject(getDNSLookupAbortReason(controller.signal)),
+      { once: true }
+    );
+  });
+
+  return {
+    signal: controller.signal,
+    aborted,
+    cleanup: () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      callerSignal?.removeEventListener('abort', onCallerAbort);
+    },
+  };
+}
+
 /**
  * DNS Cache with TTL support
  * Prevents TOCTOU attacks by ensuring consistent IP resolution
@@ -48,17 +209,58 @@ class SecureDNSCache {
   /**
    * Get cached DNS result or perform fresh lookup
    */
-  async lookup(hostname: string): Promise<dns.LookupAddress[]> {
+  async lookup(hostname: string, callerSignal?: AbortSignal): Promise<dns.LookupAddress[]> {
     const cacheKey = hostname.toLowerCase();
     const cached = this.cache.get(cacheKey);
     const now = Date.now();
+
+    if (callerSignal?.aborted) {
+      throw callerSignal.reason ?? createDNSLookupError('DNS lookup aborted', 'ABORT_ERR');
+    }
 
     // Return cached result if valid
     if (cached && now - cached.timestamp < cached.ttl) {
       return cached.addresses;
     }
 
-    // Perform fresh DNS lookup
+    const abortContext = createDNSLookupAbortContext(callerSignal);
+    const controlledLookup = (async () => {
+      const release = await acquireDNSLookupPermit(abortContext.signal);
+      let nativeLookupStarted = false;
+
+      try {
+        if (abortContext.signal.aborted) {
+          throw getDNSLookupAbortReason(abortContext.signal);
+        }
+
+        // A prior queued lookup may have populated the cache while this caller waited.
+        const queuedCached = this.cache.get(cacheKey);
+        const queuedNow = Date.now();
+        if (queuedCached && queuedNow - queuedCached.timestamp < queuedCached.ttl) {
+          return queuedCached.addresses;
+        }
+
+        const nativeLookup = this.performFreshLookup(hostname, cacheKey);
+        nativeLookupStarted = true;
+
+        // dns.lookup cannot be cancelled. Keep the permit until its callback settles,
+        // even if the caller's deadline or AbortSignal wins the outer race.
+        return await nativeLookup.finally(release);
+      } finally {
+        if (!nativeLookupStarted) {
+          release();
+        }
+      }
+    })();
+
+    try {
+      return await Promise.race([controlledLookup, abortContext.aborted]);
+    } finally {
+      abortContext.cleanup();
+    }
+  }
+
+  private performFreshLookup(hostname: string, cacheKey: string): Promise<dns.LookupAddress[]> {
     return new Promise((resolve, reject) => {
       const lookupOptions: dns.LookupAllOptions = {
         all: true,
@@ -79,7 +281,7 @@ class SecureDNSCache {
         // Cache the result
         const cacheEntry: CachedDNSResult = {
           addresses: addressList,
-          timestamp: now,
+          timestamp: Date.now(),
           ttl: this.defaultTTL,
           hostname
         };
@@ -544,13 +746,16 @@ export function invalidateDNSCache(hostname?: string) {
 /**
  * Advanced security validation for HTTP requests
  */
-export async function validateRequestSecurity(url: string): Promise<SecurityValidationResult> {
+export async function validateRequestSecurity(
+  url: string,
+  abortSignal?: AbortSignal
+): Promise<SecurityValidationResult> {
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname;
 
     // Perform DNS lookup and validation
-    const addresses = await dnsCache.lookup(hostname);
+    const addresses = await dnsCache.lookup(hostname, abortSignal);
     const validation = validateIPAddresses(addresses);
 
     if (!validation.allowed) {
@@ -564,6 +769,9 @@ export async function validateRequestSecurity(url: string): Promise<SecurityVali
 
     return validation;
   } catch (error) {
+    if (abortSignal?.aborted) {
+      throw abortSignal.reason ?? error;
+    }
     logger.error('Security validation failed', { url, error: error as Error });
     return {
       allowed: false,
@@ -573,6 +781,19 @@ export async function validateRequestSecurity(url: string): Promise<SecurityVali
     };
   }
 }
+
+/** Test-only visibility for deterministic DNS admission-control assertions. */
+export const __testDNSLookupLimiter = process.env.NODE_ENV === 'test'
+  ? {
+      getStats: () => ({
+        active: activeDNSLookups,
+        queued: dnsLookupQueue.length,
+        activeLimit: MAX_ACTIVE_DNS_LOOKUPS,
+        queuedLimit: MAX_QUEUED_DNS_LOOKUPS,
+        timeoutMs: DNS_LOOKUP_TIMEOUT_MS,
+      }),
+    }
+  : undefined;
 
 // Export cleanup function for application-level resource management
 // Applications should call this during graceful shutdown

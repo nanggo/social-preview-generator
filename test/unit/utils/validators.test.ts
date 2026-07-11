@@ -241,6 +241,33 @@ describe('Validators', () => {
     test.each([1, 90, 100])('should accept integer quality %i', quality => {
       expect(sanitizeOptions({ quality }).quality).toBe(quality);
     });
+
+    test.each([
+      NaN,
+      Infinity,
+      -Infinity,
+      0,
+      -1,
+      1.5,
+      30_001,
+      '1000' as unknown as number,
+    ])('should reject invalid security timeout %s with VALIDATION_ERROR', timeout => {
+      try {
+        sanitizeOptions({ security: { timeout } });
+        throw new Error('Expected sanitizeOptions to reject the timeout');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+        expect((error as PreviewGeneratorError).message).toContain('Security timeout');
+      }
+    });
+
+    test.each([1, 8000, 12000, 30_000])(
+      'should preserve valid security timeout %i',
+      timeout => {
+        expect(sanitizeOptions({ security: { timeout } }).security?.timeout).toBe(timeout);
+      }
+    );
   });
 
   describe('createTransparentCanvas', () => {

@@ -1,10 +1,11 @@
 import { vi } from 'vitest';
 import { extractMetadata, validateMetadata, applyFallbacks, fetchImage } from '../../src/core/metadata-extractor';
-import { ExtractedMetadata } from '../../src/types';
+import { ErrorType, ExtractedMetadata } from '../../src/types';
 import { mockHtmlWithOg, mockHtmlMinimal, mockHtmlWithTwitter } from '../fixtures/mock-html';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import * as imageSecurity from '../../src/utils/image-security';
+import { validateRequestSecurity } from '../../src/utils/enhanced-secure-agent';
 
 vi.mock('axios');
 vi.mock('open-graph-scraper');
@@ -23,6 +24,7 @@ vi.mock('../../src/utils/enhanced-secure-agent', () => ({
 const mockedAxios = axios as vi.Mocked<typeof axios>;
 const mockedOgs = ogs as vi.MockedFunction<typeof ogs>;
 const mockedImageSecurity = imageSecurity as vi.Mocked<typeof imageSecurity>;
+const mockedValidateRequestSecurity = vi.mocked(validateRequestSecurity);
 
 describe('Metadata Extractor', () => {
   beforeEach(() => {
@@ -66,6 +68,10 @@ describe('Metadata Extractor', () => {
         author: undefined,
         publishedDate: undefined,
       });
+      expect(mockedValidateRequestSecurity).toHaveBeenCalledWith(
+        new URL(testUrl).toString(),
+        expect.any(AbortSignal)
+      );
     });
 
     it('should handle Twitter Card metadata', async () => {
@@ -156,6 +162,39 @@ describe('Metadata Extractor', () => {
       mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
 
       await expect(extractMetadata(testUrl)).rejects.toThrow('Failed to fetch data');
+    });
+
+    it('aborts a pending HTML response at the configured total deadline', async () => {
+      vi.useFakeTimers();
+      const testUrl = 'https://slow-html.example';
+      let requestSignal: AbortSignal | undefined;
+
+      mockedAxios.get.mockImplementationOnce((_url, config) => {
+        requestSignal = config?.signal;
+        return new Promise((_, reject) => {
+          requestSignal?.addEventListener(
+            'abort',
+            () => reject(requestSignal?.reason ?? new Error('aborted')),
+            { once: true }
+          );
+        });
+      });
+
+      const request = extractMetadata(testUrl, { timeout: 50 });
+      const rejected = expect(request).rejects.toMatchObject({
+        type: ErrorType.FETCH_ERROR,
+        message: expect.stringContaining('Network request deadline exceeded after 50ms'),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(requestSignal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(50);
+
+      await rejected;
+      expect(requestSignal?.aborted).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
     });
 
     it('disables implicit environment proxies and configures protocol-specific secure agents', async () => {
@@ -270,8 +309,76 @@ describe('Metadata Extractor', () => {
   });
 
   describe('fetchImage', () => {
+    it('aborts a pending image request when the total request deadline expires', async () => {
+      vi.useFakeTimers();
+      const imageUrl = 'https://example.com/slow-image.jpg';
+      let requestSignal: AbortSignal | undefined;
+
+      mockedAxios.get.mockImplementationOnce((_url, config) => {
+        requestSignal = config?.signal;
+        return new Promise((_, reject) => {
+          requestSignal?.addEventListener(
+            'abort',
+            () => reject(requestSignal?.reason ?? new Error('aborted')),
+            { once: true }
+          );
+        });
+      });
+
+      const request = fetchImage(imageUrl, { timeout: 50 });
+      const rejected = expect(request).rejects.toMatchObject({
+        type: ErrorType.IMAGE_ERROR,
+        message: expect.stringContaining('Network request deadline exceeded after 50ms'),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockedAxios.get).toHaveBeenCalledOnce();
+      expect(requestSignal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      await rejected;
+      expect(requestSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+
+    it('composes caller abort with the image deadline and reports IMAGE_ERROR', async () => {
+      vi.useFakeTimers();
+      const imageUrl = 'https://example.com/caller-aborted.jpg';
+      const caller = new AbortController();
+      const callerReason = new Error('caller canceled image request');
+      let requestSignal: AbortSignal | undefined;
+
+      mockedAxios.get.mockImplementationOnce((_url, config) => {
+        requestSignal = config?.signal;
+        return new Promise((_, reject) => {
+          requestSignal?.addEventListener(
+            'abort',
+            () => reject(requestSignal?.reason ?? new Error('aborted')),
+            { once: true }
+          );
+        });
+      });
+
+      const request = fetchImage(imageUrl, { timeout: 1000 }, caller.signal);
+      const rejected = expect(request).rejects.toMatchObject({
+        type: ErrorType.IMAGE_ERROR,
+        message: expect.stringContaining(callerReason.message),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      caller.abort(callerReason);
+
+      await rejected;
+      expect(requestSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+
     it('should fetch image successfully', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const abortController = new AbortController();
       // Mock JPEG image data with proper magic bytes
       const mockImageData = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, ...Array(100).fill(0)]);
 
@@ -279,7 +386,9 @@ describe('Metadata Extractor', () => {
         data: mockImageData,
       });
 
-      const result = await fetchImage(imageUrl);
+      const result = await fetchImage(imageUrl, undefined, abortController.signal);
+
+      const securitySignal = mockedValidateRequestSecurity.mock.calls.at(-1)?.[1];
 
       expect(result).toEqual(mockImageData);
       expect(mockedAxios.get).toHaveBeenCalledWith(imageUrl, expect.objectContaining({
@@ -292,9 +401,16 @@ describe('Metadata Extractor', () => {
         maxContentLength: 15 * 1024 * 1024,
         maxBodyLength: 15 * 1024 * 1024,
         proxy: false,
+        signal: securitySignal,
         httpAgent: { kind: 'http' },
         httpsAgent: { kind: 'https' },
       }));
+      expect(mockedValidateRequestSecurity).toHaveBeenCalledWith(
+        imageUrl,
+        securitySignal
+      );
+      expect(securitySignal).toBeInstanceOf(AbortSignal);
+      expect(securitySignal).not.toBe(abortController.signal);
     });
 
     it('should throw error on fetch failure', async () => {
