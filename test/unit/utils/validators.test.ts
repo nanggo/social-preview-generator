@@ -196,6 +196,70 @@ describe('Validators', () => {
       expect(sanitized.fonts?.[0]).not.toBe(originalFonts?.[0]);
     });
 
+    test.each(['auto', 'generate'] as const)(
+      'should preserve the supported fallback strategy %s',
+      strategy => {
+        expect(sanitizeOptions({ fallback: { strategy } }).fallback?.strategy).toBe(strategy);
+      }
+    );
+
+    test('should reject the removed custom fallback strategy with VALIDATION_ERROR', () => {
+      try {
+        sanitizeOptions({
+          fallback: { strategy: 'custom' },
+        } as unknown as PreviewOptions);
+        throw new Error('Expected sanitizeOptions to reject fallback.strategy');
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewGeneratorError);
+        expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+        expect((error as PreviewGeneratorError).message).toContain('Fallback strategy');
+      }
+    });
+
+    test.each([
+      ['image', 'fallback.png'],
+      ['category', 'tech'],
+      ['backgroundColor', undefined],
+    ] as const)(
+      'should reject the removed fallback option %s with VALIDATION_ERROR',
+      (field, value) => {
+        try {
+          sanitizeOptions({
+            fallback: { [field]: value },
+          } as unknown as PreviewOptions);
+          throw new Error(`Expected sanitizeOptions to reject fallback.${field}`);
+        } catch (error) {
+          expect(error).toBeInstanceOf(PreviewGeneratorError);
+          expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+          expect((error as PreviewGeneratorError).message).toContain(`fallback.${field}`);
+        }
+      }
+    );
+
+    test.each([null, [], 'generate', new Date()] as const)(
+      'should reject non-plain fallback options %# with VALIDATION_ERROR',
+      fallback => {
+        expect(() =>
+          sanitizeOptions({ fallback } as unknown as PreviewOptions)
+        ).toThrowError(/Fallback options must be a plain object/);
+      }
+    );
+
+    test('should discard unknown runtime fallback keys', () => {
+      const sanitized = sanitizeOptions({
+        fallback: {
+          strategy: 'generate',
+          text: '  fallback text  ',
+          padding: 'x'.repeat(20_000),
+        },
+      } as unknown as PreviewOptions);
+
+      expect(sanitized.fallback).toEqual({
+        strategy: 'generate',
+        text: 'fallback text',
+      });
+    });
+
     test('should reject invalid font option shapes with validation errors', () => {
       expect(() =>
         sanitizeOptions({

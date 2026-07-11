@@ -113,6 +113,37 @@ function verifyRuntimeExports(packageExports) {
   }
 }
 
+async function verifyRemovedFallbackRuntimeInputs(packageExports) {
+  const removedInputs = [
+    ['fallback.strategy=custom', { strategy: 'custom' }],
+    ['fallback.image', { image: undefined }],
+    ['fallback.category', { category: 'tech' }],
+    ['fallback.backgroundColor', { backgroundColor: '#000000' }],
+  ];
+
+  for (const [description, fallback] of removedInputs) {
+    let rejection;
+    try {
+      await packageExports.generatePreviewFromMetadata(
+        {
+          title: 'Removed fallback runtime smoke',
+          url: 'https://example.com/removed-fallback-smoke',
+        },
+        { fallback }
+      );
+    } catch (error) {
+      rejection = error;
+    }
+
+    if (!(rejection instanceof packageExports.PreviewGeneratorError)) {
+      throw new Error(`Packed package did not reject ${description} with PreviewGeneratorError`);
+    }
+    if (rejection.type !== packageExports.ErrorType.VALIDATION_ERROR) {
+      throw new Error(`Packed package did not reject ${description} with VALIDATION_ERROR`);
+    }
+  }
+}
+
 function verifyEsmImport() {
   const esmCheck = `
     const packageExports = await import(${JSON.stringify(PACKAGE_NAME)});
@@ -155,6 +186,14 @@ function verifyTypeScriptConsumer() {
         url: 'https://example.com/typescript-smoke',
       };
       const options: PreviewOptions = { width: 320, height: 168, template: 'minimal' };
+      // @ts-expect-error fallback.strategy custom was removed in 0.3.0
+      const removedCustomStrategy: PreviewOptions = { fallback: { strategy: 'custom' } };
+      // @ts-expect-error fallback.image was removed in 0.3.0
+      const removedFallbackImage: PreviewOptions = { fallback: { image: 'fallback.png' } };
+      // @ts-expect-error fallback.category was removed in 0.3.0
+      const removedFallbackCategory: PreviewOptions = { fallback: { category: 'tech' } };
+      // @ts-expect-error fallback.backgroundColor was removed in 0.3.0
+      const removedFallbackBackground: PreviewOptions = { fallback: { backgroundColor: '#000000' } };
       const extracted: ExtractedMetadata = metadata;
       const template: TemplateConfig = {
         name: 'consumer-smoke',
@@ -172,6 +211,10 @@ function verifyTypeScriptConsumer() {
       void detailed;
       void custom;
       void typedError;
+      void removedCustomStrategy;
+      void removedFallbackImage;
+      void removedFallbackCategory;
+      void removedFallbackBackground;
     `
   );
   writeFileSync(
@@ -243,6 +286,7 @@ try {
   packageExports = requireFromConsumer(PACKAGE_NAME);
   verifyRuntimeExports(packageExports);
   verifyEsmImport();
+  await verifyRemovedFallbackRuntimeInputs(packageExports);
 
   const image = await packageExports.generatePreviewFromMetadata(
     {
@@ -271,7 +315,7 @@ try {
   }
 
   console.log(
-    'Packed package passed tarball, CJS/ESM import, runtime export, 320x168 JPEG, and TypeScript consumer checks.'
+    'Packed package passed tarball, CJS/ESM import, runtime export, removed fallback, 320x168 JPEG, and TypeScript consumer checks.'
   );
   if (outputPath) {
     console.log(`Verified tarball written to ${outputPath}.`);

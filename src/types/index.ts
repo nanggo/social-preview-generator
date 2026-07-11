@@ -103,15 +103,9 @@ export type TemplateType = 'modern' | 'classic' | 'minimal';
  */
 export interface FallbackOptions {
   /** Strategy for handling missing data */
-  strategy?: 'auto' | 'custom' | 'generate';
-  /** Path to custom fallback image */
-  image?: string;
-  /** Category for auto-selecting fallback images */
-  category?: 'tech' | 'business' | 'lifestyle' | 'news' | 'general';
+  strategy?: 'auto' | 'generate';
   /** Custom text to use when generating fallback */
   text?: string;
-  /** Background color for generated fallback */
-  backgroundColor?: string;
 }
 
 /**
