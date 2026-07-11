@@ -560,6 +560,7 @@ describe('Enhanced Secure Agent', () => {
       expect((agent as any).options.keepAlive).toBe(true);
       expect((agent as any).options.timeout).toBe(30000);
       expect((agent as any).options.maxSockets).toBe(50);
+      expect(agent.maxTotalSockets).toBe(50);
     });
 
     it('should create HTTPS agent with additional TLS security', () => {
@@ -570,6 +571,7 @@ describe('Enhanced Secure Agent', () => {
       expect((agent as any).options.timeout).toBe(30000);
       expect((agent as any).options.minVersion).toBe('TLSv1.2');
       expect((agent as any).options.ciphers).toBeDefined();
+      expect(agent.maxTotalSockets).toBe(50);
     });
 
     it('should use singleton instances for performance', async () => {
