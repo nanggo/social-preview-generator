@@ -587,6 +587,21 @@ describe('End-to-End Integration Tests', () => {
       });
       expect(mockedAxios.get).not.toHaveBeenCalled();
     });
+
+    it.each(['auto', 'generate'] as const)(
+      'should not turn an HTTPS-only policy violation into a %s fallback success',
+      async strategy => {
+        await expect(
+          generatePreviewWithDetails('http://policy-violation.example/path', {
+            fallback: { strategy },
+            security: { httpsOnly: true },
+          })
+        ).rejects.toMatchObject({
+          type: ErrorType.VALIDATION_ERROR,
+        });
+        expect(mockedAxios.get).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe('generatePreviewFromMetadata', () => {
