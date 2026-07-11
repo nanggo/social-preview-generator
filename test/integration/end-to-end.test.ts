@@ -517,6 +517,21 @@ describe('End-to-End Integration Tests', () => {
         });
       }
     );
+
+    it.each([NaN, Infinity, 0, 30_001])(
+      'should reject unsafe public security timeout %s before network I/O',
+      async timeout => {
+        await expect(
+          generatePreview('https://timeout-validation.example', {
+            security: { timeout },
+          })
+        ).rejects.toMatchObject({
+          type: ErrorType.VALIDATION_ERROR,
+          message: expect.stringContaining('Security timeout'),
+        });
+        expect(mockedAxios.get).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe('generatePreviewFromMetadata', () => {

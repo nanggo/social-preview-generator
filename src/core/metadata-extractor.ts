@@ -17,6 +17,12 @@ import { metadataCache } from '../utils/cache';
 import { logger } from '../utils/logger';
 import { MAX_TEXT_LENGTH } from '../constants/security';
 import { truncateText } from '../utils/validators/text';
+import {
+  NetworkRequestAbortedError,
+  NetworkRequestDeadlineError,
+  NetworkRequestQueueFullError,
+  runControlledNetworkRequest,
+} from '../utils/network-request-control';
 
 // Allowed MIME types for images
 const BASE_ALLOWED_MIME_TYPES = new Set([
@@ -31,6 +37,17 @@ const BASE_ALLOWED_MIME_TYPES = new Set([
 
 // Maximum allowed image size (15MB)
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
+
+function getNetworkControlErrorMessage(error: unknown): string | undefined {
+  if (
+    error instanceof NetworkRequestAbortedError ||
+    error instanceof NetworkRequestDeadlineError ||
+    error instanceof NetworkRequestQueueFullError
+  ) {
+    return error.message;
+  }
+  return undefined;
+}
 
 /**
  * Build redirect validation callback for SSRF protection
@@ -311,6 +328,7 @@ async function validateUrl(url: string, securityOptions?: SecurityOptions): Prom
  * Fetch Open Graph data using open-graph-scraper
  */
 async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions, abortSignal?: AbortSignal): Promise<Record<string, unknown>> {
+  const requestTimeout = securityOptions?.timeout || 8000;
   // Create secure axios config with redirect validation and secure agent
   const axiosConfig = {
     headers: {
@@ -318,21 +336,24 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
       Accept: 'text/html,application/xhtml+xml',
     },
     responseType: 'text' as const,
-    timeout: securityOptions?.timeout || 8000,
+    timeout: requestTimeout,
     maxRedirects: securityOptions?.maxRedirects ?? 3,
     maxContentLength: 1 * 1024 * 1024,
     maxBodyLength: 1 * 1024 * 1024,
     httpAgent: getEnhancedSecureHttpAgent(),
     httpsAgent: getEnhancedSecureHttpsAgent(),
     proxy: false as const,
-    signal: abortSignal,
     beforeRedirect: createRedirectValidator('Redirect', securityOptions?.httpsOnly === true),
   };
 
   // Phase 1: Fetch HTML through secure agent
   let html: string;
   try {
-    const response = await axios.get(url, axiosConfig);
+    const response = await runControlledNetworkRequest(
+      requestTimeout,
+      abortSignal,
+      signal => axios.get(url, { ...axiosConfig, signal })
+    );
 
     if (typeof response.data !== 'string') {
       throw new Error('Expected HTML response but received non-string data');
@@ -341,9 +362,10 @@ async function fetchOpenGraphData(url: string, securityOptions?: SecurityOptions
     html = response.data;
   } catch (fetchError) {
     // Network-level failure — no HTML to parse, fail immediately without retry
+    const controlMessage = getNetworkControlErrorMessage(fetchError);
     throw new PreviewGeneratorError(
       ErrorType.FETCH_ERROR,
-      `Failed to fetch data from ${url}`,
+      `Failed to fetch data from ${url}${controlMessage ? `: ${controlMessage}` : ''}`,
       fetchError
     );
   }
@@ -486,24 +508,29 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       ? new Set([...BASE_ALLOWED_MIME_TYPES, 'image/svg+xml'])
       : BASE_ALLOWED_MIME_TYPES;
 
-    const response = await axios.get(validatedUrl, {
-      responseType: 'arraybuffer',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
-      },
-      timeout: securityOptions?.timeout || 12000, // Configurable timeout (default 12s for images)
-      maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
-      maxContentLength: MAX_IMAGE_SIZE,
-      maxBodyLength: MAX_IMAGE_SIZE,
-      httpAgent: getEnhancedSecureHttpAgent(),
-      httpsAgent: getEnhancedSecureHttpsAgent(),
-      proxy: false,
-      signal: abortSignal, // Add abort signal for request cancellation
-      beforeRedirect: createRedirectValidator(
-        'Image redirect',
-        securityOptions?.httpsOnly === true
-      ),
-    });
+    const requestTimeout = securityOptions?.timeout || 12000;
+    const response = await runControlledNetworkRequest(
+      requestTimeout,
+      abortSignal,
+      signal => axios.get(validatedUrl, {
+        responseType: 'arraybuffer',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; SocialPreviewBot/1.0)',
+        },
+        timeout: requestTimeout, // Socket inactivity timeout; the wrapper also enforces a total deadline.
+        maxRedirects: securityOptions?.maxRedirects ?? 3, // Configurable redirects
+        maxContentLength: MAX_IMAGE_SIZE,
+        maxBodyLength: MAX_IMAGE_SIZE,
+        httpAgent: getEnhancedSecureHttpAgent(),
+        httpsAgent: getEnhancedSecureHttpsAgent(),
+        proxy: false,
+        signal,
+        beforeRedirect: createRedirectValidator(
+          'Image redirect',
+          securityOptions?.httpsOnly === true
+        ),
+      })
+    );
 
     // Check content-type header if available (extract base MIME type, ignoring charset etc.)
     const contentTypeHeader = response.headers?.['content-type'];

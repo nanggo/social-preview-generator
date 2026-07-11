@@ -8,6 +8,9 @@ import { validateColor } from './color';
 import { validateDimension, validateDimensions } from './dimensions';
 import { validateTextInput } from './text';
 
+const MIN_REQUEST_TIMEOUT_MS = 1;
+const MAX_REQUEST_TIMEOUT_MS = 30_000;
+
 /**
  * Validates all preview options including dimensions, quality, and colors.
  */
@@ -115,6 +118,29 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
         `Quality must be between ${QUALITY_LIMITS.MIN} and ${QUALITY_LIMITS.MAX}`
+      );
+    }
+  }
+
+  // Bound the total request deadline so invalid timer values cannot disable or
+  // unexpectedly truncate outbound-request protection.
+  if (sanitized.security?.timeout !== undefined) {
+    const timeout = sanitized.security.timeout;
+    if (
+      typeof timeout !== 'number' ||
+      !Number.isFinite(timeout) ||
+      !Number.isInteger(timeout)
+    ) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        'Security timeout must be a finite integer in milliseconds'
+      );
+    }
+
+    if (timeout < MIN_REQUEST_TIMEOUT_MS || timeout > MAX_REQUEST_TIMEOUT_MS) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Security timeout must be between ${MIN_REQUEST_TIMEOUT_MS} and ${MAX_REQUEST_TIMEOUT_MS} milliseconds`
       );
     }
   }

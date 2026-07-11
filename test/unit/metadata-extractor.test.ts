@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { extractMetadata, validateMetadata, applyFallbacks, fetchImage } from '../../src/core/metadata-extractor';
-import { ExtractedMetadata } from '../../src/types';
+import { ErrorType, ExtractedMetadata } from '../../src/types';
 import { mockHtmlWithOg, mockHtmlMinimal, mockHtmlWithTwitter } from '../fixtures/mock-html';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
@@ -158,6 +158,39 @@ describe('Metadata Extractor', () => {
       await expect(extractMetadata(testUrl)).rejects.toThrow('Failed to fetch data');
     });
 
+    it('aborts a pending HTML response at the configured total deadline', async () => {
+      vi.useFakeTimers();
+      const testUrl = 'https://slow-html.example';
+      let requestSignal: AbortSignal | undefined;
+
+      mockedAxios.get.mockImplementationOnce((_url, config) => {
+        requestSignal = config?.signal;
+        return new Promise((_, reject) => {
+          requestSignal?.addEventListener(
+            'abort',
+            () => reject(requestSignal?.reason ?? new Error('aborted')),
+            { once: true }
+          );
+        });
+      });
+
+      const request = extractMetadata(testUrl, { timeout: 50 });
+      const rejected = expect(request).rejects.toMatchObject({
+        type: ErrorType.FETCH_ERROR,
+        message: expect.stringContaining('Network request deadline exceeded after 50ms'),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(requestSignal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(50);
+
+      await rejected;
+      expect(requestSignal?.aborted).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+
     it('disables implicit environment proxies and configures protocol-specific secure agents', async () => {
       const testUrl = 'https://proxy-boundary.example/page';
 
@@ -270,6 +303,72 @@ describe('Metadata Extractor', () => {
   });
 
   describe('fetchImage', () => {
+    it('aborts a pending image request when the total request deadline expires', async () => {
+      vi.useFakeTimers();
+      const imageUrl = 'https://example.com/slow-image.jpg';
+      let requestSignal: AbortSignal | undefined;
+
+      mockedAxios.get.mockImplementationOnce((_url, config) => {
+        requestSignal = config?.signal;
+        return new Promise((_, reject) => {
+          requestSignal?.addEventListener(
+            'abort',
+            () => reject(requestSignal?.reason ?? new Error('aborted')),
+            { once: true }
+          );
+        });
+      });
+
+      const request = fetchImage(imageUrl, { timeout: 50 });
+      const rejected = expect(request).rejects.toMatchObject({
+        type: ErrorType.IMAGE_ERROR,
+        message: expect.stringContaining('Network request deadline exceeded after 50ms'),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockedAxios.get).toHaveBeenCalledOnce();
+      expect(requestSignal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      await rejected;
+      expect(requestSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+
+    it('composes caller abort with the image deadline and reports IMAGE_ERROR', async () => {
+      vi.useFakeTimers();
+      const imageUrl = 'https://example.com/caller-aborted.jpg';
+      const caller = new AbortController();
+      let requestSignal: AbortSignal | undefined;
+
+      mockedAxios.get.mockImplementationOnce((_url, config) => {
+        requestSignal = config?.signal;
+        return new Promise((_, reject) => {
+          requestSignal?.addEventListener(
+            'abort',
+            () => reject(requestSignal?.reason ?? new Error('aborted')),
+            { once: true }
+          );
+        });
+      });
+
+      const request = fetchImage(imageUrl, { timeout: 1000 }, caller.signal);
+      const rejected = expect(request).rejects.toMatchObject({
+        type: ErrorType.IMAGE_ERROR,
+        message: expect.stringContaining('Network request aborted by caller'),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      caller.abort();
+
+      await rejected;
+      expect(requestSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+
     it('should fetch image successfully', async () => {
       const imageUrl = 'https://example.com/image.jpg';
       // Mock JPEG image data with proper magic bytes

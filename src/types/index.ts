@@ -59,7 +59,7 @@ export interface SecurityOptions {
   allowSvg?: boolean;
   /** Maximum allowed redirects (default: 3) */
   maxRedirects?: number;
-  /** Request timeout in milliseconds (default: 8000 for HTML, 12000 for images) */
+  /** Request timeout in milliseconds, integer 1-30000 (default: 8000 for HTML, 12000 for images) */
   timeout?: number;
 }
 
