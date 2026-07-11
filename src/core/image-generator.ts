@@ -3,7 +3,7 @@
  * Handles image processing and generation using Sharp
  */
 
-import sharp from 'sharp';
+import type { Sharp } from 'sharp';
 import { secureResize, withSecureSharp } from '../utils/image-security';
 import {
   ExtractedMetadata,
@@ -40,7 +40,7 @@ export async function generateImage(
     const quality = options.quality || 90;
 
     // Create base image or use existing image
-    let baseImage: sharp.Sharp;
+    let baseImage: Sharp;
 
     if (metadata.image) {
       // Use existing image as background
@@ -91,7 +91,7 @@ async function processBackgroundImage(
   width: number,
   height: number,
   template: TemplateConfig
-): Promise<sharp.Sharp> {
+): Promise<Sharp> {
   try {
     return await withSecureSharp(imageBuffer, async (image) => {
       // Apply template-specific image processing settings
@@ -148,7 +148,7 @@ export async function createBlankCanvas(
   width: number,
   height: number,
   options: PreviewOptions
-): Promise<sharp.Sharp> {
+): Promise<Sharp> {
   // Validate colors before using them in SVG
   const backgroundColor = validateColor(options.colors?.background || '#1a1a2e');
   const accentColor = validateColor(options.colors?.accent || '#16213e');
