@@ -12,18 +12,45 @@ export interface ProcessedTemplateImage {
   usedBackgroundImage: boolean;
 }
 
-export async function processImageForTemplate(
+export interface PreparedTemplateImage {
+  effectiveMetadata: ExtractedMetadata;
+  imageBuffer?: Buffer;
+}
+
+/** Fetch and validate optional background bytes before native render admission. */
+export async function prepareImageForTemplate(
   metadata: ExtractedMetadata,
+  template: TemplateConfig,
+  options: SanitizedOptions
+): Promise<PreparedTemplateImage> {
+  const effectiveMetadata = { ...metadata };
+
+  if (template.layout.imagePosition === 'none' || !metadata.image) {
+    return { effectiveMetadata };
+  }
+
+  try {
+    const imageBuffer = await fetchImage(metadata.image, options.security);
+    return { effectiveMetadata, imageBuffer };
+  } catch (fetchError) {
+    logImageFetchError(
+      metadata.image,
+      fetchError instanceof Error ? fetchError : new Error(String(fetchError))
+    );
+    return { effectiveMetadata: { ...metadata, image: undefined } };
+  }
+}
+
+export async function processImageForTemplate(
+  preparedImage: PreparedTemplateImage,
   template: TemplateConfig,
   width: number,
   height: number,
   options: SanitizedOptions
 ): Promise<ProcessedTemplateImage> {
-  const effectiveMetadata = { ...metadata };
+  const effectiveMetadata = { ...preparedImage.effectiveMetadata };
 
-  // Check if template wants no background image
-  if (template.layout.imagePosition === 'none') {
-    // Use transparent canvas if template requires it, otherwise use blank canvas
+  if (!preparedImage.imageBuffer) {
     if (template.imageProcessing?.requiresTransparentCanvas) {
       return {
         baseImage: createTransparentCanvas(width, height),
@@ -38,28 +65,8 @@ export async function processImageForTemplate(
     };
   }
 
-  // If no image available, handle based on template configuration
-  if (!metadata.image) {
-    // Use transparent canvas if template requires it for custom backgrounds
-    if (template.imageProcessing?.requiresTransparentCanvas) {
-      return {
-        baseImage: createTransparentCanvas(width, height),
-        effectiveMetadata,
-        usedBackgroundImage: false,
-      };
-    }
-    return {
-      baseImage: await createBlankCanvas(width, height, options),
-      effectiveMetadata,
-      usedBackgroundImage: false,
-    };
-  }
-
-  // Process background image with template-specific effects
   try {
-    const imageBuffer = await fetchImage(metadata.image, options.security);
-
-    const baseImage = await withSecureSharp(imageBuffer, async (secureImage) => {
+    const baseImage = await withSecureSharp(preparedImage.imageBuffer, async (secureImage) => {
       let processedImage = secureResize(secureImage, width, height, {
         fit: 'cover',
         position: 'center',
@@ -94,14 +101,13 @@ export async function processImageForTemplate(
     });
 
     return { baseImage, effectiveMetadata, usedBackgroundImage: true };
-  } catch (fetchError) {
-    // If image fetch fails, create appropriate canvas based on template configuration
+  } catch (processingError) {
     logImageFetchError(
-      metadata.image,
-      fetchError instanceof Error ? fetchError : new Error(String(fetchError))
+      effectiveMetadata.image ?? 'background image',
+      processingError instanceof Error ? processingError : new Error(String(processingError))
     );
 
-    const metadataWithoutFailedImage = { ...metadata, image: undefined };
+    const metadataWithoutFailedImage = { ...effectiveMetadata, image: undefined };
 
     // Use transparent canvas if template requires it for custom backgrounds
     if (template.imageProcessing?.requiresTransparentCanvas) {

@@ -4,6 +4,7 @@ const renderMocks = vi.hoisted(() => {
   const withRenderSlot = vi.fn(async <T>(operation: () => Promise<T>): Promise<T> => operation());
   const extractMetadata = vi.fn();
   const validateMetadata = vi.fn(() => true);
+  const fetchImage = vi.fn().mockResolvedValue(Buffer.from('image'));
 
   const sharpInstance = {
     timeout: vi.fn().mockReturnThis(),
@@ -23,7 +24,7 @@ const renderMocks = vi.hoisted(() => {
     cache: vi.fn(),
   });
 
-  return { withRenderSlot, extractMetadata, validateMetadata, sharp };
+  return { withRenderSlot, extractMetadata, validateMetadata, fetchImage, sharp };
 });
 
 vi.mock('../../src/utils/render-limiter', () => ({
@@ -34,7 +35,7 @@ vi.mock('../../src/core/metadata-extractor', () => ({
   extractMetadata: renderMocks.extractMetadata,
   validateMetadata: renderMocks.validateMetadata,
   applyFallbacks: vi.fn((metadata) => metadata),
-  fetchImage: vi.fn().mockResolvedValue(Buffer.from('image')),
+  fetchImage: renderMocks.fetchImage,
   clearInflightRequests: vi.fn(),
   getInflightRequestStats: vi.fn(() => ({ active: 0 })),
 }));
@@ -62,6 +63,19 @@ const template: TemplateConfig = {
   typography: { title: { fontSize: 32 } },
 };
 
+const backgroundTemplate: TemplateConfig = {
+  ...template,
+  layout: { ...template.layout, imagePosition: 'left' },
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(resolvePromise => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe('render limiter entrypoints', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -70,6 +84,7 @@ describe('render limiter entrypoints', () => {
     );
     renderMocks.extractMetadata.mockResolvedValue({ ...metadata });
     renderMocks.validateMetadata.mockReturnValue(true);
+    renderMocks.fetchImage.mockResolvedValue(Buffer.from('image'));
     previewCache.clear();
     clearAllCaches();
   });
@@ -106,6 +121,40 @@ describe('render limiter entrypoints', () => {
     await generatePreviewFromMetadataWithDetails(metadata, { cache: true });
 
     expect(renderMocks.withRenderSlot).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'public template renderer',
+      () =>
+        generateImageWithTemplate(
+          { ...metadata, image: 'https://example.com/background.jpg' },
+          backgroundTemplate,
+          {}
+        ),
+    ],
+    [
+      'core renderer',
+      () =>
+        generateImage(
+          { ...metadata, image: 'https://example.com/background.jpg' },
+          backgroundTemplate
+        ),
+    ],
+  ] as const)('does not acquire a render slot while %s waits for image fetch', async (_name, render) => {
+    const pendingImage = deferred<Buffer>();
+    renderMocks.fetchImage.mockReturnValueOnce(pendingImage.promise);
+
+    const rendering = render();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(renderMocks.fetchImage).toHaveBeenCalledOnce();
+    expect(renderMocks.withRenderSlot).not.toHaveBeenCalled();
+
+    pendingImage.resolve(Buffer.from('fetched-image'));
+    await rendering;
+    expect(renderMocks.withRenderSlot).toHaveBeenCalledOnce();
   });
 
 });

@@ -25,6 +25,7 @@ import {
 import { initializeSharpSecurity } from './utils/image-security';
 import { generateDefaultOverlay } from './core/overlay-generator';
 import {
+  prepareImageForTemplate,
   processImageForTemplate,
   type ProcessedTemplateImage,
 } from './core/template-image-processing';
@@ -262,13 +263,14 @@ async function generateImageWithSanitizedOptions(
   const width = sanitizedOptions.width || DEFAULT_DIMENSIONS.width;
   const height = sanitizedOptions.height || DEFAULT_DIMENSIONS.height;
   const quality = sanitizedOptions.quality || 90;
+  const preparedImage = await prepareImageForTemplate(metadata, template, sanitizedOptions);
 
   return withRenderSlot(async () => {
     try {
       validateDimensions(width, height);
 
       let processedImage = await processImageForTemplate(
-        metadata,
+        preparedImage,
         template,
         width,
         height,
@@ -295,7 +297,9 @@ async function generateImageWithSanitizedOptions(
         // metadata minus the failed background image. Native Sharp timeouts are
         // never retried because doing so doubles work after resource exhaustion.
         processedImage = await processImageForTemplate(
-          { ...processedImage.effectiveMetadata, image: undefined },
+          {
+            effectiveMetadata: { ...processedImage.effectiveMetadata, image: undefined },
+          },
           template,
           width,
           height,

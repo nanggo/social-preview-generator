@@ -41,18 +41,18 @@ export async function generateImage(
   template: TemplateConfig,
   options: PreviewOptions = {}
 ): Promise<Buffer> {
+  const width = options.width || DEFAULT_DIMENSIONS.width;
+  const height = options.height || DEFAULT_DIMENSIONS.height;
+  const quality = options.quality || 90;
+  const imageBuffer = metadata.image ? await fetchImage(metadata.image) : undefined;
+
   return withRenderSlot(async () => {
     try {
-      const width = options.width || DEFAULT_DIMENSIONS.width;
-      const height = options.height || DEFAULT_DIMENSIONS.height;
-      const quality = options.quality || 90;
-
       // Create base image or use existing image
       let baseImage: Sharp;
 
-      if (metadata.image) {
+      if (imageBuffer) {
         // Use existing image as background
-        const imageBuffer = await fetchImage(metadata.image);
         baseImage = await processBackgroundImage(imageBuffer, width, height, template);
       } else {
         // Create blank canvas with gradient background or transparent canvas based on template settings
