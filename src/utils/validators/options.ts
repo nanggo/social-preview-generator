@@ -10,6 +10,17 @@ import { validateTextInput } from './text';
 
 const MIN_REQUEST_TIMEOUT_MS = 1;
 const MAX_REQUEST_TIMEOUT_MS = 30_000;
+const MIN_REDIRECTS = 0;
+const MAX_REDIRECTS = 10;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
 
 /**
  * Validates all preview options including dimensions, quality, and colors.
@@ -38,8 +49,22 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
   if (options.fallback) {
     sanitized.fallback = { ...options.fallback };
   }
+  if (options.security !== undefined && !isPlainObject(options.security)) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'Security options must be a plain object'
+    );
+  }
   if (options.security) {
-    sanitized.security = { ...options.security };
+    // Keep only the documented security surface. Unknown runtime keys must not
+    // become part of metadata cache keys or retain attacker-controlled data.
+    const knownSecurity: Record<string, unknown> = {};
+    for (const field of ['httpsOnly', 'allowSvg', 'maxRedirects', 'timeout'] as const) {
+      if (Object.hasOwn(options.security, field)) {
+        knownSecurity[field] = options.security[field];
+      }
+    }
+    sanitized.security = knownSecurity as PreviewOptions['security'];
   }
   if (options.fonts !== undefined) {
     if (!Array.isArray(options.fonts)) {
@@ -141,6 +166,32 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
         `Security timeout must be between ${MIN_REQUEST_TIMEOUT_MS} and ${MAX_REQUEST_TIMEOUT_MS} milliseconds`
+      );
+    }
+  }
+
+  for (const field of ['allowSvg', 'httpsOnly'] as const) {
+    const value = sanitized.security?.[field];
+    if (value !== undefined && typeof value !== 'boolean') {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Security ${field} must be boolean, got: ${typeof value}`
+      );
+    }
+  }
+
+  if (sanitized.security?.maxRedirects !== undefined) {
+    const maxRedirects = sanitized.security.maxRedirects;
+    if (
+      typeof maxRedirects !== 'number' ||
+      !Number.isFinite(maxRedirects) ||
+      !Number.isInteger(maxRedirects) ||
+      maxRedirects < MIN_REDIRECTS ||
+      maxRedirects > MAX_REDIRECTS
+    ) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Security maxRedirects must be a finite integer between ${MIN_REDIRECTS} and ${MAX_REDIRECTS}`
       );
     }
   }

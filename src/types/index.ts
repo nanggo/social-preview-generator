@@ -57,7 +57,7 @@ export interface SecurityOptions {
   httpsOnly?: boolean;
   /** Allow SVG images (disabled by default for security) */
   allowSvg?: boolean;
-  /** Maximum allowed redirects (default: 3) */
+  /** Maximum allowed redirects, integer 0-10 (default: 3) */
   maxRedirects?: number;
   /** Request timeout in milliseconds, integer 1-30000 (default: 8000 for HTML, 12000 for images) */
   timeout?: number;
