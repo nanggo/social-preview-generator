@@ -27,6 +27,7 @@ import { generateDefaultOverlay } from './core/overlay-generator';
 import {
   prepareImageForTemplate,
   processImageForTemplate,
+  type PreparedTemplateImage,
   type ProcessedTemplateImage,
 } from './core/template-image-processing';
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
@@ -34,7 +35,7 @@ import { createCachedSVG } from './utils/sharp-cache';
 import { startCacheCleanup, isCacheCleanupRunning } from './utils/cache';
 import { MAX_TEXT_LENGTH } from './constants/security';
 import { exceedsTextLength } from './utils/validators/text';
-import { withRenderSlot } from './utils/render-limiter';
+import { withPreparedRenderSlot, withRenderSlot } from './utils/render-limiter';
 import { isSharpProcessingTimeout } from './utils/sharp-timeout';
 
 // Initialize Sharp security settings (no side-effect timers at import time)
@@ -263,9 +264,10 @@ async function generateImageWithSanitizedOptions(
   const width = sanitizedOptions.width || DEFAULT_DIMENSIONS.width;
   const height = sanitizedOptions.height || DEFAULT_DIMENSIONS.height;
   const quality = sanitizedOptions.quality || 90;
-  const preparedImage = await prepareImageForTemplate(metadata, template, sanitizedOptions);
 
-  return withRenderSlot(async () => {
+  const renderPreparedImage = async (
+    preparedImage: PreparedTemplateImage
+  ): Promise<RenderedImage> => {
     try {
       validateDimensions(width, height);
 
@@ -326,7 +328,17 @@ async function generateImageWithSanitizedOptions(
         error
       );
     }
-  });
+  };
+
+  if (template.layout.imagePosition !== 'none' && metadata.image) {
+    return withPreparedRenderSlot(
+      () => prepareImageForTemplate(metadata, template, sanitizedOptions),
+      renderPreparedImage
+    );
+  }
+
+  const preparedImage = await prepareImageForTemplate(metadata, template, sanitizedOptions);
+  return withRenderSlot(() => renderPreparedImage(preparedImage));
 }
 
 /**

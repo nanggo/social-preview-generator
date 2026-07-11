@@ -17,7 +17,7 @@ import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
 import { SYSTEM_FONT_STACK } from '../constants/fonts';
 import { fetchImage } from './metadata-extractor';
 import { createTransparentCanvas, validateColor } from '../utils/validators';
-import { withRenderSlot } from '../utils/render-limiter';
+import { withPreparedRenderSlot, withRenderSlot } from '../utils/render-limiter';
 
 /**
  * Default dimensions for social media preview images
@@ -44,9 +44,8 @@ export async function generateImage(
   const width = options.width || DEFAULT_DIMENSIONS.width;
   const height = options.height || DEFAULT_DIMENSIONS.height;
   const quality = options.quality || 90;
-  const imageBuffer = metadata.image ? await fetchImage(metadata.image) : undefined;
 
-  return withRenderSlot(async () => {
+  const renderPreparedImage = async (imageBuffer?: Buffer): Promise<Buffer> => {
     try {
       // Create base image or use existing image
       let baseImage: Sharp;
@@ -89,7 +88,17 @@ export async function generateImage(
       }
       throw new PreviewGeneratorError(ErrorType.IMAGE_ERROR, 'Failed to generate image', error);
     }
-  });
+  };
+
+  const imageUrl = metadata.image;
+  if (imageUrl) {
+    return withPreparedRenderSlot(
+      () => fetchImage(imageUrl),
+      renderPreparedImage
+    );
+  }
+
+  return withRenderSlot(() => renderPreparedImage());
 }
 
 /**

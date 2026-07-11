@@ -2,6 +2,15 @@ import { vi } from 'vitest';
 
 const renderMocks = vi.hoisted(() => {
   const withRenderSlot = vi.fn(async <T>(operation: () => Promise<T>): Promise<T> => operation());
+  const withPreparedRenderSlot = vi.fn(
+    async <Prepared, Result>(
+      prepare: () => Promise<Prepared>,
+      render: (prepared: Prepared) => Promise<Result>
+    ): Promise<Result> => {
+      const prepared = await prepare();
+      return withRenderSlot(() => render(prepared));
+    }
+  );
   const extractMetadata = vi.fn();
   const validateMetadata = vi.fn(() => true);
   const fetchImage = vi.fn().mockResolvedValue(Buffer.from('image'));
@@ -24,11 +33,19 @@ const renderMocks = vi.hoisted(() => {
     cache: vi.fn(),
   });
 
-  return { withRenderSlot, extractMetadata, validateMetadata, fetchImage, sharp };
+  return {
+    withRenderSlot,
+    withPreparedRenderSlot,
+    extractMetadata,
+    validateMetadata,
+    fetchImage,
+    sharp,
+  };
 });
 
 vi.mock('../../src/utils/render-limiter', () => ({
   withRenderSlot: renderMocks.withRenderSlot,
+  withPreparedRenderSlot: renderMocks.withPreparedRenderSlot,
 }));
 vi.mock('sharp', () => ({ default: renderMocks.sharp }));
 vi.mock('../../src/core/metadata-extractor', () => ({
@@ -81,6 +98,15 @@ describe('render limiter entrypoints', () => {
     vi.clearAllMocks();
     renderMocks.withRenderSlot.mockImplementation(async <T>(operation: () => Promise<T>) =>
       operation()
+    );
+    renderMocks.withPreparedRenderSlot.mockImplementation(
+      async <Prepared, Result>(
+        prepare: () => Promise<Prepared>,
+        render: (prepared: Prepared) => Promise<Result>
+      ) => {
+        const prepared = await prepare();
+        return renderMocks.withRenderSlot(() => render(prepared));
+      }
     );
     renderMocks.extractMetadata.mockResolvedValue({ ...metadata });
     renderMocks.validateMetadata.mockReturnValue(true);
@@ -150,6 +176,7 @@ describe('render limiter entrypoints', () => {
     await Promise.resolve();
 
     expect(renderMocks.fetchImage).toHaveBeenCalledOnce();
+    expect(renderMocks.withPreparedRenderSlot).toHaveBeenCalledOnce();
     expect(renderMocks.withRenderSlot).not.toHaveBeenCalled();
 
     pendingImage.resolve(Buffer.from('fetched-image'));
