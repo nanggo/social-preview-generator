@@ -18,6 +18,8 @@ Generate Open Graph/social preview images from URLs or known page metadata.
 
 ## Installation
 
+Requires Node.js 22.13+ (22.x) or 24+.
+
 ```bash
 npm install @nanggo/social-preview
 ```

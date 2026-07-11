@@ -25,8 +25,8 @@ const mockedImageSecurity = imageSecurity as vi.Mocked<typeof imageSecurity>;
 describe('Metadata Extractor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock validateImageBuffer to resolve successfully for tests
-    mockedImageSecurity.validateImageBuffer = vi.fn().mockResolvedValue(undefined);
+    // Mock validateImageBuffer to return the validated bytes unchanged for these tests
+    mockedImageSecurity.validateImageBuffer = vi.fn().mockImplementation(async imageBuffer => imageBuffer);
   });
 
   describe('extractMetadata', () => {
