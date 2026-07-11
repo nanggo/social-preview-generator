@@ -341,6 +341,7 @@ describe('Metadata Extractor', () => {
       vi.useFakeTimers();
       const imageUrl = 'https://example.com/caller-aborted.jpg';
       const caller = new AbortController();
+      const callerReason = new Error('caller canceled image request');
       let requestSignal: AbortSignal | undefined;
 
       mockedAxios.get.mockImplementationOnce((_url, config) => {
@@ -357,11 +358,11 @@ describe('Metadata Extractor', () => {
       const request = fetchImage(imageUrl, { timeout: 1000 }, caller.signal);
       const rejected = expect(request).rejects.toMatchObject({
         type: ErrorType.IMAGE_ERROR,
-        message: expect.stringContaining('Network request aborted by caller'),
+        message: expect.stringContaining(callerReason.message),
       });
       await vi.advanceTimersByTimeAsync(0);
 
-      caller.abort();
+      caller.abort(callerReason);
 
       await rejected;
       expect(requestSignal?.aborted).toBe(true);

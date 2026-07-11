@@ -153,7 +153,7 @@ function createRequestAbortContext(
   };
 
   const onCallerAbort = () => {
-    abort(new NetworkRequestAbortedError());
+    abort(signalReason(callerSignal!));
   };
 
   if (callerSignal?.aborted) {

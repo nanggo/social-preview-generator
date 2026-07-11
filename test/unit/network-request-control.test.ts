@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   __testNetworkRequestLimiter,
-  NetworkRequestAbortedError,
   NetworkRequestDeadlineError,
   NetworkRequestQueueFullError,
   runControlledNetworkRequest,
@@ -56,6 +55,7 @@ describe('network request control', () => {
   it('propagates caller abort and always removes the caller listener', async () => {
     vi.useFakeTimers();
     const caller = new AbortController();
+    const callerReason = new Error('caller canceled network request');
     const removeListener = vi.spyOn(caller.signal, 'removeEventListener');
 
     const request = runControlledNetworkRequest(1000, caller.signal, signal =>
@@ -65,8 +65,8 @@ describe('network request control', () => {
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    const rejected = expect(request).rejects.toBeInstanceOf(NetworkRequestAbortedError);
-    caller.abort();
+    const rejected = expect(request).rejects.toBe(callerReason);
+    caller.abort(callerReason);
 
     await rejected;
     expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
@@ -144,9 +144,9 @@ describe('network request control', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(limiter.getStats()).toMatchObject({ active: 50, queued: 1 });
 
-    const rejected = expect(queued).rejects.toBeInstanceOf(NetworkRequestAbortedError);
+    const rejected = queued.catch(error => error);
     caller.abort();
-    await rejected;
+    await expect(rejected).resolves.toBe(caller.signal.reason);
     expect(limiter.getStats()).toMatchObject({ active: 50, queued: 0 });
 
     for (const work of activeWork) {
