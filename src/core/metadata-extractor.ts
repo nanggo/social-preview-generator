@@ -49,6 +49,38 @@ function getNetworkControlErrorMessage(error: unknown): string | undefined {
   return undefined;
 }
 
+function findValidationError(error: unknown): PreviewGeneratorError | undefined {
+  const pending: unknown[] = [error];
+  const visited = new Set<unknown>();
+
+  while (pending.length > 0 && visited.size < 16) {
+    const current = pending.shift();
+    if (current === null || current === undefined || visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (
+      current instanceof PreviewGeneratorError &&
+      current.type === ErrorType.VALIDATION_ERROR
+    ) {
+      return current;
+    }
+
+    if (typeof current === 'object') {
+      const nested = current as { cause?: unknown; details?: unknown };
+      if (nested.cause !== undefined) {
+        pending.push(nested.cause);
+      }
+      if (nested.details !== undefined) {
+        pending.push(nested.details);
+      }
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Build redirect validation callback for SSRF protection
  */
@@ -318,6 +350,18 @@ async function validateUrlSecurity(
     // Enhanced security validation with TOCTOU protection
     const securityValidation = await validateRequestSecurity(validatedUrl, abortSignal);
     if (!securityValidation.allowed) {
+      if (securityValidation.failureKind === 'operational') {
+        throw new PreviewGeneratorError(
+          ErrorType.FETCH_ERROR,
+          `Failed to validate URL security: ${securityValidation.reason}`,
+          {
+            url: validatedUrl,
+            blockedIPs: securityValidation.blockedIPs,
+            allowedIPs: securityValidation.allowedIPs
+          }
+        );
+      }
+
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,
         `URL blocked by security validation: ${securityValidation.reason}`,
@@ -393,11 +437,9 @@ async function fetchOpenGraphData(
     html = fetched.response.data;
     validatedUrl = fetched.validatedUrl;
   } catch (fetchError) {
-    if (
-      fetchError instanceof PreviewGeneratorError &&
-      fetchError.type === ErrorType.VALIDATION_ERROR
-    ) {
-      throw fetchError;
+    const validationError = findValidationError(fetchError);
+    if (validationError) {
+      throw validationError;
     }
     // Network-level failure — no HTML to parse, fail immediately without retry
     const controlMessage = getNetworkControlErrorMessage(fetchError);
@@ -605,6 +647,11 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
 
     return validatedImageBuffer;
   } catch (error) {
+    const validationError = findValidationError(error);
+    if (validationError) {
+      throw validationError;
+    }
+
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
       `Failed to fetch image from ${imageUrl}: ${error instanceof Error ? error.message : String(error)}`,

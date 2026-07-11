@@ -13,6 +13,7 @@ import ogs from 'open-graph-scraper';
 import sharp from 'sharp';
 import { metadataCache } from '../../src/utils/cache';
 import { templates } from '../../src/templates/registry';
+import { validateRequestSecurity } from '../../src/utils/enhanced-secure-agent';
 
 vi.mock('axios');
 vi.mock('open-graph-scraper');
@@ -31,6 +32,7 @@ vi.mock('../../src/utils/enhanced-secure-agent', () => ({
 const mockedAxios = axios as vi.Mocked<typeof axios>;
 const mockedOgs = ogs as vi.MockedFunction<typeof ogs>;
 const mockedSharp = sharp as vi.MockedFunction<typeof sharp>;
+const mockedValidateRequestSecurity = vi.mocked(validateRequestSecurity);
 
 describe('End-to-End Integration Tests', () => {
   beforeEach(() => {
@@ -39,6 +41,11 @@ describe('End-to-End Integration Tests', () => {
     // (clearAllMocks only clears call data, not once-value queues)
     mockedAxios.get.mockReset();
     mockedOgs.mockReset();
+    mockedValidateRequestSecurity.mockReset().mockResolvedValue({
+      allowed: true,
+      blockedIPs: [],
+      allowedIPs: [],
+    });
     clearAllCaches();
     clearInflightRequests();
     metadataCache.clear();
@@ -600,6 +607,59 @@ describe('End-to-End Integration Tests', () => {
           type: ErrorType.VALIDATION_ERROR,
         });
         expect(mockedAxios.get).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['auto', 'generate'] as const)(
+      'should preserve the %s fallback for operational DNS failures',
+      async strategy => {
+        mockedValidateRequestSecurity.mockResolvedValueOnce({
+          allowed: false,
+          blockedIPs: [],
+          allowedIPs: [],
+          reason: 'Security validation error: getaddrinfo ENOTFOUND',
+          failureKind: 'operational',
+        } as Awaited<ReturnType<typeof validateRequestSecurity>>);
+
+        const result = await generatePreviewWithDetails('https://dns-failure.example/path', {
+          fallback: { strategy },
+        });
+
+        expect(result).toMatchObject({ template: 'fallback', cached: false });
+        expect(mockedAxios.get).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['auto', 'generate'] as const)(
+      'should not turn a wrapped HTTPS-only redirect violation into a %s fallback success',
+      async strategy => {
+        mockedAxios.get.mockImplementationOnce(async (_url, config) => {
+          let policyError: unknown;
+          try {
+            config?.beforeRedirect?.(
+              {
+                protocol: 'http:',
+                hostname: 'redirect.example',
+                href: 'http://redirect.example/path',
+              },
+              { headers: {}, statusCode: 302 }
+            );
+          } catch (error) {
+            policyError = error;
+          }
+
+          const redirectError = Object.assign(new Error('Redirected request failed'), {
+            cause: policyError,
+          });
+          throw Object.assign(new Error('Axios request failed'), { cause: redirectError });
+        });
+
+        await expect(
+          generatePreviewWithDetails('https://safe-origin.example/path', {
+            fallback: { strategy },
+            security: { httpsOnly: true },
+          })
+        ).rejects.toMatchObject({ type: ErrorType.VALIDATION_ERROR });
       }
     );
   });

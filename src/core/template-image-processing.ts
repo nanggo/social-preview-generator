@@ -1,5 +1,11 @@
 import type { Sharp } from 'sharp';
-import { ExtractedMetadata, TemplateConfig, SanitizedOptions } from '../types';
+import {
+  ErrorType,
+  ExtractedMetadata,
+  PreviewGeneratorError,
+  SanitizedOptions,
+  TemplateConfig,
+} from '../types';
 import { createTransparentCanvas } from '../utils/validators';
 import { logImageFetchError } from '../utils/logger';
 import { secureResize, withSecureSharp } from '../utils/image-security';
@@ -33,6 +39,13 @@ export async function prepareImageForTemplate(
     const imageBuffer = await fetchImage(metadata.image, options.security);
     return { effectiveMetadata, imageBuffer };
   } catch (fetchError) {
+    if (
+      fetchError instanceof PreviewGeneratorError &&
+      fetchError.type === ErrorType.VALIDATION_ERROR
+    ) {
+      throw fetchError;
+    }
+
     logImageFetchError(
       metadata.image,
       fetchError instanceof Error ? fetchError : new Error(String(fetchError))

@@ -13,6 +13,7 @@ import tls from 'tls';
 import { isPrivateOrReservedIP } from './ip-validation';
 import { logger } from './logger';
 import { SECURITY_CONFIG } from '../constants/security';
+import { ErrorType, PreviewGeneratorError } from '../types';
 
 interface CachedDNSResult {
   addresses: dns.LookupAddress[];
@@ -26,6 +27,7 @@ interface SecurityValidationResult {
   blockedIPs: string[];
   allowedIPs: string[];
   reason?: string;
+  failureKind?: 'policy' | 'operational';
 }
 
 const MAX_ACTIVE_DNS_LOOKUPS = 8;
@@ -48,6 +50,17 @@ function createDNSLookupError(message: string, code: string): NodeJS.ErrnoExcept
   const error = new Error(message) as NodeJS.ErrnoException;
   error.code = code;
   error.syscall = 'getaddrinfo';
+  return error;
+}
+
+function createNetworkPolicyError(
+  message: string
+): PreviewGeneratorError & NodeJS.ErrnoException {
+  const error = new PreviewGeneratorError(
+    ErrorType.VALIDATION_ERROR,
+    message
+  ) as PreviewGeneratorError & NodeJS.ErrnoException;
+  error.code = 'ECONNREFUSED';
   return error;
 }
 
@@ -415,6 +428,7 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
     allowed: blockedIPs.length === 0,
     blockedIPs,
     allowedIPs,
+    failureKind: blockedIPs.length > 0 ? 'policy' : undefined,
     reason: blockedIPs.length > 0 
       ? `Blocked private or reserved IPs: ${blockedIPs.join(', ')}`
       : undefined
@@ -460,11 +474,10 @@ const enhancedSecureLookup = (
           allowedIPs: validation.allowedIPs
         });
 
-        const securityError = new Error(
+        const securityError = createNetworkPolicyError(
           `Connection blocked: ${validation.reason}. ` +
           `Total resolved: ${addresses.length}, blocked: ${validation.blockedIPs.length}`
-        ) as NodeJS.ErrnoException;
-        securityError.code = 'ECONNREFUSED';
+        );
 
         // Never return actual IPs in security errors - use placeholder values
         return actualCallback(securityError, '0.0.0.0', 4);
@@ -477,10 +490,9 @@ const enhancedSecureLookup = (
       
       // If no safe address found, this is a critical error
       if (!firstSafeAddress) {
-        const criticalError = new Error(
+        const criticalError = createNetworkPolicyError(
           `Critical security error: No safe addresses found for ${hostname}`
-        ) as NodeJS.ErrnoException;
-        criticalError.code = 'ECONNREFUSED';
+        );
         return actualCallback(criticalError, '0.0.0.0', 4);
       }
 
@@ -605,7 +617,7 @@ export function createEnhancedSecureHttpAgent(): http.Agent {
     socket.on('connect', () => {
       // Perform socket-level IP validation after connection
       if (!validateSocketIP(socket as net.Socket, hostname)) {
-        const validationError = new Error(
+        const validationError = createNetworkPolicyError(
           `Connection rejected: socket IP validation failed for ${hostname}`
         );
         logger.warn('TOCTOU protection triggered: destroying connection', {
@@ -674,7 +686,7 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
     socket.on('secureConnect', () => {
       // Perform socket-level IP validation after TLS connection
       if (!validateSocketIP(socket as tls.TLSSocket, hostname)) {
-        const validationError = new Error(
+        const validationError = createNetworkPolicyError(
           `TLS connection rejected: socket IP validation failed for ${hostname}`
         );
         logger.warn('TOCTOU protection triggered: destroying TLS connection', {
@@ -777,6 +789,7 @@ export async function validateRequestSecurity(
       allowed: false,
       blockedIPs: [],
       allowedIPs: [],
+      failureKind: 'operational',
       reason: `Security validation error: ${(error as Error).message}`
     };
   }
