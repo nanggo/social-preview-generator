@@ -28,6 +28,8 @@ export const BLOCKED_IP_RANGES = [
 /** Blocked IPv6 ranges */
 export const BLOCKED_IPV6_RANGES = [
   '::/96', // Deprecated IPv4-compatible addresses, including unspecified and loopback
+  '64:ff9b:1::/48', // Local-use IPv4-IPv6 translation (not globally reachable)
+  '5f00::/16', // Segment Routing (SRv6) SIDs (not globally reachable)
   'fc00::/7', // Unique Local
   'fe80::/10', // Link-local
   'fec0::/10', // Deprecated Site-local

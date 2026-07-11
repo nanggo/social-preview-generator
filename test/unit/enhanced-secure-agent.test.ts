@@ -391,6 +391,8 @@ describe('Enhanced Secure Agent', () => {
         { hostname: 'link-local', address: 'fe80::1', family: 6 },         // Link-local
         { hostname: 'unique-local', address: 'fc00::1', family: 6 },       // Unique local
         { hostname: 'multicast', address: 'ff02::1', family: 6 },          // Multicast
+        { hostname: 'local-nat64', address: '64:ff9b:1::1', family: 6 },    // Local-use NAT64
+        { hostname: 'srv6-sid', address: '5f00::1', family: 6 },            // SRv6 SID
       ];
 
       for (const testCase of testCases) {
@@ -403,6 +405,49 @@ describe('Enhanced Secure Agent', () => {
         const result = await validateRequestSecurity(`https://${testCase.hostname}/test`);
         expect(result.allowed).toBe(false);
         
+        cleanup();
+      }
+    });
+
+    it.each([
+      ['socket-local-nat64', '64:ff9b:1::1'],
+      ['socket-srv6-sid', '5f00::1'],
+    ])('should reject %s at socket validation after DNS caching', async (hostname, address) => {
+      const cleanup = mockDNSLookup(hostname, [{ address, family: 6 }]);
+      const createConnectionSpy = vi.spyOn(http.Agent.prototype, 'createConnection');
+
+      try {
+        await useProductionIPClassifier();
+
+        // Rejected DNS results remain cached so socket validation can independently
+        // enforce the same destination policy against the actual peer address.
+        const result = await validateRequestSecurity(`http://${hostname}/`);
+        expect(result.allowed).toBe(false);
+
+        let connectListener: (() => void) | undefined;
+        const socketDestroy = vi.fn();
+        const mockSocket = {
+          remoteAddress: address,
+          remotePort: 80,
+          destroy: socketDestroy,
+          on: vi.fn((event: string, listener: () => void) => {
+            if (event === 'connect') connectListener = listener;
+          }),
+        } as unknown as net.Socket;
+
+        createConnectionSpy.mockImplementation(() => mockSocket);
+
+        const agent = createEnhancedSecureHttpAgent();
+        agent.createConnection({ host: hostname, port: 80 });
+        connectListener?.();
+
+        expect(socketDestroy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: `Connection rejected: socket IP validation failed for ${hostname}`,
+          })
+        );
+      } finally {
+        createConnectionSpy.mockRestore();
         cleanup();
       }
     });
