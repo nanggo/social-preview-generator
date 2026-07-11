@@ -3,11 +3,16 @@ name: Publish to NPM
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v0.1.0, v1.0.0
+      - 'v*' # Trigger on version tags like v0.1.0, v1.0.0
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -15,6 +20,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -24,18 +32,55 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: pnpm
+
+      - name: Verify release contract and tag ancestry
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag_ref="refs/tags/$RELEASE_TAG"
+          if [[ "$(git cat-file -t "$tag_ref")" != "tag" ]]; then
+            echo "Release tag must be an annotated tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          tag_commit="$(git rev-parse "$tag_ref^{commit}")"
+          checked_out_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$checked_out_commit" ]]; then
+            echo "Release tag commit $tag_commit does not match checkout $checked_out_commit" >&2
+            exit 1
+          fi
+
+          if ! git show-ref --verify --quiet refs/remotes/origin/master; then
+            echo "origin/master is unavailable; full checkout is required" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$tag_commit" refs/remotes/origin/master; then
+            echo "Release tag commit must be reachable from origin/master" >&2
+            exit 1
+          fi
+
+          pnpm run verify:release -- --tag "$RELEASE_TAG"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Run lint
+        run: pnpm run lint
+
       - name: Run build
         run: pnpm run build
 
-      - name: Run tests
+      - name: Run full test suite
         run: pnpm test
         env:
           SKIP_NETWORK_TESTS: 'true'
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
+
+      - name: Verify packed package
+        run: pnpm run verify:package -- --output verified-package.tgz
 
       - name: Publish to npm
         run: |
@@ -43,4 +88,4 @@ jobs:
           unset NODE_AUTH_TOKEN || true
           unset NPM_CONFIG_USERCONFIG || true
           # Use npm publish for --provenance (OIDC attestation), which pnpm does not support
-          npm publish --access public --provenance
+          npm publish ./verified-package.tgz --access public --provenance

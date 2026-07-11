@@ -18,6 +18,7 @@
     "lint": "eslint src",
     "format": "prettier --write 'src/**/*.ts'",
     "verify:package": "node scripts/verify-packed-package.mjs",
+    "verify:release": "node scripts/verify-release-contract.mjs",
     "prepublishOnly": "pnpm run build && pnpm test"
   },
   "keywords": [
@@ -39,6 +40,9 @@
     "url": "https://github.com/nanggo/social-preview-generator/issues"
   },
   "homepage": "https://github.com/nanggo/social-preview-generator#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "README.md"
