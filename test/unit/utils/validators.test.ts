@@ -144,6 +144,8 @@ describe('Validators', () => {
       expect(() => validateDimensions(50, 100)).toThrow(PreviewGeneratorError);
       expect(() => validateDimensions(5000, 1000)).toThrow(PreviewGeneratorError);
       expect(() => validateDimensions(NaN, 100)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(Infinity, 100)).toThrow(PreviewGeneratorError);
+      expect(() => validateDimensions(1200.5, 630)).toThrow(PreviewGeneratorError);
     });
   });
 
@@ -216,6 +218,28 @@ describe('Validators', () => {
         expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
         expect((error as PreviewGeneratorError).message).toContain('Fonts option must be an array');
       }
+    });
+
+    test.each([
+      { width: 1200.5 },
+      { height: 630.5 },
+      { width: NaN },
+      { height: Infinity },
+    ])('should reject non-integer or non-finite dimensions: %o', options => {
+      expect(() => sanitizeOptions(options)).toThrow(PreviewGeneratorError);
+    });
+
+    test.each([
+      { quality: 90.5 },
+      { quality: NaN },
+      { quality: Infinity },
+      { quality: '90' as unknown as number },
+    ])('should reject invalid quality values: %o', options => {
+      expect(() => sanitizeOptions(options)).toThrow(PreviewGeneratorError);
+    });
+
+    test.each([1, 90, 100])('should accept integer quality %i', quality => {
+      expect(sanitizeOptions({ quality }).quality).toBe(quality);
     });
   });
 

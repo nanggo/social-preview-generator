@@ -117,6 +117,32 @@ describe('Metadata Extractor', () => {
       expect(result.favicon).toBe('https://minimal.com/favicon.ico');
     });
 
+    it('should truncate cleaned remote metadata text to 10,000 characters', async () => {
+      const testUrl = 'https://long-metadata.example';
+
+      mockedAxios.get.mockResolvedValueOnce({ data: mockHtmlMinimal });
+      mockedOgs.mockResolvedValueOnce({
+        error: false,
+        result: {
+          ogTitle: `  ${'a'.repeat(9_999)}😀z  `,
+          ogDescription: 'b'.repeat(10_001),
+          ogArticlePublishedTime: 'c'.repeat(10_001),
+          ogLocale: 'd'.repeat(10_001),
+        },
+        html: mockHtmlMinimal,
+        response: {} as any,
+      });
+
+      const result = await extractMetadata(testUrl);
+
+      expect(Array.from(result.title)).toHaveLength(10_000);
+      expect(result.description).toHaveLength(10_000);
+      expect(result.title).toBe(`${'a'.repeat(9_999)}😀`);
+      expect(result.description).toBe('b'.repeat(10_000));
+      expect(result.publishedDate).toBe('c'.repeat(10_000));
+      expect(result.locale).toBe('d'.repeat(10_000));
+    });
+
     it('should throw error for invalid URL', async () => {
       const invalidUrl = 'not-a-url';
 

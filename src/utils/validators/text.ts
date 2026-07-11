@@ -18,7 +18,7 @@ export function validateTextInput(text: string, fieldName: string = 'text'): San
   }
 
   // Length check - reasonable limits for text content
-  if (text.length > MAX_TEXT_LENGTH) {
+  if (exceedsTextLength(text)) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
       `${fieldName} exceeds maximum length of ${MAX_TEXT_LENGTH} characters`
@@ -37,6 +37,48 @@ export function validateTextInput(text: string, fieldName: string = 'text'): San
   }
 
   return sanitizedText as SanitizedText;
+}
+
+/**
+ * Check a text limit by Unicode code points without scanning unbounded input in full.
+ */
+export function exceedsTextLength(
+  text: string,
+  maxLength: number = MAX_TEXT_LENGTH
+): boolean {
+  let length = 0;
+  const characters = text[Symbol.iterator]();
+
+  while (!characters.next().done) {
+    length += 1;
+    if (length > maxLength) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Truncate text at a Unicode code-point boundary.
+ */
+export function truncateText(
+  text: string,
+  maxLength: number = MAX_TEXT_LENGTH
+): string {
+  let length = 0;
+  let endIndex = 0;
+
+  for (const character of text) {
+    if (length === maxLength) {
+      return text.slice(0, endIndex);
+    }
+
+    length += 1;
+    endIndex += character.length;
+  }
+
+  return text;
 }
 
 /**
@@ -94,4 +136,3 @@ function isSafeTextInput(text: string): boolean {
 
   return true;
 }
-
