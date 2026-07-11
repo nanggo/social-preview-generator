@@ -202,39 +202,8 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
   const allowedIPs: string[] = [];
 
   for (const addr of addresses) {
-    // Treat malformed IPs as blocked to avoid bypassing security checks
-    if (net.isIP(addr.address) === 0) {
-      blockedIPs.push(addr.address);
-      continue;
-    }
-
-    // Check for various dangerous IP ranges
     if (isPrivateOrReservedIP(addr.address)) {
       blockedIPs.push(addr.address);
-    }
-    // Additional IPv6 checks for IPv4-mapped addresses
-    else if (addr.family === 6 && addr.address.startsWith('::ffff:')) {
-      const ipv4Part = addr.address.substring(7); // Remove '::ffff:' prefix
-      if (isPrivateOrReservedIP(ipv4Part)) {
-        blockedIPs.push(addr.address);
-      } else {
-        allowedIPs.push(addr.address);
-      }
-    }
-    // Additional dangerous IPv6 ranges
-    else if (addr.family === 6) {
-      const ip = addr.address.toLowerCase();
-      if (
-        ip === '::1' ||                   // Localhost (exact match)
-        ip.startsWith('fe80:') ||         // Link-local
-        ip.startsWith('fc00:') ||         // Unique local
-        ip.startsWith('fd00:') ||         // Unique local
-        ip.startsWith('ff00:')            // Multicast
-      ) {
-        blockedIPs.push(addr.address);
-      } else {
-        allowedIPs.push(addr.address);
-      }
     } else {
       allowedIPs.push(addr.address);
     }
