@@ -3,7 +3,7 @@
  * Prevents pixel bomb attacks and validates image dimensions
  */
 
-import sharp from 'sharp';
+import sharp, { type ResizeOptions, type Sharp } from 'sharp';
 import { PreviewGeneratorError, ErrorType } from '../types';
 import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
@@ -431,7 +431,7 @@ export function sanitizeSvgContent(svgContent: string): string {
 /**
  * Create a secure Sharp instance with safety checks
  */
-export function createSecureSharpInstance(imageBuffer: Buffer): sharp.Sharp {
+export function createSecureSharpInstance(imageBuffer: Buffer): Sharp {
   // This will be called after validateImageBuffer, so we know it's safe
   return sharp(imageBuffer, SHARP_SECURITY_CONFIG);
 }
@@ -442,7 +442,7 @@ export function createSecureSharpInstance(imageBuffer: Buffer): sharp.Sharp {
  */
 export async function withSecureSharp<T>(
   imageBuffer: Buffer,
-  operation: (sharp: sharp.Sharp) => Promise<T>
+  operation: (sharp: Sharp) => Promise<T>
 ): Promise<T> {
   const sharpInstance = sharp(imageBuffer, SHARP_SECURITY_CONFIG);
   return await operation(sharpInstance);
@@ -479,11 +479,11 @@ export async function processImageWithTimeout<T>(
  * Safely resize image with dimension validation
  */
 export function secureResize(
-  sharpInstance: sharp.Sharp,
+  sharpInstance: Sharp,
   width: number,
   height: number,
-  options: sharp.ResizeOptions = {}
-): sharp.Sharp {
+  options: ResizeOptions = {}
+): Sharp {
   // Validate output dimensions
   if (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT) {
     throw new PreviewGeneratorError(
@@ -510,7 +510,7 @@ export function secureResize(
 /**
  * Create a Sharp instance with metadata removal for privacy and security
  */
-export function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): sharp.Sharp {
+export function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): Sharp {
   return sharp(imageBuffer, SHARP_SECURITY_CONFIG)
     // Remove EXIF and other metadata by default - use empty metadata
     .withMetadata({});
@@ -522,7 +522,7 @@ export function createSecureSharpWithCleanMetadata(imageBuffer: Buffer): sharp.S
  */
 export async function withSecureSharpCleanMetadata<T>(
   imageBuffer: Buffer,
-  operation: (sharp: sharp.Sharp) => Promise<T>
+  operation: (sharp: Sharp) => Promise<T>
 ): Promise<T> {
   const sharpInstance = sharp(imageBuffer, SHARP_SECURITY_CONFIG).withMetadata({});
   return await operation(sharpInstance);

@@ -13,7 +13,7 @@
  * - TTL-based cleanup to prevent memory leaks
  */
 
-import sharp from 'sharp';
+import sharp, { type Metadata, type Sharp } from 'sharp';
 import crypto from 'crypto';
 import { SHARP_SECURITY_CONFIG } from '../constants/security';
 import { logger } from './logger';
@@ -199,7 +199,7 @@ class SVGCache extends SharpLRUCache<Buffer> {
 /**
  * Metadata Cache for image analysis
  */
-class MetadataCache extends SharpLRUCache<sharp.Metadata> {
+class MetadataCache extends SharpLRUCache<Metadata> {
   constructor() {
     super({
       maxSize: 500,
@@ -208,12 +208,12 @@ class MetadataCache extends SharpLRUCache<sharp.Metadata> {
     });
   }
 
-  getCachedMetadata(imageBuffer: Buffer): sharp.Metadata | undefined {
+  getCachedMetadata(imageBuffer: Buffer): Metadata | undefined {
     const key = this.generateBufferKey(imageBuffer);
     return this.get(key);
   }
 
-  cacheMetadata(imageBuffer: Buffer, metadata: sharp.Metadata): void {
+  cacheMetadata(imageBuffer: Buffer, metadata: Metadata): void {
     const key = this.generateBufferKey(imageBuffer);
     this.set(key, metadata);
   }
@@ -241,7 +241,7 @@ class CanvasCache extends SharpLRUCache<string> {
     });
   }
 
-  getCachedCanvas(width: number, height: number, options: CanvasOptions): sharp.Sharp | undefined {
+  getCachedCanvas(width: number, height: number, options: CanvasOptions): Sharp | undefined {
     const key = this.generateCanvasKey(width, height, options);
     const cachedSvg = this.get(key);
     
@@ -277,7 +277,7 @@ export const canvasCache = new CanvasCache();
 /**
  * Cached SVG processing with automatic cache management
  */
-export async function createCachedSVG(svgContent: string): Promise<sharp.Sharp> {
+export async function createCachedSVG(svgContent: string): Promise<Sharp> {
   // Try to get from cache first
   let buffer = svgCache.getCachedSVG(svgContent);
   
@@ -296,7 +296,7 @@ export async function createCachedSVG(svgContent: string): Promise<sharp.Sharp> 
 /**
  * Cached metadata extraction
  */
-export async function getCachedMetadata(imageBuffer: Buffer): Promise<sharp.Metadata> {
+export async function getCachedMetadata(imageBuffer: Buffer): Promise<Metadata> {
   // Try cache first
   let metadata = metadataCache.getCachedMetadata(imageBuffer);
   
@@ -319,7 +319,7 @@ export async function createCachedCanvas(
   width: number, 
   height: number, 
   options: CanvasOptions
-): Promise<sharp.Sharp> {
+): Promise<Sharp> {
   // Try cache first
   let canvas = canvasCache.getCachedCanvas(width, height, options);
   

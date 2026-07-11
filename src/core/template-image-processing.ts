@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import type { Sharp } from 'sharp';
 import { ExtractedMetadata, TemplateConfig, SanitizedOptions } from '../types';
 import { createTransparentCanvas } from '../utils/validators';
 import { logImageFetchError } from '../utils/logger';
@@ -12,7 +12,7 @@ export async function processImageForTemplate(
   width: number,
   height: number,
   options: SanitizedOptions
-): Promise<sharp.Sharp> {
+): Promise<Sharp> {
   // Check if template wants no background image
   if (template.layout.imagePosition === 'none') {
     // Use transparent canvas if template requires it, otherwise use blank canvas
@@ -82,4 +82,3 @@ export async function processImageForTemplate(
     return await createBlankCanvas(width, height, options);
   }
 }
-
