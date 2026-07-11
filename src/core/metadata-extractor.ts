@@ -15,6 +15,8 @@ import {
 import { validateImageBuffer } from '../utils/image-security';
 import { metadataCache } from '../utils/cache';
 import { logger } from '../utils/logger';
+import { MAX_TEXT_LENGTH } from '../constants/security';
+import { truncateText } from '../utils/validators/text';
 
 // Allowed MIME types for images
 const BASE_ALLOWED_MIME_TYPES = new Set([
@@ -448,10 +450,10 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
     siteName: siteName ? cleanText(siteName) : undefined,
     favicon,
     author: author ? cleanText(author) : undefined,
-    publishedDate,
+    publishedDate: publishedDate ? cleanText(publishedDate) : undefined,
     url,
     domain: urlObj.hostname,
-    locale,
+    locale: cleanText(locale),
   };
 }
 
@@ -459,10 +461,12 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
  * Clean and normalize text
  */
 function cleanText(text: string): string {
-  return text
+  const cleaned = text
     .replace(/[\n\r]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  return truncateText(cleaned, MAX_TEXT_LENGTH);
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   generatePreviewFromMetadataWithDetails,
   generatePreviewWithDetails,
 } from '../../src/index';
-import { PreviewOptions } from '../../src/types';
+import { ErrorType, PreviewOptions } from '../../src/types';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import sharp from 'sharp';
@@ -401,6 +401,116 @@ describe('End-to-End Integration Tests', () => {
       expect(first.cached).toBe(false);
       expect(second.cached).toBe(true);
       expect(second.buffer).toBeInstanceOf(Buffer);
+    });
+
+    it('should isolate cached previews from mutations to returned results', async () => {
+      const metadata = {
+        title: 'Immutable Cached Post',
+        description: 'Cached results must not share mutable state.',
+        url: 'https://blog.example.com/posts/immutable-cached-post',
+      };
+
+      const first = await generatePreviewFromMetadataWithDetails(metadata, { cache: true });
+      const expectedBuffer = Buffer.from(first.buffer);
+      const expectedDimensions = { ...first.dimensions };
+      const expectedMetadata = { ...first.metadata };
+
+      first.buffer.fill(0);
+      first.dimensions.width = 1;
+      first.metadata.title = 'poisoned after cache set';
+
+      const second = await generatePreviewFromMetadataWithDetails(metadata, { cache: true });
+      expect(second.buffer).toEqual(expectedBuffer);
+      expect(second.dimensions).toEqual(expectedDimensions);
+      expect(second.metadata).toEqual(expectedMetadata);
+
+      second.buffer.fill(1);
+      second.dimensions.height = 1;
+      second.metadata.description = 'poisoned after cache get';
+
+      const third = await generatePreviewFromMetadataWithDetails(metadata, { cache: true });
+      expect(third.buffer).toEqual(expectedBuffer);
+      expect(third.dimensions).toEqual(expectedDimensions);
+      expect(third.metadata).toEqual(expectedMetadata);
+    });
+
+    it('should not expose metadata extraction cache objects when preview caching is disabled', async () => {
+      const url = 'https://metadata-cache-isolation.example/post';
+      const cachedMetadata = {
+        title: 'Original Extracted Title',
+        description: 'Original extracted description.',
+        url,
+        domain: 'metadata-cache-isolation.example',
+      };
+      metadataCache.set(`${url}:${JSON.stringify({})}`, cachedMetadata);
+
+      const first = await generatePreviewWithDetails(url, { cache: false });
+      first.metadata.title = 'mutated returned metadata';
+
+      const second = await generatePreviewWithDetails(url, { cache: false });
+      expect(second.metadata.title).toBe('Original Extracted Title');
+      expect(cachedMetadata.title).toBe('Original Extracted Title');
+    });
+
+    it('should accept direct metadata text at the 10,000 character boundary', async () => {
+      const title = 'a'.repeat(10_000);
+
+      const result = await generatePreviewFromMetadataWithDetails({
+        title,
+        url: 'https://blog.example.com/posts/max-length-title',
+      });
+
+      expect(result.metadata.title).toHaveLength(10_000);
+    });
+
+    it('should reject direct metadata text above 10,000 raw characters', async () => {
+      await expect(
+        generatePreviewFromMetadataWithDetails({
+          title: 'a'.repeat(10_001),
+          url: 'https://blog.example.com/posts/oversized-title',
+        })
+      ).rejects.toMatchObject({
+        type: ErrorType.VALIDATION_ERROR,
+      });
+    });
+
+    it('should count direct metadata limits by Unicode code points', async () => {
+      await expect(
+        generatePreviewFromMetadataWithDetails({
+          title: 'Unicode Length Boundary',
+          description: '😀'.repeat(10_001),
+          url: 'https://blog.example.com/posts/unicode-length-boundary',
+        })
+      ).rejects.toMatchObject({
+        type: ErrorType.VALIDATION_ERROR,
+      });
+    });
+
+    it('should report undersized dimensions as validation errors', async () => {
+      await expect(
+        generatePreviewFromMetadataWithDetails(
+          {
+            title: 'Undersized Preview',
+            url: 'https://blog.example.com/posts/undersized-preview',
+          },
+          { width: 99 }
+        )
+      ).rejects.toMatchObject({
+        type: ErrorType.VALIDATION_ERROR,
+      });
+    });
+
+    it('should enforce the metadata text limit before whitespace normalization', async () => {
+      await expect(
+        generatePreviewFromMetadataWithDetails({
+          title: 'Raw Length Boundary',
+          description: ' '.repeat(10_001),
+          url: 'https://blog.example.com/posts/raw-length-boundary',
+        })
+      ).rejects.toMatchObject({
+        type: ErrorType.VALIDATION_ERROR,
+        message: 'metadata.description exceeds maximum length of 10000 characters',
+      });
     });
 
     it('should reject invalid canonical URLs', async () => {

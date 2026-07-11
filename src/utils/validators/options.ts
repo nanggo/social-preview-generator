@@ -1,7 +1,11 @@
 import { PreviewGeneratorError, ErrorType, PreviewOptions, SanitizedOptions } from '../../types';
-import { ALLOWED_TEMPLATES, QUALITY_LIMITS } from '../../constants/security';
+import {
+  ALLOWED_TEMPLATES,
+  DIMENSION_LIMITS,
+  QUALITY_LIMITS,
+} from '../../constants/security';
 import { validateColor } from './color';
-import { validateDimension } from './dimensions';
+import { validateDimension, validateDimensions } from './dimensions';
 import { validateTextInput } from './text';
 
 /**
@@ -80,6 +84,13 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
   }
 
   // Validate dimensions
+  if (sanitized.width !== undefined || sanitized.height !== undefined) {
+    validateDimensions(
+      sanitized.width ?? DIMENSION_LIMITS.MIN_WIDTH,
+      sanitized.height ?? DIMENSION_LIMITS.MIN_HEIGHT
+    );
+  }
+
   if (sanitized.width !== undefined) {
     sanitized.width = validateDimension(sanitized.width);
   }
@@ -89,6 +100,17 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
 
   // Validate quality
   if (sanitized.quality !== undefined) {
+    if (
+      typeof sanitized.quality !== 'number' ||
+      !Number.isFinite(sanitized.quality) ||
+      !Number.isInteger(sanitized.quality)
+    ) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        'Quality must be a finite integer'
+      );
+    }
+
     if (sanitized.quality < QUALITY_LIMITS.MIN || sanitized.quality > QUALITY_LIMITS.MAX) {
       throw new PreviewGeneratorError(
         ErrorType.VALIDATION_ERROR,

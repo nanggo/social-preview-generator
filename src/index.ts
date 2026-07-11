@@ -28,6 +28,8 @@ import { processImageForTemplate } from './core/template-image-processing';
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
 import { svgCache } from './utils/sharp-cache';
 import { startCacheCleanup, isCacheCleanupRunning } from './utils/cache';
+import { MAX_TEXT_LENGTH } from './constants/security';
+import { exceedsTextLength } from './utils/validators/text';
 
 // Initialize Sharp security settings (no side-effect timers at import time)
 initializeSharpSecurity();
@@ -75,7 +77,7 @@ function createPreviewResult(
       width: finalOptions.width || DEFAULT_DIMENSIONS.width,
       height: finalOptions.height || DEFAULT_DIMENSIONS.height,
     },
-    metadata,
+    metadata: { ...metadata },
     template: finalOptions.template || 'modern',
     cached: false,
   };
@@ -91,6 +93,13 @@ function normalizeOptionalMetadataText(
 
   if (typeof value !== 'string') {
     throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `${fieldName} must be a string`);
+  }
+
+  if (exceedsTextLength(value)) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `${fieldName} exceeds maximum length of ${MAX_TEXT_LENGTH} characters`
+    );
   }
 
   const normalized = sanitizeControlChars(value)

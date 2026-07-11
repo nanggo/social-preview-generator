@@ -9,6 +9,10 @@ export function validateDimensions(width: number, height: number): void {
     throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Dimensions must be finite numbers');
   }
 
+  if (!Number.isInteger(width) || !Number.isInteger(height)) {
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Dimensions must be integers');
+  }
+
   if (width < DIMENSION_LIMITS.MIN_WIDTH || height < DIMENSION_LIMITS.MIN_HEIGHT) {
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
@@ -28,8 +32,16 @@ export function validateDimensions(width: number, height: number): void {
  * Validate dimension values.
  */
 export function validateDimension(value: number): ValidatedDimension {
-  if (typeof value !== 'number' || isNaN(value) || value <= 0) {
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Dimension must be a positive number');
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value <= 0
+  ) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'Dimension must be a positive finite integer'
+    );
   }
 
   // Reasonable limits for image dimensions
@@ -42,4 +54,3 @@ export function validateDimension(value: number): ValidatedDimension {
 
   return value as ValidatedDimension;
 }
-

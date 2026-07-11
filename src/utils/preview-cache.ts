@@ -2,6 +2,15 @@ import crypto from 'crypto';
 import { GeneratedPreview, PreviewOptions } from '../types';
 import { previewCache } from './cache';
 
+function cloneGeneratedPreview(preview: GeneratedPreview): GeneratedPreview {
+  return {
+    ...preview,
+    buffer: Buffer.from(preview.buffer),
+    dimensions: { ...preview.dimensions },
+    metadata: { ...preview.metadata },
+  };
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object') return false;
   const prototype = Object.getPrototypeOf(value);
@@ -52,7 +61,8 @@ function createPreviewCacheKey(url: string, options: PreviewOptions): string | u
 export function getCachedPreview(url: string, options: PreviewOptions): GeneratedPreview | undefined {
   const key = createPreviewCacheKey(url, options);
   if (!key) return undefined;
-  return previewCache.get(key);
+  const cached = previewCache.get(key);
+  return cached ? cloneGeneratedPreview(cached) : undefined;
 }
 
 export function setCachedPreview(
@@ -63,5 +73,5 @@ export function setCachedPreview(
 ): void {
   const key = createPreviewCacheKey(url, options);
   if (!key) return;
-  previewCache.set(key, preview, ttlMs);
+  previewCache.set(key, cloneGeneratedPreview(preview), ttlMs);
 }
