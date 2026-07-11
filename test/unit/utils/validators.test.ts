@@ -268,6 +268,73 @@ describe('Validators', () => {
         expect(sanitizeOptions({ security: { timeout } }).security?.timeout).toBe(timeout);
       }
     );
+
+    test.each([
+      ['allowSvg', 'false'],
+      ['allowSvg', 1],
+      ['httpsOnly', 'false'],
+      ['httpsOnly', 0],
+    ] as const)(
+      'should reject non-boolean security option %s=%s with VALIDATION_ERROR',
+      (field, value) => {
+        try {
+          sanitizeOptions({
+            security: { [field]: value },
+          } as unknown as PreviewOptions);
+          throw new Error(`Expected sanitizeOptions to reject security.${field}`);
+        } catch (error) {
+          expect(error).toBeInstanceOf(PreviewGeneratorError);
+          expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+          expect((error as PreviewGeneratorError).message).toContain(`Security ${field}`);
+        }
+      }
+    );
+
+    test.each([NaN, Infinity, -1, 1.5, 11, '3' as unknown as number])(
+      'should reject invalid maxRedirects %s with VALIDATION_ERROR',
+      maxRedirects => {
+        try {
+          sanitizeOptions({ security: { maxRedirects } });
+          throw new Error('Expected sanitizeOptions to reject security.maxRedirects');
+        } catch (error) {
+          expect(error).toBeInstanceOf(PreviewGeneratorError);
+          expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+          expect((error as PreviewGeneratorError).message).toContain('Security maxRedirects');
+        }
+      }
+    );
+
+    test.each([0, 3, 10])('should preserve valid maxRedirects %i', maxRedirects => {
+      expect(sanitizeOptions({ security: { maxRedirects } }).security?.maxRedirects).toBe(
+        maxRedirects
+      );
+    });
+
+    test('should preserve valid boolean security options', () => {
+      expect(
+        sanitizeOptions({ security: { allowSvg: false, httpsOnly: true } }).security
+      ).toMatchObject({ allowSvg: false, httpsOnly: true });
+    });
+
+    test('should discard unknown runtime security keys', () => {
+      const sanitized = sanitizeOptions({
+        security: {
+          timeout: 1000,
+          padding: 'x'.repeat(20_000),
+        },
+      } as unknown as PreviewOptions);
+
+      expect(sanitized.security).toEqual({ timeout: 1000 });
+    });
+
+    test.each([null, [], 'unsafe', new Date()] as const)(
+      'should reject non-plain security options %# with VALIDATION_ERROR',
+      security => {
+        expect(() =>
+          sanitizeOptions({ security } as unknown as PreviewOptions)
+        ).toThrowError(/Security options must be a plain object/);
+      }
+    );
   });
 
   describe('createTransparentCanvas', () => {

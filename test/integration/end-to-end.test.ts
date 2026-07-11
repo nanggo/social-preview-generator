@@ -571,6 +571,22 @@ describe('End-to-End Integration Tests', () => {
         expect(mockedAxios.get).not.toHaveBeenCalled();
       }
     );
+
+    it.each([
+      { allowSvg: 'false' },
+      { httpsOnly: 'false' },
+      { maxRedirects: -1 },
+      { maxRedirects: 11 },
+    ])('should reject unsafe public security options before network I/O: %o', async security => {
+      await expect(
+        generatePreview('https://security-option-validation.example', {
+          security,
+        } as unknown as PreviewOptions)
+      ).rejects.toMatchObject({
+        type: ErrorType.VALIDATION_ERROR,
+      });
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
   });
 
   describe('generatePreviewFromMetadata', () => {
