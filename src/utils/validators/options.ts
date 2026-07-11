@@ -46,7 +46,34 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
   if (options.colors) {
     sanitized.colors = { ...options.colors };
   }
+  if (options.fallback !== undefined && !isPlainObject(options.fallback)) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'Fallback options must be a plain object'
+    );
+  }
   if (options.fallback) {
+    const fallback = options.fallback as Record<string, unknown>;
+    for (const field of ['image', 'category', 'backgroundColor'] as const) {
+      if (Object.hasOwn(fallback, field)) {
+        throw new PreviewGeneratorError(
+          ErrorType.VALIDATION_ERROR,
+          `Removed fallback option is not supported: fallback.${field}`
+        );
+      }
+    }
+
+    if (
+      fallback.strategy !== undefined &&
+      fallback.strategy !== 'auto' &&
+      fallback.strategy !== 'generate'
+    ) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Fallback strategy must be "auto" or "generate", got: ${String(fallback.strategy)}`
+      );
+    }
+
     sanitized.fallback = { ...options.fallback };
   }
   if (options.security !== undefined && !isPlainObject(options.security)) {

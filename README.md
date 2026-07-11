@@ -75,8 +75,7 @@ interface PreviewOptions {
   quality?: number; // JPEG quality 1-100 (default: 90)
   cache?: boolean; // Cache generated results in memory (default: false)
   fallback?: {
-    strategy?: 'auto' | 'custom' | 'generate'; // Fallback strategy
-    image?: string; // Custom fallback image path
+    strategy?: 'auto' | 'generate'; // Fallback strategy
     text?: string; // Custom fallback text
   };
   colors?: {
