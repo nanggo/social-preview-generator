@@ -560,6 +560,7 @@ describe('Enhanced Secure Agent', () => {
       expect((agent as any).options.keepAlive).toBe(true);
       expect((agent as any).options.timeout).toBe(30000);
       expect((agent as any).options.maxSockets).toBe(50);
+      expect(agent.maxTotalSockets).toBe(50);
     });
 
     it('should create HTTPS agent with additional TLS security', () => {
@@ -570,6 +571,103 @@ describe('Enhanced Secure Agent', () => {
       expect((agent as any).options.timeout).toBe(30000);
       expect((agent as any).options.minVersion).toBe('TLSv1.2');
       expect((agent as any).options.ciphers).toBeDefined();
+      expect(agent.maxTotalSockets).toBe(50);
+    });
+
+    it.each([
+      { protocol: 'HTTP', createAgent: createEnhancedSecureHttpAgent },
+      { protocol: 'HTTPS', createAgent: createEnhancedSecureHttpsAgent },
+    ])('should enforce one global free-socket budget for the $protocol agent', ({ createAgent }) => {
+      const agent = createAgent();
+      const freeSockets = agent.freeSockets as Record<string, net.Socket[]>;
+      const idleSockets = Array.from({ length: agent.maxFreeSockets }, () => new net.Socket());
+      const belowBudgetCandidate = new net.Socket();
+      const queuedRequestCandidate = new net.Socket();
+      const atBudgetCandidate = new net.Socket();
+
+      try {
+        for (let index = 0; index < idleSockets.length - 1; index += 1) {
+          freeSockets[`origin-${index}.test:443:`] = [idleSockets[index]];
+        }
+
+        const keepBelowBudget = (agent.keepSocketAlive as unknown as (
+          socket: net.Socket
+        ) => boolean)(belowBudgetCandidate);
+        expect(keepBelowBudget).toBe(true);
+
+        (agent.requests as Record<string, http.ClientRequest[]>)['queued-origin.test:443:'] = [
+          {} as http.ClientRequest,
+        ];
+        const keepWithQueuedRequest = (agent.keepSocketAlive as unknown as (
+          socket: net.Socket
+        ) => boolean)(queuedRequestCandidate);
+        expect(keepWithQueuedRequest).toBe(false);
+        delete (agent.requests as Record<string, http.ClientRequest[]>)[
+          'queued-origin.test:443:'
+        ];
+
+        freeSockets['last-origin.test:443:'] = [idleSockets[idleSockets.length - 1]];
+        const keepAtBudget = (agent.keepSocketAlive as unknown as (
+          socket: net.Socket
+        ) => boolean)(atBudgetCandidate);
+        expect(keepAtBudget).toBe(false);
+      } finally {
+        agent.destroy();
+        belowBudgetCandidate.destroy();
+        queuedRequestCandidate.destroy();
+        atBudgetCandidate.destroy();
+      }
+    });
+
+    it.each([
+      { protocol: 'HTTP', createAgent: createEnhancedSecureHttpAgent, port: 80 },
+      { protocol: 'HTTPS', createAgent: createEnhancedSecureHttpsAgent, port: 443 },
+    ])('should evict an idle $protocol socket before admitting a new origin at the total cap', ({
+      createAgent,
+      port,
+    }) => {
+      const originalAddRequest = (http.Agent.prototype as any).addRequest;
+      const eventOrder: string[] = [];
+      const addRequestSpy = vi.fn(() => {
+        eventOrder.push('add-request');
+      });
+      (http.Agent.prototype as any).addRequest = addRequestSpy;
+
+      const idleSocket = {
+        destroyed: false,
+        destroy: vi.fn(() => {
+          idleSocket.destroyed = true;
+          eventOrder.push('destroy-idle');
+        }),
+      } as unknown as net.Socket;
+      const request = {} as http.ClientRequest;
+      const oldOrigin = { host: 'old-origin.test', port };
+      const newOrigin = { host: 'new-origin.test', port };
+      const agent = createAgent();
+
+      try {
+        const oldOriginName = agent.getName({ ...oldOrigin, ...agent.options });
+        const newOriginName = agent.getName({ ...newOrigin, ...agent.options });
+        expect(newOriginName).not.toBe(oldOriginName);
+
+        (agent.freeSockets as Record<string, net.Socket[]>)[oldOriginName] = [idleSocket];
+        agent.maxTotalSockets = 1;
+        (agent as any).totalSocketCount = 1;
+
+        (agent as any).addRequest(request, oldOrigin);
+        expect(idleSocket.destroy).not.toHaveBeenCalled();
+        expect(eventOrder).toEqual(['add-request']);
+
+        addRequestSpy.mockClear();
+        eventOrder.length = 0;
+        (agent as any).addRequest(request, newOrigin);
+
+        expect(idleSocket.destroy).toHaveBeenCalledTimes(1);
+        expect(addRequestSpy).toHaveBeenCalledWith(request, newOrigin);
+        expect(eventOrder).toEqual(['destroy-idle', 'add-request']);
+      } finally {
+        (http.Agent.prototype as any).addRequest = originalAddRequest;
+      }
     });
 
     it('should use singleton instances for performance', async () => {

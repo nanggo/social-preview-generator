@@ -34,6 +34,10 @@ interface SecurityValidationResult {
 const MAX_ACTIVE_DNS_LOOKUPS = 8;
 const MAX_QUEUED_DNS_LOOKUPS = 1000;
 const DNS_LOOKUP_TIMEOUT_MS = SECURITY_CONFIG.HTTP_TIMEOUT;
+const MAX_GLOBAL_FREE_SOCKETS = Math.max(
+  1,
+  Math.floor(SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS / 5)
+);
 
 type ReleaseDNSLookupPermit = () => void;
 
@@ -585,18 +589,109 @@ function getHostnameForValidation(options: unknown): string {
   return rawHost;
 }
 
+interface SocketBudgetAgent extends http.Agent {
+  addRequest(request: http.ClientRequest, options: http.ClientRequestArgs): void;
+  options: http.AgentOptions;
+  totalSocketCount: number;
+}
+
+type AgentSocket = Parameters<http.Agent['keepSocketAlive']>[0];
+
+function countGlobalFreeSockets(agent: http.Agent): number {
+  return Object.values(agent.freeSockets).reduce((count, sockets) => {
+    if (!sockets) return count;
+    return count + sockets.filter(socket => !socket.destroyed).length;
+  }, 0);
+}
+
+function getGlobalFreeSocketLimit(agent: http.Agent): number {
+  return Math.min(MAX_GLOBAL_FREE_SOCKETS, Math.max(0, agent.maxTotalSockets - 1));
+}
+
+function hasPendingRequests(agent: http.Agent): boolean {
+  return Object.values(agent.requests).some(requests => (requests?.length ?? 0) > 0);
+}
+
+function hasReusableSocket(agent: http.Agent, originName: string): boolean {
+  return agent.freeSockets[originName]?.some(socket => !socket.destroyed) ?? false;
+}
+
+function evictFreeSocket(agent: http.Agent, excludedOriginName: string): boolean {
+  for (const [originName, sockets] of Object.entries(agent.freeSockets)) {
+    if (originName === excludedOriginName || !sockets) continue;
+
+    const socket = sockets.find(candidate => !candidate.destroyed);
+    if (socket) {
+      socket.destroy();
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function installGlobalSocketBudget<T extends http.Agent>(agent: T): T {
+  const managedAgent = agent as T & SocketBudgetAgent;
+  const originalKeepSocketAlive = agent.keepSocketAlive as unknown as (
+    socket: AgentSocket
+  ) => boolean;
+  const originalAddRequest = managedAgent.addRequest;
+
+  managedAgent.keepSocketAlive = function(
+    this: SocketBudgetAgent,
+    socket: AgentSocket
+  ): boolean {
+    // Node's maxFreeSockets is per origin. Enforce a separate global budget so
+    // idle origins cannot consume maxTotalSockets and starve new work.
+    if (
+      hasPendingRequests(this) ||
+      countGlobalFreeSockets(this) >= getGlobalFreeSocketLimit(this)
+    ) {
+      return false;
+    }
+
+    return originalKeepSocketAlive.call(this, socket);
+  };
+
+  managedAgent.addRequest = function(
+    this: SocketBudgetAgent,
+    request: http.ClientRequest,
+    options: http.ClientRequestArgs
+  ): void {
+    const normalizedOptions = { ...options, ...this.options } as http.ClientRequestArgs;
+    if (normalizedOptions.socketPath) {
+      normalizedOptions.path = normalizedOptions.socketPath;
+    }
+    const originName = this.getName(normalizedOptions);
+
+    // A same-origin idle socket can be reused without increasing the total.
+    // Otherwise retire one idle socket before Node queues the new origin.
+    if (
+      this.totalSocketCount >= this.maxTotalSockets &&
+      !hasReusableSocket(this, originName)
+    ) {
+      evictFreeSocket(this, originName);
+    }
+
+    originalAddRequest.call(this, request, options);
+  };
+
+  return agent;
+}
+
 /**
  * Create enhanced secure HTTP agent
  */
 export function createEnhancedSecureHttpAgent(): http.Agent {
-  const agent = new http.Agent({
+  const agent = installGlobalSocketBudget(new http.Agent({
     keepAlive: true,
     keepAliveMsecs: 30000,
     maxSockets: SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS,
-    maxFreeSockets: Math.floor(SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS / 5),
+    maxTotalSockets: SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS,
+    maxFreeSockets: MAX_GLOBAL_FREE_SOCKETS,
     timeout: SECURITY_CONFIG.HTTP_TIMEOUT,
     lookup: enhancedSecureLookup,
-  });
+  }));
 
   // Override createConnection for socket-level validation
   const originalCreateConnection = agent.createConnection;
@@ -645,11 +740,12 @@ export function createEnhancedSecureHttpAgent(): http.Agent {
  * Create enhanced secure HTTPS agent
  */
 export function createEnhancedSecureHttpsAgent(): https.Agent {
-  const agent = new https.Agent({
+  const agent = installGlobalSocketBudget(new https.Agent({
     keepAlive: true,
     keepAliveMsecs: 30000,
     maxSockets: SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS,
-    maxFreeSockets: Math.floor(SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS / 5),
+    maxTotalSockets: SECURITY_CONFIG.MAX_CONCURRENT_CONNECTIONS,
+    maxFreeSockets: MAX_GLOBAL_FREE_SOCKETS,
     timeout: SECURITY_CONFIG.HTTP_TIMEOUT,
     lookup: enhancedSecureLookup,
     // TLS security settings
@@ -665,7 +761,7 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
       logger.debug('TLS certificate validation passed', { hostname });
       return undefined;
     }
-  });
+  }));
 
   // Override createConnection for socket-level validation  
   const originalCreateConnection = agent.createConnection;
