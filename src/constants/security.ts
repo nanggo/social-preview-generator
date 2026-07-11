@@ -274,7 +274,7 @@ export const FORBIDDEN_SVG_ATTRIBUTES = [
 
 /** Allow non-URI SVG values and local url(#fragment) references, but no external resources */
 export const ALLOWED_SVG_URI_PATTERN =
-  /^(?!.*(?:[a-z][a-z0-9+.-]*:|\/\/|url\(\s*(?!['"]?#)))[\s\S]*$/i;
+  /^(?![\s\S]*(?:[a-z][a-z0-9+.-]*:|\/\/|url\(\s*(?!['"]?#)))[\s\S]*$/i;
 
 /** Allowed SVG namespaces */
 export const ALLOWED_SVG_NAMESPACES = ['http://www.w3.org/2000/svg'] as const;

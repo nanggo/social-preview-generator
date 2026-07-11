@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import axios from 'axios';
 import sharp from 'sharp';
+import { ALLOWED_SVG_URI_PATTERN } from '../../src/constants/security';
 import { fetchImage } from '../../src/core/metadata-extractor';
 
 vi.mock('axios');
@@ -15,6 +16,12 @@ vi.mock('../../src/utils/enhanced-secure-agent', () => ({
 
 const mockedAxios = vi.mocked(axios);
 const imageUrl = 'https://example.com/preview.svg';
+
+describe('SVG URI policy', () => {
+  it('rejects an external reference after a line terminator', () => {
+    expect(ALLOWED_SVG_URI_PATTERN.test('\nurl(https://attacker.example/fill.svg#x)')).toBe(false);
+  });
+});
 
 async function fetchSvg(svg: string): Promise<Buffer> {
   mockedAxios.get.mockResolvedValueOnce({
@@ -67,6 +74,11 @@ describe('fetchImage SVG sanitization boundary', () => {
       'protocol-relative URL',
       '<rect width="10" height="10" stroke="url(//attacker.example/stroke.svg#x)"/>',
       'stroke=',
+    ],
+    [
+      'newline-prefixed external URL',
+      '<rect width="10" height="10" fill="&#10;url(https://attacker.example/fill.svg#x)"/>',
+      'fill=',
     ],
     ['data URL', '<rect width="10" height="10" fill="data:image/svg+xml,external"/>', 'fill='],
   ])('strips an alternate external %s payload', async (_name, element, attribute) => {
