@@ -148,8 +148,12 @@ function createRequestAbortContext(
     if (controller.signal.aborted) {
       return;
     }
-    controller.abort(reason);
+    // Settle the controlled reason before dispatching AbortSignal listeners.
+    // Transports such as Axios may synchronously reject with a generic
+    // cancellation error from their listener; that must not mask the caller's
+    // reason or this deadline error in the surrounding Promise.race.
     rejectAborted(reason);
+    controller.abort(reason);
   };
 
   const onCallerAbort = () => {

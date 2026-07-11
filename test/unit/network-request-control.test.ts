@@ -52,6 +52,24 @@ describe('network request control', () => {
     await vi.advanceTimersByTimeAsync(0);
   });
 
+  it('preserves the deadline reason when a transport rejects with a generic cancel error', async () => {
+    vi.useFakeTimers();
+
+    const request = runControlledNetworkRequest(25, undefined, signal =>
+      new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('canceled')), { once: true });
+      })
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    const rejected = expect(request).rejects.toBeInstanceOf(NetworkRequestDeadlineError);
+    await vi.advanceTimersByTimeAsync(25);
+
+    await rejected;
+    expect(limiter.getStats()).toMatchObject({ active: 0, queued: 0 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('propagates caller abort and always removes the caller listener', async () => {
     vi.useFakeTimers();
     const caller = new AbortController();
@@ -60,7 +78,7 @@ describe('network request control', () => {
 
     const request = runControlledNetworkRequest(1000, caller.signal, signal =>
       new Promise((_, reject) => {
-        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        signal.addEventListener('abort', () => reject(new Error('canceled')), { once: true });
       })
     );
     await vi.advanceTimersByTimeAsync(0);
