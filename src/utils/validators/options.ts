@@ -74,7 +74,13 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
       );
     }
 
-    sanitized.fallback = { ...options.fallback };
+    const knownFallback: Record<string, unknown> = {};
+    for (const field of ['strategy', 'text'] as const) {
+      if (Object.hasOwn(fallback, field)) {
+        knownFallback[field] = fallback[field];
+      }
+    }
+    sanitized.fallback = knownFallback as PreviewOptions['fallback'];
   }
   if (options.security !== undefined && !isPlainObject(options.security)) {
     throw new PreviewGeneratorError(

@@ -245,6 +245,21 @@ describe('Validators', () => {
       }
     );
 
+    test('should discard unknown runtime fallback keys', () => {
+      const sanitized = sanitizeOptions({
+        fallback: {
+          strategy: 'generate',
+          text: '  fallback text  ',
+          padding: 'x'.repeat(20_000),
+        },
+      } as unknown as PreviewOptions);
+
+      expect(sanitized.fallback).toEqual({
+        strategy: 'generate',
+        text: 'fallback text',
+      });
+    });
+
     test('should reject invalid font option shapes with validation errors', () => {
       expect(() =>
         sanitizeOptions({
