@@ -173,6 +173,22 @@ describe('IP Address Validation', () => {
       }
     );
 
+    it.each([
+      '64:ff9b:1::',
+      '64:ff9b:1:ffff:ffff:ffff:ffff:ffff',
+      '5f00::',
+      '5f00:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
+    ])('blocks non-globally-reachable special-purpose address %s', (address) => {
+      expect(isPrivateOrReservedIP(address)).toBe(true);
+    });
+
+    it.each(['64:ff9b::8.8.8.8', '2606:4700:4700::1111'])(
+      'does not over-block globally reachable address %s',
+      (address) => {
+        expect(isPrivateOrReservedIP(address)).toBe(false);
+      }
+    );
+
     it.each(['::192.168.1.1', '::8.8.8.8'])(
       'blocks deprecated IPv4-compatible address %s',
       (address) => {
