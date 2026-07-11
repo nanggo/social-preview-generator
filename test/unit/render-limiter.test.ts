@@ -52,13 +52,8 @@ describe('process-wide render limiter', () => {
     const queued = Array.from({ length: 32 }, () => acquireRenderSlot());
 
     expect(getRenderLimiterStats()).toMatchObject({ active: 4, queued: 32 });
-    expect(() => acquireRenderSlot()).toThrowError(PreviewGeneratorError);
-
-    try {
-      acquireRenderSlot();
-    } catch (error) {
-      expect(error).toMatchObject({ type: ErrorType.IMAGE_ERROR });
-    }
+    await expect(acquireRenderSlot()).rejects.toBeInstanceOf(PreviewGeneratorError);
+    await expect(acquireRenderSlot()).rejects.toMatchObject({ type: ErrorType.IMAGE_ERROR });
 
     for (const release of activeReleases) {
       release();

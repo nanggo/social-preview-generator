@@ -31,10 +31,10 @@ function createRelease(): ReleaseRenderSlot {
 }
 
 /** Acquire one process-wide render slot, preserving FIFO queue order. */
-export function acquireRenderSlot(): Promise<ReleaseRenderSlot> {
+export async function acquireRenderSlot(): Promise<ReleaseRenderSlot> {
   if (activeRenders < MAX_ACTIVE_RENDERS) {
     activeRenders++;
-    return Promise.resolve(createRelease());
+    return createRelease();
   }
 
   if (renderQueue.length >= MAX_QUEUED_RENDERS) {
