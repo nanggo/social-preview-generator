@@ -306,6 +306,30 @@ describe('Validators', () => {
       expect(sanitizeOptions({ quality }).quality).toBe(quality);
     });
 
+    test.each([true, false])('should preserve mobilePreview=%s', mobilePreview => {
+      const sanitized = sanitizeOptions({ mobilePreview });
+
+      expect(sanitized.mobilePreview).toBe(mobilePreview);
+    });
+
+    test('should accept the article template', () => {
+      expect(sanitizeOptions({ template: 'article' }).template).toBe('article');
+    });
+
+    test.each(['false', 0, 1, null, {}, []])(
+      'should reject non-boolean mobilePreview=%# with VALIDATION_ERROR',
+      mobilePreview => {
+        try {
+          sanitizeOptions({ mobilePreview } as unknown as PreviewOptions);
+          throw new Error('Expected sanitizeOptions to reject mobilePreview');
+        } catch (error) {
+          expect(error).toBeInstanceOf(PreviewGeneratorError);
+          expect((error as PreviewGeneratorError).type).toBe(ErrorType.VALIDATION_ERROR);
+          expect((error as PreviewGeneratorError).message).toMatch(/mobile preview/i);
+        }
+      }
+    );
+
     test.each([
       NaN,
       Infinity,

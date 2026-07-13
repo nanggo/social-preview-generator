@@ -183,9 +183,16 @@ function verifyTypeScriptConsumer() {
 
       const metadata: PreviewMetadataInput = {
         title: 'TypeScript package smoke',
+        description: 'Article summary rendered inside the mobile preview.',
         url: 'https://example.com/typescript-smoke',
       };
-      const options: PreviewOptions = { width: 320, height: 168, template: 'minimal' };
+      const options: PreviewOptions = {
+        width: 320,
+        height: 168,
+        template: 'article',
+        mobilePreview: true,
+        colors: { primary: '#3182F6' },
+      };
       // @ts-expect-error fallback.strategy custom was removed in 0.3.0
       const removedCustomStrategy: PreviewOptions = { fallback: { strategy: 'custom' } };
       // @ts-expect-error fallback.image was removed in 0.3.0
@@ -291,9 +298,17 @@ try {
   const image = await packageExports.generatePreviewFromMetadata(
     {
       title: 'Packed package render smoke',
+      description: 'Article summary rendered inside the packed package smoke test.',
       url: 'https://example.com/package-smoke',
     },
-    { cache: false, height: 168, template: 'minimal', width: 320 }
+    {
+      cache: false,
+      colors: { primary: '#3182F6' },
+      height: 168,
+      mobilePreview: true,
+      template: 'article',
+      width: 320,
+    }
   );
   const sharp = requireFromConsumer('sharp');
   const imageMetadata = await sharp(image).metadata();
@@ -315,7 +330,7 @@ try {
   }
 
   console.log(
-    'Packed package passed tarball, CJS/ESM import, runtime export, removed fallback, 320x168 JPEG, and TypeScript consumer checks.'
+    'Packed package passed tarball, CJS/ESM import, runtime export, removed fallback, article 320x168 JPEG, and TypeScript consumer checks.'
   );
   if (outputPath) {
     console.log(`Verified tarball written to ${outputPath}.`);
