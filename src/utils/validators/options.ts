@@ -247,6 +247,13 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
     );
   }
 
+  if (sanitized.mobilePreview !== undefined && typeof sanitized.mobilePreview !== 'boolean') {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `Mobile preview option must be boolean, got: ${typeof sanitized.mobilePreview}`
+    );
+  }
+
   // Validate text inputs from fallback
   if (sanitized.fallback?.text) {
     sanitized.fallback = {

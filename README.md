@@ -1,5 +1,7 @@
 # Social Preview Generator
 
+**English** | [한국어](https://github.com/nanggo/social-preview-generator/blob/master/docs/README.ko.md)
+
 Generate Open Graph/social preview images from URLs or known page metadata.
 
 [![npm version](https://img.shields.io/npm/v/@nanggo/social-preview.svg)](https://www.npmjs.com/package/@nanggo/social-preview)
@@ -10,7 +12,7 @@ Generate Open Graph/social preview images from URLs or known page metadata.
 
 - Extract Open Graph and Twitter Card metadata from a URL
 - Generate images directly from supplied metadata for static publishing flows
-- Render with built-in `modern`, `classic`, and `minimal` templates
+- Render with built-in `modern`, `classic`, `minimal`, and `article` templates
 - Process and optimize images with Sharp
 - Fall back to generated previews when metadata is incomplete
 - Ship TypeScript definitions
@@ -69,16 +71,18 @@ canonical URL, and cover image are known at publish/build time.
 
 ```typescript
 interface PreviewOptions {
-  template?: 'modern' | 'classic' | 'minimal'; // Template to use (default: 'modern')
+  template?: 'modern' | 'classic' | 'minimal' | 'article'; // Template to use (default: 'modern')
   width?: number; // Image width (default: 1200)
   height?: number; // Image height (default: 630)
   quality?: number; // JPEG quality 1-100 (default: 90)
   cache?: boolean; // Cache generated results in memory (default: false)
+  mobilePreview?: boolean; // Article only; defaults to true when a description exists
   fallback?: {
     strategy?: 'auto' | 'generate'; // Fallback strategy
     text?: string; // Custom fallback text
   };
   colors?: {
+    primary?: string; // Article primary color (default: '#3182F6')
     background?: string; // Background color
     text?: string; // Text color
     accent?: string; // Accent color
@@ -151,6 +155,23 @@ const buffer = await generatePreview('https://example.com', {
 });
 ```
 
+### Article Preview
+
+Use `mobilePreview: false` for a text-only article card. When omitted, the article template shows
+the mobile preview whenever the metadata includes a description. Near-square and portrait outputs
+stack the mobile surface below the title automatically. The layout targets standard social-preview
+aspect ratios; extreme aspect ratios are rendered on a best-effort basis.
+
+```javascript
+const buffer = await generatePreviewFromMetadata(metadata, {
+  template: 'article',
+  mobilePreview: true,
+  colors: {
+    primary: '#7C3AED',
+  },
+});
+```
+
 ## Templates
 
 ### Modern (Default)
@@ -172,6 +193,14 @@ const buffer = await generatePreview('https://example.com', {
 - Minimal decorations
 - Ideal for documentation sites
 
+### Article
+
+- Editorial layout for article and blog metadata
+- Optional mobile preview, enabled by default when a description exists
+- Responsive stacked layout for near-square and portrait output sizes
+- Customizable primary color through `colors.primary` (default: `#3182F6`)
+- Metadata-only rendering; remote cover images are intentionally not used
+
 ## Architecture
 
 ```
@@ -186,6 +215,7 @@ social-preview-generator/
 │   │   ├── modern.ts                    # Modern template
 │   │   ├── classic.ts                   # Classic template
 │   │   ├── minimal.ts                   # Minimal template
+│   │   ├── article.ts                   # Article template
 │   │   ├── shared.ts                    # Shared layout helpers
 │   │   └── registry.ts                  # Template registry
 │   ├── utils/                           # Shared utilities & security

@@ -7,7 +7,7 @@ import {
   generatePreviewFromMetadataWithDetails,
   generatePreviewWithDetails,
 } from '../../src/index';
-import { ErrorType, PreviewOptions } from '../../src/types';
+import { ErrorType, PreviewOptions, TemplateType } from '../../src/types';
 import axios from 'axios';
 import ogs from 'open-graph-scraper';
 import sharp from 'sharp';
@@ -231,7 +231,7 @@ describe('End-to-End Integration Tests', () => {
       const url = 'https://example.com';
 
       // Test each template with custom colors
-      const templates: Array<'modern' | 'classic' | 'minimal'> = ['modern', 'classic', 'minimal'];
+      const templates: TemplateType[] = ['modern', 'classic', 'minimal', 'article'];
 
       for (const template of templates) {
         const options: PreviewOptions = {
@@ -267,7 +267,7 @@ describe('End-to-End Integration Tests', () => {
         response: {} as any,
       });
 
-      const templates: Array<'modern' | 'classic' | 'minimal'> = ['modern', 'classic', 'minimal'];
+      const templates: TemplateType[] = ['modern', 'classic', 'minimal', 'article'];
 
       for (const template of templates) {
         const result = await generatePreview(url, { template });

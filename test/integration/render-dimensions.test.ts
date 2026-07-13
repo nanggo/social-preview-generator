@@ -30,7 +30,7 @@ describe('generated image dimensions with real Sharp', () => {
     await expectImageDimensions(buffer, width, height);
   });
 
-  it.each(['classic', 'minimal'] as const)(
+  it.each(['classic', 'minimal', 'article'] as const)(
     'keeps the %s template at the requested dimensions',
     async (template) => {
       const width = 320;
@@ -44,6 +44,19 @@ describe('generated image dimensions with real Sharp', () => {
       await expectImageDimensions(buffer, width, height);
     }
   );
+
+  it.each([
+    { width: 800, height: 800 },
+    { width: 400, height: 800 },
+  ])('renders a stacked article preview at $width x $height', async ({ width, height }) => {
+    const buffer = await generatePreviewFromMetadata(directMetadata, {
+      template: 'article',
+      width,
+      height,
+    });
+
+    await expectImageDimensions(buffer, width, height);
+  });
 
   it('renders a custom template through the default overlay at the requested dimensions', async () => {
     const width = 320;

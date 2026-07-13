@@ -21,6 +21,8 @@ export type SanitizedOptions = Brand<PreviewOptions, 'SanitizedOptions'>;
 export interface PreviewOptions {
   /** Template to use for generating the preview */
   template?: TemplateType;
+  /** Show the mobile article preview in the article template (default: true when description exists) */
+  mobilePreview?: boolean;
   /** Width of the generated image in pixels */
   width?: number;
   /** Height of the generated image in pixels */
@@ -96,7 +98,7 @@ export interface RedirectResponseDetails {
 /**
  * Available template types
  */
-export type TemplateType = 'modern' | 'classic' | 'minimal';
+export type TemplateType = 'modern' | 'classic' | 'minimal' | 'article';
 
 /**
  * Fallback options for handling missing metadata
