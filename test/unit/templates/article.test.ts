@@ -12,6 +12,16 @@ function elementMarkupByClass(svg: string, className: string, tagName: string): 
   return svg.match(pattern) ?? [];
 }
 
+function textElementContent(markup: string): string {
+  const contentStart = markup.indexOf('>');
+  const contentEnd = markup.lastIndexOf('</text>');
+  if (contentStart < 0 || contentEnd <= contentStart) {
+    throw new Error(`Invalid text element markup: ${markup}`);
+  }
+
+  return markup.slice(contentStart + 1, contentEnd);
+}
+
 function openingTagsByClass(
   svg: string,
   className: string,
@@ -266,7 +276,7 @@ describe('Article Template', () => {
     const prohibitedEnd = /[(\[{「『【〈《〔［｛‘“｢]$/u;
 
     for (const lines of blocks) {
-      const textLines = lines.map((line) => line.replace(/<[^>]+>/g, ''));
+      const textLines = lines.map(textElementContent);
       for (const line of textLines.slice(1)) {
         expect(line).not.toMatch(prohibitedStart);
       }
@@ -289,8 +299,8 @@ describe('Article Template', () => {
   it('keeps closing CJK punctuation off summary line starts', () => {
     const description = `${'文'.repeat(13)}，后续摘要内容继续显示。`;
     const svg = generateArticleOverlay({ ...metadata, description }, 1200, 630, {});
-    const summaryLines = elementMarkupByClass(svg, 'article-summary', 'text').map((line) =>
-      line.replace(/<[^>]+>/g, '')
+    const summaryLines = elementMarkupByClass(svg, 'article-summary', 'text').map(
+      textElementContent
     );
 
     expect(summaryLines.length).toBeGreaterThan(1);
