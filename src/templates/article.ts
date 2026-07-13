@@ -323,6 +323,16 @@ function wrapArticleText(
     }
 
     cursor = nextStart > cursor ? nextStart : cursor + 1;
+
+    if (maxLines >= 1 && lines.length === maxLines && cursor < source.length) {
+      lines[maxLines - 1] = appendEllipsis(
+        lines[maxLines - 1],
+        maxWidth,
+        fontSize,
+        letterSpacingEm
+      );
+      return lines;
+    }
   }
   if (lines.length <= maxLines) {
     return lines;
