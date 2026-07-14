@@ -720,6 +720,21 @@ describe('End-to-End Integration Tests', () => {
       expect(mockedOgs).not.toHaveBeenCalled();
     });
 
+    it('should preserve ports and internal www labels in direct metadata defaults', async () => {
+      const result = await generatePreviewFromMetadataWithDetails(
+        {
+          title: 'Direct metadata URL defaults',
+          url: 'https://blog.www.example.com:8443/posts/direct',
+        },
+        { template: 'article', width: 320, height: 168 }
+      );
+
+      expect(result.metadata).toMatchObject({
+        siteName: 'blog.www.example.com',
+        favicon: 'https://blog.www.example.com:8443/favicon.ico',
+      });
+    });
+
     it('should fetch direct metadata image without scraping page metadata', async () => {
       const pngImageBuffer = Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',

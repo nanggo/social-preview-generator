@@ -155,6 +155,112 @@ describe('Metadata Extractor', () => {
       expect(result.favicon).toBe('https://minimal.com/favicon.ico');
     });
 
+    it('should resolve metadata against the last validated redirect URL', async () => {
+      const testUrl = 'https://origin.example/start';
+
+      mockedAxios.get.mockImplementationOnce(async (_url, config) => {
+        config?.beforeRedirect?.(
+          {
+            protocol: 'https:',
+            hostname: 'intermediate.example',
+            path: '/step',
+            href: 'https://intermediate.example/step',
+          },
+          { headers: {}, statusCode: 302 }
+        );
+        config?.beforeRedirect?.(
+          {
+            protocol: 'https:',
+            hostname: 'www.redirected.example',
+            port: '8443',
+            path: '/articles/2026/story.html?ref=home',
+            href: 'https://www.redirected.example:8443/articles/2026/story.html?ref=home',
+          },
+          { headers: {}, statusCode: 302 }
+        );
+        return { data: mockHtmlMinimal };
+      });
+      mockedOgs.mockResolvedValueOnce({
+        error: false,
+        result: {
+          ogTitle: 'Redirected article',
+          ogImage: [{ url: '../assets/card.jpg' }],
+          favicon: './favicon.svg',
+        },
+        html: mockHtmlMinimal,
+        response: {} as any,
+      });
+
+      const result = await extractMetadata(testUrl);
+
+      expect(result).toMatchObject({
+        title: 'Redirected article',
+        image: 'https://www.redirected.example:8443/articles/assets/card.jpg',
+        siteName: 'redirected.example',
+        favicon: 'https://www.redirected.example:8443/articles/2026/favicon.svg',
+        url: 'https://www.redirected.example:8443/articles/2026/story.html?ref=home',
+        domain: 'www.redirected.example',
+      });
+    });
+
+    it('should ignore non-string OG text and use the next valid value', async () => {
+      const testUrl = 'https://typed-metadata.example/page';
+
+      mockedAxios.get.mockResolvedValueOnce({ data: mockHtmlMinimal });
+      mockedOgs.mockResolvedValueOnce({
+        error: false,
+        result: {
+          ogTitle: { value: 'unsafe title shape' },
+          twitterTitle: ['  Safe title  '],
+          ogDescription: 42,
+          twitterDescription: ['Safe\n description'],
+          ogSiteName: {},
+          applicationName: ['Safe Site'],
+          favicon: { href: '/favicon.ico' },
+          author: {},
+          dcCreator: ['Safe Author'],
+          ogArticlePublishedTime: 42,
+          articlePublishedTime: ['2026-07-14'],
+          ogLocale: {},
+          inLanguage: ['ko_KR'],
+        } as any,
+        html: mockHtmlMinimal,
+        response: {} as any,
+      });
+
+      const result = await extractMetadata(testUrl);
+
+      expect(result).toMatchObject({
+        title: 'Safe title',
+        description: 'Safe description',
+        siteName: 'Safe Site',
+        favicon: 'https://typed-metadata.example/favicon.ico',
+        author: 'Safe Author',
+        publishedDate: '2026-07-14',
+        locale: 'ko_KR',
+      });
+    });
+
+    it('should use a valid Twitter image when the OG image URL is unsupported', async () => {
+      const testUrl = 'https://image-fallback.example/page';
+
+      mockedAxios.get.mockResolvedValueOnce({ data: mockHtmlMinimal });
+      mockedOgs.mockResolvedValueOnce({
+        error: false,
+        result: {
+          ogTitle: 'Image fallback',
+          ogImage: [{ url: 'data:image/png;base64,unsafe' }],
+          twitterImage: [{ url: '//cdn.example/twitter-card.jpg' }],
+        },
+        html: mockHtmlMinimal,
+        response: {} as any,
+      });
+
+      const result = await extractMetadata(testUrl);
+
+      expect(result.image).toBe('https://cdn.example/twitter-card.jpg');
+    });
+
     it('should truncate cleaned remote metadata text to 10,000 characters', async () => {
       const testUrl = 'https://long-metadata.example';
 
@@ -337,6 +443,15 @@ describe('Metadata Extractor', () => {
       expect(result.url).toBe(url);
       expect(result.domain).toBe('test.com');
       expect(result.locale).toBe('en_US');
+    });
+
+    it('should preserve ports and internal www labels in fallback metadata', () => {
+      const url = 'https://blog.www.example.com:8443/page';
+
+      const result = applyFallbacks({}, url);
+
+      expect(result.siteName).toBe('blog.www.example.com');
+      expect(result.favicon).toBe('https://blog.www.example.com:8443/favicon.ico');
     });
   });
 

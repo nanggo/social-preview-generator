@@ -18,8 +18,10 @@ import { createFallbackImageWithDetails, DEFAULT_DIMENSIONS } from './core/image
 import { templates } from './templates/registry';
 import {
   validateDimensions,
+  getDefaultFaviconUrl,
   sanitizeOptions,
   sanitizeControlChars,
+  stripLeadingWww,
   validateUrlInput,
 } from './utils/validators';
 import { initializeSharpSecurity } from './utils/image-security';
@@ -138,10 +140,10 @@ function normalizeMetadataInput(metadata: PreviewMetadataInput): ExtractedMetada
     image: metadata.image ? validateUrlInput(metadata.image) : undefined,
     siteName:
       normalizeOptionalMetadataText(metadata.siteName, 'metadata.siteName') ||
-      urlObj.hostname.replace('www.', ''),
+      stripLeadingWww(urlObj.hostname),
     favicon: metadata.favicon
       ? validateUrlInput(metadata.favicon)
-      : `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`,
+      : getDefaultFaviconUrl(url),
     author: normalizeOptionalMetadataText(metadata.author, 'metadata.author'),
     publishedDate: normalizeOptionalMetadataText(metadata.publishedDate, 'metadata.publishedDate'),
     url,
