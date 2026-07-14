@@ -445,8 +445,8 @@ describe('Metadata Extractor', () => {
       expect(result.locale).toBe('en_US');
     });
 
-    it('should preserve ports and internal www labels in fallback metadata', () => {
-      const url = 'https://blog.www.example.com:8443/page';
+    it('should preserve ports and internal www labels without leaking credentials', () => {
+      const url = 'https://user:token@blog.www.example.com:8443/page';
 
       const result = applyFallbacks({}, url);
 

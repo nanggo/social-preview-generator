@@ -42,6 +42,12 @@ describe('Validators', () => {
       );
     });
 
+    test('should drop credentials from the default favicon URL', () => {
+      expect(getDefaultFaviconUrl('https://user:token@example.com:8443/articles/page')).toBe(
+        'https://example.com:8443/favicon.ico'
+      );
+    });
+
     test('should strip only a leading www. label', () => {
       expect(stripLeadingWww('www.example.com')).toBe('example.com');
       expect(stripLeadingWww('WWW.example.com')).toBe('example.com');

@@ -34,7 +34,10 @@ export function resolveHttpUrl(value: unknown, baseUrl: string): string | undefi
 
 /** Build the conventional root favicon URL without dropping a non-default port. */
 export function getDefaultFaviconUrl(pageUrl: string): string {
-  return new URL('/favicon.ico', pageUrl).toString();
+  const faviconUrl = new URL('/favicon.ico', pageUrl);
+  faviconUrl.username = '';
+  faviconUrl.password = '';
+  return faviconUrl.toString();
 }
 
 /** Remove only the conventional leading www. host label. */
