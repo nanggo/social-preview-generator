@@ -37,6 +37,7 @@ examples/output/
 
 # Project documentation
 social-preview-prd.md
+design-qa.md
 
 # npm pack files
 *.tgz
