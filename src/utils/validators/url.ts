@@ -10,6 +10,41 @@ import {
 } from '../../constants/security';
 import { sanitizeControlChars } from './text';
 
+/** Resolve caller or page-provided URL text against a page URL and allow HTTP(S) only. */
+export function resolveHttpUrl(value: unknown, baseUrl: string): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const candidate = value.trim();
+  if (candidate.length === 0) {
+    return undefined;
+  }
+
+  try {
+    const resolved = new URL(candidate, baseUrl);
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+      return undefined;
+    }
+    return resolved.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Build the conventional root favicon URL without dropping a non-default port. */
+export function getDefaultFaviconUrl(pageUrl: string): string {
+  const faviconUrl = new URL('/favicon.ico', pageUrl);
+  faviconUrl.username = '';
+  faviconUrl.password = '';
+  return faviconUrl.toString();
+}
+
+/** Remove only the conventional leading www. host label. */
+export function stripLeadingWww(hostname: string): string {
+  return hostname.replace(/^www\./i, '');
+}
+
 /**
  * Comprehensive URL validation with security checks.
  */
@@ -127,4 +162,3 @@ function isSafeUrlInput(url: string): boolean {
 
   return true;
 }
-

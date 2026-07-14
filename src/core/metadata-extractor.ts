@@ -6,7 +6,12 @@
 import ogs from 'open-graph-scraper';
 import axios from 'axios';
 import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions } from '../types';
-import { validateUrlInput } from '../utils/validators';
+import {
+  getDefaultFaviconUrl,
+  resolveHttpUrl,
+  stripLeadingWww,
+  validateUrlInput,
+} from '../utils/validators';
 import {
   getEnhancedSecureHttpAgent,
   getEnhancedSecureHttpsAgent,
@@ -85,7 +90,11 @@ function findValidationError(error: unknown): PreviewGeneratorError | undefined 
 /**
  * Build redirect validation callback for SSRF protection
  */
-function createRedirectValidator(context: string, httpsOnly: boolean = false) {
+function createRedirectValidator(
+  context: string,
+  httpsOnly: boolean = false,
+  onValidatedRedirect?: (url: string) => void
+) {
   return (
     options: Record<string, unknown>,
     _responseDetails: { headers: Record<string, string>; statusCode: number }
@@ -112,6 +121,8 @@ function createRedirectValidator(context: string, httpsOnly: boolean = false) {
         `${context} blocked by HTTPS-only mode: ${validatedRedirectUrl}`
       );
     }
+
+    onValidatedRedirect?.(validatedRedirectUrl);
   };
 }
 
@@ -300,14 +311,14 @@ async function extractMetadataInternal(
   abortSignal?: AbortSignal
 ): Promise<ExtractedMetadata> {
   // DNS validation and the HTTP response share one total request deadline.
-  const { data: ogData, validatedUrl } = await fetchOpenGraphData(
+  const { data: ogData, finalUrl } = await fetchOpenGraphData(
     url,
     securityOptions,
     abortSignal
   );
 
   // Parse and normalize metadata
-  const metadata = parseMetadata(ogData, validatedUrl);
+  const metadata = parseMetadata(ogData, finalUrl);
 
   // Cache the result
   metadataCache.set(cacheKey, metadata);
@@ -395,7 +406,7 @@ async function fetchOpenGraphData(
   url: string,
   securityOptions?: SecurityOptions,
   abortSignal?: AbortSignal
-): Promise<{ data: Record<string, unknown>; validatedUrl: string }> {
+): Promise<{ data: Record<string, unknown>; finalUrl: string }> {
   const normalizedUrl = validateUrlBeforeNetwork(url, securityOptions);
   const requestTimeout = securityOptions?.timeout || 8000;
   // Create secure axios config with redirect validation and secure agent
@@ -412,20 +423,30 @@ async function fetchOpenGraphData(
     httpAgent: getEnhancedSecureHttpAgent(),
     httpsAgent: getEnhancedSecureHttpsAgent(),
     proxy: false as const,
-    beforeRedirect: createRedirectValidator('Redirect', securityOptions?.httpsOnly === true),
   };
 
   // Phase 1: Fetch HTML through secure agent
   let html: string;
-  let validatedUrl: string;
+  let finalUrl: string;
   try {
     const fetched = await runControlledNetworkRequest(
       requestTimeout,
       abortSignal,
       async signal => {
         const requestUrl = await validateUrlSecurity(normalizedUrl, signal);
-        const response = await axios.get(requestUrl, { ...axiosConfig, signal });
-        return { response, validatedUrl: requestUrl };
+        let responseUrl = requestUrl;
+        const response = await axios.get(requestUrl, {
+          ...axiosConfig,
+          signal,
+          beforeRedirect: createRedirectValidator(
+            'Redirect',
+            securityOptions?.httpsOnly === true,
+            redirectUrl => {
+              responseUrl = redirectUrl;
+            }
+          ),
+        });
+        return { response, finalUrl: responseUrl };
       }
     );
 
@@ -434,7 +455,7 @@ async function fetchOpenGraphData(
     }
 
     html = fetched.response.data;
-    validatedUrl = fetched.validatedUrl;
+    finalUrl = fetched.finalUrl;
   } catch (fetchError) {
     const validationError = findValidationError(fetchError);
     if (validationError) {
@@ -458,7 +479,7 @@ async function fetchOpenGraphData(
       throw new Error('Failed to parse Open Graph data');
     }
 
-    return { data: result, validatedUrl };
+    return { data: result, finalUrl };
   } catch (parseError) {
     throw new PreviewGeneratorError(
       ErrorType.FETCH_ERROR,
@@ -476,86 +497,89 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
 
   // Extract title (prioritize OG title, then Twitter, then HTML title)
   const title =
-    (ogData.ogTitle as string) ||
-    (ogData.twitterTitle as string) ||
-    (ogData.dcTitle as string) ||
-    (ogData.title as string) ||
+    firstCleanText(ogData.ogTitle, ogData.twitterTitle, ogData.dcTitle, ogData.title) ||
     urlObj.hostname;
 
   // Extract description
-  const description =
-    (ogData.ogDescription as string) ||
-    (ogData.twitterDescription as string) ||
-    (ogData.dcDescription as string) ||
-    (ogData.description as string) ||
-    '';
+  const description = firstCleanText(
+    ogData.ogDescription,
+    ogData.twitterDescription,
+    ogData.dcDescription,
+    ogData.description
+  );
 
   // Extract image URL (prioritize OG image, then Twitter image)
-  let image = extractImageUrlFromData(ogData.ogImage) || extractImageUrlFromData(ogData.twitterImage);
-
-  // Ensure image URL is absolute
-  if (image && !image.startsWith('http')) {
-    try {
-      image = new URL(image, url).toString();
-    } catch {
-      image = undefined;
-    }
-  }
+  const image =
+    resolveHttpUrl(extractImageUrlFromData(ogData.ogImage), url) ??
+    resolveHttpUrl(extractImageUrlFromData(ogData.twitterImage), url);
 
   // Extract site name
   const siteName =
-    (ogData.ogSiteName as string) ||
-    (ogData.twitterSite as string) ||
-    (ogData.applicationName as string) ||
-    urlObj.hostname.replace('www.', '');
+    firstCleanText(ogData.ogSiteName, ogData.twitterSite, ogData.applicationName) ||
+    stripLeadingWww(urlObj.hostname);
 
   // Extract favicon
-  let favicon: string | undefined;
-  if (ogData.favicon) {
-    favicon = ogData.favicon as string;
-    if (favicon && !favicon.startsWith('http')) {
-      try {
-        const faviconUrl = new URL(favicon, url);
-        favicon = faviconUrl.toString();
-      } catch {
-        // Try default favicon path
-        favicon = `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
-      }
-    }
-  } else {
-    // Default favicon path
-    favicon = `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
-  }
+  const favicon = resolveHttpUrl(firstString(ogData.favicon), url) || getDefaultFaviconUrl(url);
 
   // Extract author
-  const author =
-    (ogData.author as string) ||
-    (ogData.dcCreator as string) ||
-    (ogData.twitterCreator as string) ||
-    (ogData.articleAuthor as string);
+  const author = firstCleanText(
+    ogData.author,
+    ogData.dcCreator,
+    ogData.twitterCreator,
+    ogData.articleAuthor
+  );
 
   // Extract published date
-  const publishedDate =
-    (ogData.ogArticlePublishedTime as string) ||
-    (ogData.articlePublishedTime as string) ||
-    (ogData.dcDate as string) ||
-    (ogData.publishedTime as string);
+  const publishedDate = firstCleanText(
+    ogData.ogArticlePublishedTime,
+    ogData.articlePublishedTime,
+    ogData.dcDate,
+    ogData.publishedTime
+  );
 
   // Extract locale
-  const locale = (ogData.ogLocale as string) || (ogData.inLanguage as string) || 'en_US';
+  const locale = firstCleanText(ogData.ogLocale, ogData.inLanguage) || 'en_US';
 
   return {
-    title: cleanText(title),
-    description: description ? cleanText(description) : undefined,
+    title,
+    description,
     image,
-    siteName: siteName ? cleanText(siteName) : undefined,
+    siteName,
     favicon,
-    author: author ? cleanText(author) : undefined,
-    publishedDate: publishedDate ? cleanText(publishedDate) : undefined,
+    author,
+    publishedDate,
     url,
     domain: urlObj.hostname,
-    locale: cleanText(locale),
+    locale,
   };
+}
+
+function firstString(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.find(
+      (item): item is string => typeof item === 'string' && item.trim().length > 0
+    );
+  }
+  return undefined;
+}
+
+function firstCleanText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const candidates = Array.isArray(value) ? value : [value];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') {
+        continue;
+      }
+      const cleaned = cleanText(candidate);
+      if (cleaned) {
+        return cleaned;
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -679,8 +703,8 @@ export function applyFallbacks(
     title: metadata.title || urlObj.hostname,
     description: metadata.description,
     image: metadata.image,
-    siteName: metadata.siteName || urlObj.hostname.replace('www.', ''),
-    favicon: metadata.favicon || `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`,
+    siteName: metadata.siteName || stripLeadingWww(urlObj.hostname),
+    favicon: metadata.favicon || getDefaultFaviconUrl(url),
     author: metadata.author,
     publishedDate: metadata.publishedDate,
     url: metadata.url || url,

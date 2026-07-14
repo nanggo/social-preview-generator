@@ -16,7 +16,7 @@ import { escapeXml, wrapText } from '../utils';
 import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
 import { SYSTEM_FONT_STACK } from '../constants/fonts';
 import { fetchImage } from './metadata-extractor';
-import { createTransparentCanvas, validateColor } from '../utils/validators';
+import { createTransparentCanvas, stripLeadingWww, validateColor } from '../utils/validators';
 import { withPreparedRenderSlot, withRenderSlot } from '../utils/render-limiter';
 
 /**
@@ -366,7 +366,7 @@ export async function createFallbackImageWithDetails(
       description: `Visit ${domain} for more information`,
       url,
       domain,
-      siteName: domain.replace('www.', ''),
+      siteName: stripLeadingWww(domain),
     };
 
     // Use a simple template for fallback

@@ -6,11 +6,56 @@ import {
   validateColor,
   validateDimensions,
   createTransparentCanvas,
+  getDefaultFaviconUrl,
+  resolveHttpUrl,
   sanitizeOptions,
+  stripLeadingWww,
 } from '../../../src/utils/validators';
 import { PreviewGeneratorError, ErrorType, PreviewOptions } from '../../../src/types';
 
 describe('Validators', () => {
+  describe('URL helpers', () => {
+    test('should resolve relative and canonical HTTP(S) URLs', () => {
+      const baseUrl = 'https://origin.example/articles/2026/story';
+
+      expect(resolveHttpUrl('../assets/card.jpg', baseUrl)).toBe(
+        'https://origin.example/articles/assets/card.jpg'
+      );
+      expect(resolveHttpUrl('//cdn.example/card.jpg', baseUrl)).toBe(
+        'https://cdn.example/card.jpg'
+      );
+      expect(resolveHttpUrl('HTTPS://CDN.EXAMPLE/card.jpg', baseUrl)).toBe(
+        'https://cdn.example/card.jpg'
+      );
+    });
+
+    test.each(['httpsx://cdn.example/card.jpg', 'javascript:alert(1)', 'data:image/png,x', ''])(
+      'should reject non-HTTP(S) URL %j',
+      value => {
+        expect(resolveHttpUrl(value, 'https://origin.example/page')).toBeUndefined();
+      }
+    );
+
+    test('should preserve non-default ports in the default favicon URL', () => {
+      expect(getDefaultFaviconUrl('https://example.com:8443/articles/page')).toBe(
+        'https://example.com:8443/favicon.ico'
+      );
+    });
+
+    test('should drop credentials from the default favicon URL', () => {
+      expect(getDefaultFaviconUrl('https://user:token@example.com:8443/articles/page')).toBe(
+        'https://example.com:8443/favicon.ico'
+      );
+    });
+
+    test('should strip only a leading www. label', () => {
+      expect(stripLeadingWww('www.example.com')).toBe('example.com');
+      expect(stripLeadingWww('WWW.example.com')).toBe('example.com');
+      expect(stripLeadingWww('blog.www.example.com')).toBe('blog.www.example.com');
+      expect(stripLeadingWww('notwww.example.com')).toBe('notwww.example.com');
+    });
+  });
+
   describe('validateColor', () => {
     describe('Valid colors', () => {
       test('should accept valid hex colors', () => {
