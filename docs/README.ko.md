@@ -2,25 +2,30 @@
 
 [English](../README.md) | **한국어**
 
-URL 또는 이미 알고 있는 페이지 메타데이터로 Open Graph 및 소셜 미리보기 이미지를 생성합니다.
+서버용 Node.js 환경에서 바로 사용할 수 있는 Open Graph 및 소셜 미리보기 이미지를
+생성합니다. 공개 URL에서 메타데이터를 가져오거나, 이미 알고 있는 메타데이터를 직접
+렌더링할 수 있습니다.
 
 [![npm version](https://img.shields.io/npm/v/@nanggo/social-preview.svg)](https://www.npmjs.com/package/@nanggo/social-preview)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js CI](https://github.com/nanggo/social-preview-generator/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/nanggo/social-preview-generator/actions/workflows/npm-publish.yml)
+[![Node.js CI](https://github.com/nanggo/social-preview-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/nanggo/social-preview-generator/actions/workflows/ci.yml)
 
-## 주요 기능
+## 주요 특징
 
-- URL에서 Open Graph 및 Twitter Card 메타데이터 추출
-- 정적 게시 흐름에서 전달받은 메타데이터로 이미지 직접 생성
-- 내장된 `modern`, `classic`, `minimal`, `article` 템플릿으로 렌더링
-- Sharp를 사용한 이미지 처리 및 최적화
-- 메타데이터가 불완전할 때 생성형 미리보기로 대체
-- TypeScript 타입 정의 제공
-- 한국어 텍스트 렌더링 지원
+- HTTP(S) URL에서 Open Graph 및 Twitter Card 메타데이터 추출
+- 페이지 자체를 요청하지 않고 전달받은 메타데이터 렌더링
+- `modern`, `classic`, `minimal`, `article` 내장 템플릿 제공
+- 크기와 품질을 설정할 수 있는 JPEG 이미지 생성(기본 1200×630)
+- CommonJS, ESM, TypeScript 지원
+- 서버 글꼴 fallback을 사용한 한국어 텍스트 렌더링
+- 렌더링 전 URL, SSRF, SVG, 입력 크기 및 메모리 보호 적용
+
+## 요구사항
+
+- Node.js 22.13 이상인 22.x 버전 또는 Node.js 24 이상
+- Sharp를 사용하는 서버용 Node.js 패키지이며 브라우저 라이브러리가 아닙니다
 
 ## 설치
-
-Node.js 22.13 이상(22.x) 또는 24 이상이 필요합니다.
 
 ```bash
 npm install @nanggo/social-preview
@@ -29,228 +34,251 @@ npm install @nanggo/social-preview
 ## 빠른 시작
 
 ```javascript
+const { writeFile } = require('node:fs/promises');
 const { generatePreview } = require('@nanggo/social-preview');
 
-const imageBuffer = await generatePreview('https://github.com');
-
-const fs = require('fs').promises;
-await fs.writeFile('preview.jpg', imageBuffer);
-```
-
-## API
-
-### `generatePreview(url, options?)`
-
-URL로 소셜 미리보기 이미지를 생성합니다.
-
-#### 매개변수
-
-- `url` (string): 미리보기를 생성할 URL
-- `options` (PreviewOptions): 선택적 설정
-
-#### 반환값
-
-- `Promise<Buffer>`: JPEG 형식의 이미지 버퍼
-
-### `generatePreviewFromMetadata(metadata, options?)`
-
-이미 가지고 있는 메타데이터로 소셜 미리보기 이미지를 생성합니다. 페이지 URL을 가져오거나
-스크래핑하지 않으므로 제목, 설명, 정규 URL, 커버 이미지를 게시 또는 빌드 시점에 알고 있는
-정적 블로그 게시 파이프라인에 유용합니다.
-
-#### 매개변수
-
-- `metadata` (PreviewMetadataInput): 렌더링할 페이지 또는 게시물 메타데이터
-- `options` (PreviewOptions): 선택적 설정
-
-#### 반환값
-
-- `Promise<Buffer>`: JPEG 형식의 이미지 버퍼
-
-### 옵션
-
-```typescript
-interface PreviewOptions {
-  template?: 'modern' | 'classic' | 'minimal' | 'article'; // 사용할 템플릿(기본값: 'modern')
-  width?: number; // 이미지 너비(기본값: 1200)
-  height?: number; // 이미지 높이(기본값: 630)
-  quality?: number; // JPEG 품질 1-100(기본값: 90)
-  cache?: boolean; // 생성 결과를 메모리에 캐시(기본값: false)
-  mobilePreview?: boolean; // article 전용. 설명이 있으면 기본값은 true
-  fallback?: {
-    strategy?: 'auto' | 'generate'; // 대체 전략
-    text?: string; // 사용자 지정 대체 텍스트
-  };
-  colors?: {
-    primary?: string; // article 주 색상(기본값: '#3182F6')
-    background?: string; // 배경색
-    text?: string; // 텍스트 색상
-    accent?: string; // 강조색
-  };
+async function main() {
+  const image = await generatePreview('https://github.com');
+  await writeFile('preview.jpg', image);
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 ```
 
-### 정적 블로그 게시
-
-게시물을 발행할 때 이미지를 한 번 생성한 다음, 저장한 파일을 `og:image`로 지정합니다.
+ESM named import도 지원합니다.
 
 ```javascript
+import { generatePreview } from '@nanggo/social-preview';
+```
+
+## 알고 있는 메타데이터로 생성
+
+게시 또는 빌드 파이프라인에서 제목, canonical URL, 설명과 선택적 이미지 정보를 이미 알고
+있다면 `generatePreviewFromMetadata`를 사용합니다.
+
+```javascript
+const { mkdir, writeFile } = require('node:fs/promises');
 const { generatePreviewFromMetadata } = require('@nanggo/social-preview');
-const fs = require('fs').promises;
 
-const buffer = await generatePreviewFromMetadata(
-  {
-    title: 'How to Generate Open Graph Images',
-    description: 'Create a social preview image while publishing a blog post.',
-    siteName: 'My Blog',
-    url: 'https://example.com/posts/open-graph-images',
-    image: 'https://example.com/images/open-graph-cover.jpg',
-  },
-  {
-    template: 'modern',
-    width: 1200,
-    height: 630,
-    quality: 90,
-  }
-);
+async function main() {
+  const image = await generatePreviewFromMetadata(
+    {
+      title: 'Open Graph 이미지 생성하기',
+      description: '블로그 글을 발행하면서 소셜 미리보기를 생성합니다.',
+      siteName: 'My Blog',
+      url: 'https://example.com/posts/open-graph-images',
+      image: 'https://example.com/images/open-graph-cover.jpg',
+    },
+    {
+      template: 'modern',
+      colors: { accent: '#2563EB' },
+    }
+  );
 
-await fs.writeFile('public/og/open-graph-images.jpg', buffer);
-```
-
-## 예제
-
-### 기본 사용법
-
-```javascript
-const { generatePreview } = require('@nanggo/social-preview');
-
-async function createPreview() {
-  const buffer = await generatePreview('https://www.npmjs.com');
-  await fs.writeFile('npm-preview.jpg', buffer);
+  await mkdir('public/og', { recursive: true });
+  await writeFile('public/og/open-graph-images.jpg', image);
 }
-```
 
-### 스타일 사용자 지정
-
-```javascript
-const buffer = await generatePreview('https://example.com', {
-  template: 'modern',
-  colors: {
-    background: '#2c3e50',
-    accent: '#3498db',
-    text: '#ffffff',
-  },
-  quality: 95,
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
 });
 ```
 
-### 대체 처리
-
-```javascript
-const buffer = await generatePreview('https://example.com', {
-  fallback: {
-    strategy: 'generate',
-    text: 'My Custom Preview',
-  },
-});
-```
-
-### 아티클 미리보기
-
-텍스트만 있는 아티클 카드에는 `mobilePreview: false`를 사용합니다. 옵션을 생략하면 메타데이터에
-설명이 있을 때 `article` 템플릿이 모바일 미리보기를 표시합니다. 정사각형에 가까운 비율과
-세로형 출력에서는 모바일 화면이 제목 아래에 자동으로 배치됩니다. 일반적인 소셜 미리보기
-비율을 기준으로 하며, 극단적인 화면 비율은 가능한 범위에서만 대응합니다.
-
-```javascript
-const buffer = await generatePreviewFromMetadata(metadata, {
-  template: 'article',
-  mobilePreview: true,
-  colors: {
-    primary: '#7C3AED',
-  },
-});
-```
+이 모드에서는 페이지 URL을 요청하지 않습니다. 선택한 템플릿이 원격 `image`를 사용한다면
+해당 이미지는 요청할 수 있습니다.
 
 ## 템플릿
 
-### Modern (기본값)
+| 템플릿    | 적합한 용도                | 특징                                                 |
+| --------- | -------------------------- | ---------------------------------------------------- |
+| `modern`  | 제품 및 일반적인 카드      | 중앙 정렬된 현대적인 오버레이                        |
+| `classic` | 뉴스 및 블로그 링크        | 이미지와 텍스트를 나눈 전통적인 카드                 |
+| `minimal` | 문서 및 텍스트 중심 페이지 | 절제된 텍스트 중심 레이아웃                          |
+| `article` | 아티클 및 편집 콘텐츠      | 선택적 모바일 요약; 원격 커버 이미지는 사용하지 않음 |
 
-- 깔끔하고 현대적인 디자인
-- 그라디언트 오버레이
-- 중앙 정렬 텍스트 레이아웃
-- 기술 및 현대적인 웹사이트에 적합
+`article` 템플릿은 설명이 있으면 모바일 요약을 기본으로 표시합니다. 텍스트만 있는
+아티클 카드에는 `mobilePreview: false`를 사용하세요.
 
-### Classic
+## API
 
-- 전통적인 카드 레이아웃
-- 위쪽에 이미지, 아래쪽에 텍스트 배치
-- 뉴스 및 블로그 사이트에 적합
+| Export                                                       | 반환값                      | 용도                                                    |
+| ------------------------------------------------------------ | --------------------------- | ------------------------------------------------------- |
+| `generatePreview(url, options?)`                             | `Promise<Buffer>`           | URL에서 메타데이터를 가져와 JPEG 반환                   |
+| `generatePreviewFromMetadata(metadata, options?)`            | `Promise<Buffer>`           | 전달받은 메타데이터 렌더링                              |
+| `generatePreviewWithDetails(url, options?)`                  | `Promise<GeneratedPreview>` | 메타데이터, 크기, 템플릿, 캐시 상태를 포함한 URL 렌더링 |
+| `generatePreviewFromMetadataWithDetails(metadata, options?)` | `Promise<GeneratedPreview>` | 전체 결과 정보를 포함한 메타데이터 렌더링               |
+| `generateImageWithTemplate(metadata, template, options)`     | `Promise<Buffer>`           | 전달받은 `TemplateConfig`로 렌더링                      |
 
-### Minimal
+`PreviewMetadataInput`에는 `title`과 `url`이 필요합니다. 선택적 필드는
+`description`, `image`, `siteName`, `favicon`, `author`, `publishedDate`,
+`domain`, `locale`입니다.
 
-- 단순하고 텍스트 중심적인 디자인
-- 최소한의 장식
-- 문서 사이트에 적합
+현재 모든 이미지 생성 메서드는 JPEG 데이터를 반환합니다. 런타임의
+`GeneratedPreview.format`은 항상 `'jpeg'`이며, 더 넓은 TypeScript union은 호환성을 위해
+유지합니다.
 
-### Article
+상세 결과 메서드는 다음 값을 반환합니다.
 
-- 아티클 및 블로그 메타데이터를 위한 편집 디자인 레이아웃
-- 설명이 있으면 기본으로 활성화되는 선택적 모바일 미리보기
-- 정사각형에 가까운 비율과 세로형 출력에 대응하는 반응형 스택 레이아웃
-- `colors.primary`로 주 색상 사용자 지정 가능(기본값: `#3182F6`)
-- 메타데이터만 사용해 렌더링하며, 원격 커버 이미지는 의도적으로 사용하지 않음
-
-## 아키텍처
-
-```
-social-preview-generator/
-├── src/
-│   ├── core/
-│   │   ├── metadata-extractor.ts        # URL 메타데이터 추출
-│   │   ├── image-generator.ts           # 이미지 생성 엔진
-│   │   ├── overlay-generator.ts         # SVG 텍스트 오버레이 생성
-│   │   └── template-image-processing.ts # 템플릿별 이미지 처리
-│   ├── templates/
-│   │   ├── modern.ts                    # Modern 템플릿
-│   │   ├── classic.ts                   # Classic 템플릿
-│   │   ├── minimal.ts                   # Minimal 템플릿
-│   │   ├── article.ts                   # Article 템플릿
-│   │   ├── shared.ts                    # 공유 레이아웃 도우미
-│   │   └── registry.ts                  # 템플릿 레지스트리
-│   ├── utils/                           # 공유 유틸리티 및 보안
-│   ├── constants/                       # 보안 제한 및 글꼴 설정
-│   ├── types/
-│   │   └── index.ts                     # TypeScript 타입 정의
-│   └── index.ts                         # 메인 진입점
+```typescript
+interface GeneratedPreview {
+  buffer: Buffer;
+  format: 'png' | 'jpeg' | 'webp'; // 현재는 항상 'jpeg'
+  dimensions: { width: number; height: number };
+  metadata: ExtractedMetadata;
+  template: string;
+  cached: boolean;
+}
 ```
 
-## 기여하기
+### 사용자 지정 템플릿
 
-기여를 환영합니다! 언제든지 Pull Request를 보내 주세요.
+패키지의 기본 텍스트 오버레이와 함께 사용자 지정 템플릿을 사용할 수 있습니다.
 
-1. 저장소를 포크합니다.
-2. 기능 브랜치를 생성합니다(`git checkout -b feature/amazing-feature`).
-3. 변경 사항을 커밋합니다(`git commit -m 'Add some amazing feature'`).
-4. 브랜치에 푸시합니다(`git push origin feature/amazing-feature`).
-5. Pull Request를 엽니다.
+```javascript
+const { writeFile } = require('node:fs/promises');
+const { generateImageWithTemplate } = require('@nanggo/social-preview');
+
+async function main() {
+  const image = await generateImageWithTemplate(
+    {
+      title: '사용자 지정 소셜 카드',
+      description: '전달받은 레이아웃과 타이포그래피로 렌더링합니다.',
+      url: 'https://example.com/custom-card',
+    },
+    {
+      name: 'brand-card',
+      layout: { padding: 64, imagePosition: 'none' },
+      typography: {
+        title: { fontSize: 64, fontWeight: '700', lineHeight: 1.1, maxLines: 2 },
+        description: { fontSize: 28, lineHeight: 1.3, maxLines: 2 },
+      },
+    },
+    {
+      width: 1200,
+      height: 630,
+      colors: {
+        background: '#0F172A',
+        accent: '#2563EB',
+        text: '#FFFFFF',
+      },
+    }
+  );
+
+  await writeFile('custom-preview.jpg', image);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+```
+
+사용자 지정 `overlayGenerator`는 신뢰할 수 있는 호출자가 제공하는 동기 코드입니다.
+신뢰할 수 없는 JSON에서 구성하지 마세요. 반환 SVG는 문자열이며 UTF-8 기준 1MiB 이하여야
+합니다.
+
+### 고급 유틸리티
+
+| Export                           | 용도                                                 |
+| -------------------------------- | ---------------------------------------------------- |
+| `getInflightRequestStats()`      | URL을 노출하지 않고 요청 병합 상태 확인              |
+| `clearInflightRequests()`        | 요청 병합 상태 삭제; 진행 중인 작업이 중복될 수 있음 |
+| `startCacheCleanup(intervalMs?)` | 메타데이터 및 미리보기 캐시 정리 시작                |
+| `stopCacheCleanup()`             | 캐시 정리 interval 중지                              |
+| `isCacheCleanupRunning()`        | 캐시 정리 상태 확인                                  |
+| `getCacheStats()`                | 내부 Sharp 캐시 통계 확인                            |
+| `clearAllCaches()`               | 내부 Sharp 캐시 삭제                                 |
+| `shutdownSharpCaches()`          | 내부 Sharp 캐시 중지 및 삭제                         |
+
+## 주요 옵션
+
+```typescript
+interface PreviewOptions {
+  template?: 'modern' | 'classic' | 'minimal' | 'article'; // 기본값: 'modern'
+  mobilePreview?: boolean; // article 전용. 설명이 있으면 기본값 true
+  width?: number; // 100-4096, 기본값: 1200
+  height?: number; // 100-4096, 기본값: 630
+  quality?: number; // 정수 1-100, 기본값: 90
+  cache?: boolean; // 기본값: false
+  fallback?: {
+    strategy?: 'auto' | 'generate';
+    text?: string;
+  };
+  colors?: {
+    primary?: string;
+    secondary?: string;
+    background?: string;
+    text?: string;
+    accent?: string;
+    overlay?: string;
+  };
+  security?: {
+    httpsOnly?: boolean; // HTTP URL 거부. 기본값: false
+    allowSvg?: boolean; // 정제된 원격 SVG 이미지 허용. 기본값: false
+    maxRedirects?: number; // 정수 0-10, 기본값: 3
+    timeout?: number; // 전체 요청 제한 시간(ms), 1-30000
+  };
+}
+```
+
+전체 옵션과 템플릿 구조는 패키지가 export하는 TypeScript 정의를 기준으로 합니다.
+
+## 오류 처리
+
+검증, 요청, 메타데이터, 렌더링, 템플릿 및 캐시 오류는 `ErrorType`을 포함한
+`PreviewGeneratorError`를 사용합니다.
+
+```javascript
+const { ErrorType, PreviewGeneratorError, generatePreview } = require('@nanggo/social-preview');
+
+async function main() {
+  try {
+    await generatePreview('https://example.com');
+  } catch (error) {
+    if (error instanceof PreviewGeneratorError) {
+      console.error(error.type, error.message);
+      return;
+    }
+    throw error;
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+```
+
+## 보안 및 리소스 제한
+
+- HTTP(S) URL만 허용합니다. 앞뒤 공백을 제거하고 URL credential을 거부하며 fragment는
+  무시합니다. C0/C1 제어 문자를 차단하고, 공백 제거 후 입력 URL과 canonical URL을 모두
+  2,048자로 제한합니다.
+- socket을 만들기 전에 private, loopback, link-local 및 기타 reserved IP 목적지를
+  차단합니다. private 결과나 public/private가 섞인 DNS 결과를 가진 hostname도 거부합니다.
+- `security.httpsOnly`를 사용하면 HTTPS에서 HTTP로 향하는 redirect를 거부합니다.
+- 원격 SVG 이미지는 기본으로 비활성화되며, 명시적으로 허용해도 정제 후 처리합니다.
+- 메타데이터 text 필드는 10,000자로 제한합니다. Sharp 작업 전에 템플릿 숫자 필드, CSS
+  font weight 및 gradient 크기를 검증합니다.
+- 생성된 SVG는 항목당 1MiB, SVG 캐시에 보관되는 전체 크기는 16MiB로 제한합니다.
+- 16MiB를 넘는 미리보기는 정상적으로 렌더링하지만 캐시하지 않습니다. 미리보기 캐시는
+  이미지 buffer를 최대 64MiB까지 보관합니다.
+- `getInflightRequestStats().keys`에는 URL 대신 복원할 수 없는 process-local request ID가
+  들어갑니다. ID는 process가 다시 시작되면 변경됩니다.
+
+이 보호 장치는 위험을 줄이지만, 임의 사용자가 렌더링을 요청할 수 있는 서비스에서는
+애플리케이션 수준의 인증, 권한 확인, rate limiting 및 workload 격리를 별도로 적용해야
+합니다.
+
+## 기여
+
+기여를 환영합니다. 저장소를 fork하고 범위가 명확한 branch를 만든 다음, 관련 검사를
+실행하고 pull request를 열어 주세요.
 
 ## 라이선스
 
-이 프로젝트는 MIT 라이선스를 따릅니다. 자세한 내용은 [LICENSE](../LICENSE) 파일을 참고하세요.
-
-## 감사의 말
-
-- [Sharp](https://sharp.pixelplumbing.com/) - 고성능 이미지 처리
-- [Open Graph Scraper](https://github.com/jshemas/openGraphScraper) - 메타데이터 추출
-- [Axios](https://axios-http.com/) - HTTP 클라이언트
-
-## 링크
-
-- [npm 패키지](https://www.npmjs.com/package/@nanggo/social-preview)
-- [GitHub 저장소](https://github.com/nanggo/social-preview-generator)
-- [이슈 제보](https://github.com/nanggo/social-preview-generator/issues)
-
----
-
-[nanggo](https://github.com/nanggo)가 만들었습니다.
+MIT — 자세한 내용은 [LICENSE](../LICENSE)를 확인하세요.
