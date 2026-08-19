@@ -65,6 +65,31 @@ describe('render input validation', () => {
     expect(validated.overlayGenerator).toBe(callback);
   });
 
+  it('preserves caller-owned extension fields while replacing validated fields', () => {
+    const extendedTemplate = {
+      ...template,
+      brand: { label: 'NANGGO' },
+      layout: { ...template.layout, extensionLayoutValue: 'keep-layout' },
+      typography: {
+        ...template.typography,
+        title: { ...template.typography.title, extensionTitleValue: 'keep-title' },
+      },
+    } as TemplateConfig & {
+      brand: { label: string };
+      layout: TemplateConfig['layout'] & { extensionLayoutValue: string };
+      typography: TemplateConfig['typography'] & {
+        title: TemplateConfig['typography']['title'] & { extensionTitleValue: string };
+      };
+    };
+
+    const validated = validateTemplateConfig(extendedTemplate) as typeof extendedTemplate;
+
+    expect(validated.brand).toEqual({ label: 'NANGGO' });
+    expect(validated.layout.extensionLayoutValue).toBe('keep-layout');
+    expect(validated.typography.title.extensionTitleValue).toBe('keep-title');
+    expect(validated.layout).not.toBe(extendedTemplate.layout);
+  });
+
   it.each([
     ['layout.padding', { layout: { ...template.layout, padding: -1 } }],
     ['title.fontSize', { typography: { ...template.typography, title: { fontSize: Infinity } } }],

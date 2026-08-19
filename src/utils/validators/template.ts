@@ -71,6 +71,7 @@ function typographyEntry(
   if (value === undefined && !options.required) return undefined;
   const entry = asPlainObject(value, fieldName);
   return {
+    ...entry,
     fontSize: finiteNumber(entry.fontSize, `${fieldName}.fontSize`, 1, 512, { required: true })!,
     fontWeight: safeFontWeight(entry.fontWeight, `${fieldName}.fontWeight`),
     ...(options.allowLineSettings
@@ -118,6 +119,7 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
         invalid('template.effects.gradient.colors must contain at most 16 colors');
       }
       gradient = {
+        ...rawGradient,
         type: optionalEnum(rawGradient.type, 'template.effects.gradient.type', ['linear', 'radial', 'none'] as const)!,
         colors: rawGradient.colors.map((color, index) => {
           if (typeof color !== 'string') invalid(`template.effects.gradient.colors[${index}] must be a string`);
@@ -132,6 +134,7 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
     if (rawEffects.blur !== undefined) {
       const rawBlur = asPlainObject(rawEffects.blur, 'template.effects.blur');
       blur = {
+        ...rawBlur,
         radius: finiteNumber(rawBlur.radius, 'template.effects.blur.radius', 0, 100, { required: true })!,
         areas: optionalEnum(rawBlur.areas, 'template.effects.blur.areas', ['background', 'overlay', 'all', 'none'] as const),
       };
@@ -141,12 +144,14 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
     if (rawEffects.shadow !== undefined) {
       const rawShadow = asPlainObject(rawEffects.shadow, 'template.effects.shadow');
       shadow = {
+        ...rawShadow,
         text: optionalBoolean(rawShadow.text, 'template.effects.shadow.text'),
         box: optionalBoolean(rawShadow.box, 'template.effects.shadow.box'),
       };
     }
 
     effects = {
+      ...rawEffects,
       gradient,
       blur,
       shadow,
@@ -158,6 +163,7 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
   if (template.imageProcessing !== undefined) {
     const rawImage = asPlainObject(template.imageProcessing, 'template.imageProcessing');
     imageProcessing = {
+      ...rawImage,
       brightness: finiteNumber(rawImage.brightness, 'template.imageProcessing.brightness', 0, 1),
       blur: finiteNumber(rawImage.blur, 'template.imageProcessing.blur', 0, 100),
       contrast: finiteNumber(rawImage.contrast, 'template.imageProcessing.contrast', 0, 2),
@@ -174,8 +180,10 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
   }
 
   return {
+    ...template,
     name,
     layout: {
+      ...layout,
       padding: finiteNumber(layout.padding, 'template.layout.padding', 0, 2048, { required: true })!,
       titlePosition: optionalEnum(layout.titlePosition, 'template.layout.titlePosition', ['top', 'center', 'bottom', 'left', 'right'] as const),
       descriptionPosition: optionalEnum(layout.descriptionPosition, 'template.layout.descriptionPosition', ['below-title', 'bottom', 'none'] as const),
@@ -183,6 +191,7 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
       logoPosition: optionalEnum(layout.logoPosition, 'template.layout.logoPosition', ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'bottom-center', 'none'] as const),
     },
     typography: {
+      ...typography,
       title: typographyEntry(typography.title, 'template.typography.title', { required: true, allowLineSettings: true })!,
       description: typographyEntry(typography.description, 'template.typography.description', { required: false, allowLineSettings: true }),
       siteName: typographyEntry(typography.siteName, 'template.typography.siteName', { required: false, allowLineSettings: false }),

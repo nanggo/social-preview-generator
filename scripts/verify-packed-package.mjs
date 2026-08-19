@@ -341,8 +341,13 @@ try {
     {
       ...customTemplate,
       name: 'packed-caller-overlay',
-      overlayGenerator: (_metadata, width, height) =>
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#123456"/></svg>`,
+      brand: { color: '#123456' },
+      overlayGenerator: (_metadata, width, height, _options, receivedTemplate) => {
+        if (receivedTemplate.brand?.color !== '#123456') {
+          throw new Error('Packed package dropped a caller-owned template extension');
+        }
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${receivedTemplate.brand.color}"/></svg>`;
+      },
     },
     { width: 320, height: 168 }
   );
