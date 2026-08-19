@@ -1,6 +1,6 @@
 {
   "name": "@nanggo/social-preview",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Turn public URLs into secure social preview JPEGs with Node.js",
   "packageManager": "pnpm@10.11.0",
   "main": "dist/index.js",
