@@ -12,7 +12,6 @@ import {
 } from '../../src/utils/enhanced-secure-agent';
 import {
   __testNetworkRequestLimiter,
-  NetworkRequestDeadlineError,
   runControlledNetworkRequest,
 } from '../../src/utils/network-request-control';
 import { ErrorType, PreviewGeneratorError } from '../../src/types';
@@ -113,7 +112,7 @@ describe('DNS preflight network deadline composition', () => {
       expect(error).toMatchObject({
         type: ErrorType.FETCH_ERROR,
         message: expect.stringContaining('Network request deadline exceeded after 50ms'),
-        details: expect.any(NetworkRequestDeadlineError),
+        details: { name: 'Error' },
       });
       expect(error?.type).not.toBe(ErrorType.VALIDATION_ERROR);
       expect(mockedAxios.get).not.toHaveBeenCalled();
@@ -153,7 +152,7 @@ describe('DNS preflight network deadline composition', () => {
       expect(error).toMatchObject({
         type: ErrorType.IMAGE_ERROR,
         message: expect.stringContaining('Network request deadline exceeded after 50ms'),
-        details: expect.any(NetworkRequestDeadlineError),
+        details: { name: 'Error' },
       });
       expect(error?.type).not.toBe(ErrorType.VALIDATION_ERROR);
       expect(mockedAxios.get).not.toHaveBeenCalled();

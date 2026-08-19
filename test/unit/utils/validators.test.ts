@@ -11,6 +11,7 @@ import {
   sanitizeOptions,
   stripLeadingWww,
 } from '../../../src/utils/validators';
+import { MAX_URL_LENGTH } from '../../../src/constants/security';
 import { PreviewGeneratorError, ErrorType, PreviewOptions } from '../../../src/types';
 
 describe('Validators', () => {
@@ -35,6 +36,15 @@ describe('Validators', () => {
         expect(resolveHttpUrl(value, 'https://origin.example/page')).toBeUndefined();
       }
     );
+
+    test('rejects unsafe scraped URL spelling before canonicalization', () => {
+      const baseUrl = 'https://origin.example/page';
+      const oversizedButCollapsible = `https://cdn.example/${'a/../'.repeat(MAX_URL_LENGTH / 2)}image.png`;
+
+      expect(resolveHttpUrl('https://cdn.example/im\nage.png', baseUrl)).toBeUndefined();
+      expect(oversizedButCollapsible.length).toBeGreaterThan(MAX_URL_LENGTH);
+      expect(resolveHttpUrl(oversizedButCollapsible, baseUrl)).toBeUndefined();
+    });
 
     test('should preserve non-default ports in the default favicon URL', () => {
       expect(getDefaultFaviconUrl('https://example.com:8443/articles/page')).toBe(

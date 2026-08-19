@@ -16,7 +16,13 @@ import { escapeXml, wrapText } from '../utils';
 import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
 import { SYSTEM_FONT_STACK } from '../constants/fonts';
 import { fetchImage } from './metadata-extractor';
-import { createTransparentCanvas, stripLeadingWww, validateColor } from '../utils/validators';
+import {
+  createTransparentCanvas,
+  normalizeMetadataForRendering,
+  stripLeadingWww,
+  validateColor,
+  validateTemplateConfig,
+} from '../utils/validators';
 import { withPreparedRenderSlot, withRenderSlot } from '../utils/render-limiter';
 
 /**
@@ -41,6 +47,8 @@ export async function generateImage(
   template: TemplateConfig,
   options: PreviewOptions = {}
 ): Promise<Buffer> {
+  const normalizedMetadata = normalizeMetadataForRendering(metadata, 'custom');
+  const validatedTemplate = validateTemplateConfig(template);
   const width = options.width || DEFAULT_DIMENSIONS.width;
   const height = options.height || DEFAULT_DIMENSIONS.height;
   const quality = options.quality || 90;
@@ -52,10 +60,10 @@ export async function generateImage(
 
       if (imageBuffer) {
         // Use existing image as background
-        baseImage = await processBackgroundImage(imageBuffer, width, height, template);
+        baseImage = await processBackgroundImage(imageBuffer, width, height, validatedTemplate);
       } else {
         // Create blank canvas with gradient background or transparent canvas based on template settings
-        if (template.imageProcessing?.requiresTransparentCanvas) {
+        if (validatedTemplate.imageProcessing?.requiresTransparentCanvas) {
           baseImage = createTransparentCanvas(width, height);
         } else {
           baseImage = await createBlankCanvas(width, height, options);
@@ -63,7 +71,13 @@ export async function generateImage(
       }
 
       // Generate text overlay SVG
-      const overlayBuffer = await generateTextOverlay(metadata, template, width, height, options);
+      const overlayBuffer = await generateTextOverlay(
+        normalizedMetadata,
+        validatedTemplate,
+        width,
+        height,
+        options
+      );
 
       // Composite text overlay on base image
       const finalImage = await baseImage
@@ -90,7 +104,7 @@ export async function generateImage(
     }
   };
 
-  const imageUrl = metadata.image;
+  const imageUrl = normalizedMetadata.image;
   if (imageUrl) {
     return withPreparedRenderSlot(
       () => fetchImage(imageUrl),

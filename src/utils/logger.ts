@@ -3,9 +3,13 @@
  */
 /* eslint-disable no-console */
 
+import { createSafeErrorDetails, getSafeUrlOrigin } from './network-diagnostics';
+
 export interface LogContext {
   operation?: string;
   url?: string;
+  origin?: string;
+  requestId?: string;
   hostname?: string;
   actualIP?: string;
   cachedIPs?: string[];
@@ -17,7 +21,7 @@ export interface LogContext {
   totalAddresses?: number;
   remoteAddress?: string;
   remotePort?: number;
-  error?: string | Error;
+  error?: unknown;
   metadata?: Record<string, unknown>;
 }
 
@@ -69,7 +73,15 @@ export class Logger {
 
     const contextParts: string[] = [];
     if (context.operation) contextParts.push(`operation=${context.operation}`);
-    if (context.url) contextParts.push(`url=${context.url}`);
+    const origin = context.origin ?? getSafeUrlOrigin(context.url);
+    if (origin) contextParts.push(`origin=${origin}`);
+    if (context.requestId) contextParts.push(`requestId=${context.requestId}`);
+    if (context.error) {
+      const safeError = createSafeErrorDetails(context.error);
+      if (safeError?.name) contextParts.push(`errorName=${safeError.name}`);
+      if (safeError?.code) contextParts.push(`errorCode=${safeError.code}`);
+      if (safeError?.status !== undefined) contextParts.push(`status=${safeError.status}`);
+    }
 
     const contextStr = contextParts.length > 0 ? ` {${contextParts.join(', ')}}` : '';
     return `${prefix} ${message}${contextStr}`;
@@ -90,18 +102,12 @@ export class Logger {
   warn(message: string, context?: LogContext): void {
     if (this.shouldLog(LogLevel.WARN)) {
       console.warn(this.formatMessage(LogLevel.WARN, message, context));
-      if (context?.error) {
-        console.warn('Error details:', context.error);
-      }
     }
   }
 
   error(message: string, context?: LogContext): void {
     if (this.shouldLog(LogLevel.ERROR)) {
       console.error(this.formatMessage(LogLevel.ERROR, message, context));
-      if (context?.error) {
-        console.error('Error details:', context.error);
-      }
     }
   }
 }

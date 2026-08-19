@@ -1,4 +1,5 @@
 import { ErrorType, PreviewGeneratorError } from '../types';
+import { createSafeErrorDetails } from './network-diagnostics';
 
 interface SecurityPolicyErrorDetails {
   securityPolicyViolation: true;
@@ -11,7 +12,7 @@ export function createSecurityPolicyError(
 ): PreviewGeneratorError {
   return new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, message, {
     securityPolicyViolation: true,
-    cause,
+    cause: createSafeErrorDetails(cause),
   } satisfies SecurityPolicyErrorDetails);
 }
 

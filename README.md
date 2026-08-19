@@ -67,6 +67,12 @@ canonical URL, and cover image are known at publish/build time.
 
 - `Promise<Buffer>`: Image buffer in JPEG format
 
+### `generateImageWithTemplate(metadata, template, options)`
+
+Renders caller-provided metadata with a custom template. `overlayGenerator` is trusted caller
+code and must not be populated from untrusted JSON. Its returned SVG must be a string no larger
+than 1 MiB in UTF-8 bytes.
+
 ### Options
 
 ```typescript
@@ -116,6 +122,19 @@ const buffer = await generatePreviewFromMetadata(
 
 await fs.writeFile('public/og/open-graph-images.jpg', buffer);
 ```
+
+## Security and resource limits
+
+- HTTP(S) URLs are canonicalized before cache or network use. URL userinfo such as
+  `https://user:password@example.com` is rejected, fragments are ignored, and both the input and
+  canonical URL are limited to 2,048 characters.
+- Metadata text fields are limited to 10,000 characters. Custom-template numeric fields and CSS
+  font weights are validated before Sharp work begins; numeric weights use strings such as `"700"`.
+- Generated SVGs are limited to 1 MiB each and 16 MiB total retained SVG-cache bytes.
+- Generated previews larger than 16 MiB render normally but are not cached. The preview cache
+  retains at most 64 MiB of image buffers.
+- `getInflightRequestStats().keys` contains opaque, process-local request IDs rather than URLs.
+  IDs are intentionally non-reversible and change after a process restart.
 
 ## Examples
 

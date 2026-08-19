@@ -18,10 +18,9 @@ import { createFallbackImageWithDetails, DEFAULT_DIMENSIONS } from './core/image
 import { templates } from './templates/registry';
 import {
   validateDimensions,
-  getDefaultFaviconUrl,
+  normalizeMetadataForRendering,
   sanitizeOptions,
-  sanitizeControlChars,
-  stripLeadingWww,
+  validateTemplateConfig,
   validateUrlInput,
 } from './utils/validators';
 import { initializeSharpSecurity } from './utils/image-security';
@@ -35,10 +34,9 @@ import {
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
 import { createCachedSVG } from './utils/sharp-cache';
 import { startCacheCleanup, isCacheCleanupRunning } from './utils/cache';
-import { MAX_TEXT_LENGTH } from './constants/security';
-import { exceedsTextLength } from './utils/validators/text';
 import { withPreparedRenderSlot, withRenderSlot } from './utils/render-limiter';
 import { isSharpProcessingTimeout } from './utils/sharp-timeout';
+import { createSafeErrorDetails } from './utils/network-diagnostics';
 
 // Initialize Sharp security settings (no side-effect timers at import time)
 initializeSharpSecurity();
@@ -92,66 +90,6 @@ function createPreviewResult(
   };
 }
 
-function normalizeOptionalMetadataText(
-  value: string | undefined,
-  fieldName: string
-): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== 'string') {
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `${fieldName} must be a string`);
-  }
-
-  if (exceedsTextLength(value)) {
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      `${fieldName} exceeds maximum length of ${MAX_TEXT_LENGTH} characters`
-    );
-  }
-
-  const normalized = sanitizeControlChars(value)
-    .replace(/[\n\r]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return normalized || undefined;
-}
-
-function normalizeRequiredMetadataText(value: string | undefined, fieldName: string): string {
-  const normalized = normalizeOptionalMetadataText(value, fieldName);
-
-  if (!normalized) {
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `${fieldName} is required`);
-  }
-
-  return normalized;
-}
-
-function normalizeMetadataInput(metadata: PreviewMetadataInput): ExtractedMetadata {
-  const url = validateUrlInput(metadata.url);
-  const urlObj = new URL(url);
-  const title = normalizeRequiredMetadataText(metadata.title, 'metadata.title');
-
-  return {
-    title,
-    description: normalizeOptionalMetadataText(metadata.description, 'metadata.description'),
-    image: metadata.image ? validateUrlInput(metadata.image) : undefined,
-    siteName:
-      normalizeOptionalMetadataText(metadata.siteName, 'metadata.siteName') ||
-      stripLeadingWww(urlObj.hostname),
-    favicon: metadata.favicon
-      ? validateUrlInput(metadata.favicon)
-      : getDefaultFaviconUrl(url),
-    author: normalizeOptionalMetadataText(metadata.author, 'metadata.author'),
-    publishedDate: normalizeOptionalMetadataText(metadata.publishedDate, 'metadata.publishedDate'),
-    url,
-    domain: normalizeOptionalMetadataText(metadata.domain, 'metadata.domain') || urlObj.hostname,
-    locale: normalizeOptionalMetadataText(metadata.locale, 'metadata.locale') || 'en_US',
-  };
-}
-
 function createMetadataPreviewCacheKey(metadata: ExtractedMetadata): string {
   return `metadata:${JSON.stringify(metadata)}`;
 }
@@ -160,7 +98,7 @@ async function renderPreviewFromMetadata(
   metadata: ExtractedMetadata,
   finalOptions: SanitizedOptions
 ): Promise<GeneratedPreview> {
-  const template = getTemplate(finalOptions.template);
+  const template = validateTemplateConfig(getTemplate(finalOptions.template));
   const rendered = await generateImageWithSanitizedOptions(metadata, template, finalOptions);
   return createPreviewResult(rendered.buffer, rendered.effectiveMetadata, finalOptions);
 }
@@ -192,7 +130,10 @@ export async function generatePreviewFromMetadata(
 }
 
 /**
- * Generate image with specific template (public API - validates options)
+ * Generate an image with a caller-provided template.
+ * Metadata text and template numbers are bounded before rendering. The optional
+ * overlayGenerator is trusted caller code, while its SVG return value must be a
+ * string no larger than 1 MiB in UTF-8 bytes.
  */
 export async function generateImageWithTemplate(
   metadata: ExtractedMetadata,
@@ -200,7 +141,13 @@ export async function generateImageWithTemplate(
   options: PreviewOptions
 ): Promise<Buffer> {
   const sanitizedOptions = sanitizeOptions(options);
-  const rendered = await generateImageWithSanitizedOptions(metadata, template, sanitizedOptions);
+  const normalizedMetadata = normalizeMetadataForRendering(metadata, 'custom');
+  const validatedTemplate = validateTemplateConfig(template);
+  const rendered = await generateImageWithSanitizedOptions(
+    normalizedMetadata,
+    validatedTemplate,
+    sanitizedOptions
+  );
   return rendered.buffer;
 }
 
@@ -217,13 +164,38 @@ async function createOverlayBuffer(
   sanitizedOptions: SanitizedOptions
 ): Promise<Buffer> {
   if (template.overlayGenerator) {
-    const overlaySvg = template.overlayGenerator(
-      effectiveMetadata,
-      width,
-      height,
-      sanitizedOptions,
-      template
-    );
+    let overlaySvg: string;
+    try {
+      const overlayResult: unknown = template.overlayGenerator(
+        effectiveMetadata,
+        width,
+        height,
+        sanitizedOptions,
+        template
+      );
+      const resultType = typeof overlayResult;
+      if (
+        (resultType === 'object' && overlayResult !== null) ||
+        resultType === 'function'
+      ) {
+        const then = (overlayResult as { then?: unknown }).then;
+        if (typeof then === 'function') {
+          // The public callback contract is synchronous. Consume rejected
+          // thenables immediately so a JavaScript caller cannot turn invalid
+          // callback output into an unhandled rejection containing secrets.
+          void Promise.resolve(overlayResult).catch(() => undefined);
+          throw new Error('Asynchronous overlay generators are not supported');
+        }
+      }
+      overlaySvg = overlayResult as string;
+    } catch {
+      // Caller callbacks are trusted code, but their exceptions may contain
+      // secrets or attacker-derived metadata. Do not preserve any fields.
+      throw new PreviewGeneratorError(
+        ErrorType.IMAGE_ERROR,
+        'Failed to generate image with template'
+      );
+    }
     // Materialize custom SVG overlays before entering the background-image
     // retry path. Otherwise Sharp can defer an SVG parse error until the final
     // composite and incorrectly classify it as a failed background image.
@@ -324,10 +296,13 @@ async function generateImageWithSanitizedOptions(
         effectiveMetadata: processedImage.effectiveMetadata,
       };
     } catch (error) {
+      if (error instanceof PreviewGeneratorError) {
+        throw error;
+      }
       throw new PreviewGeneratorError(
         ErrorType.IMAGE_ERROR,
-        `Failed to generate image with template: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        'Failed to generate image with template',
+        createSafeErrorDetails(error)
       );
     }
   };
@@ -357,10 +332,13 @@ export async function generatePreviewWithDetails(
     }
 
     const finalOptions = createFinalOptions(options);
+    const normalizedUrl = validateUrlInput(url, {
+      httpsOnly: finalOptions.security?.httpsOnly === true,
+    });
 
     const shouldCache = finalOptions.cache === true;
     if (shouldCache) {
-      const cached = getCachedPreview(url, finalOptions);
+      const cached = getCachedPreview(normalizedUrl, finalOptions);
       if (cached) {
         return { ...cached, cached: true };
       }
@@ -369,12 +347,12 @@ export async function generatePreviewWithDetails(
     // Extract metadata from URL once
     let metadata: ExtractedMetadata;
     try {
-      metadata = await extractMetadata(url, finalOptions.security);
+      metadata = await extractMetadata(normalizedUrl, finalOptions.security);
 
       // Validate metadata
       if (!validateMetadata(metadata)) {
         // Apply fallbacks if metadata is incomplete
-        metadata = applyFallbacks(metadata, url);
+        metadata = applyFallbacks(metadata, normalizedUrl);
       }
     } catch (error) {
       // Input and security-policy violations must remain observable to callers.
@@ -392,7 +370,7 @@ export async function generatePreviewWithDetails(
         finalOptions.fallback?.strategy === 'generate' ||
         finalOptions.fallback?.strategy === 'auto'
       ) {
-        const fallback = await createFallbackImageWithDetails(url, finalOptions);
+        const fallback = await createFallbackImageWithDetails(normalizedUrl, finalOptions);
         const fallbackResult: GeneratedPreview = {
           buffer: fallback.buffer,
           format: 'jpeg',
@@ -405,7 +383,12 @@ export async function generatePreviewWithDetails(
           cached: false,
         };
         if (shouldCache) {
-          setCachedPreview(url, finalOptions, fallbackResult, FALLBACK_PREVIEW_CACHE_TTL_MS);
+          setCachedPreview(
+            normalizedUrl,
+            finalOptions,
+            fallbackResult,
+            FALLBACK_PREVIEW_CACHE_TTL_MS
+          );
         }
         return fallbackResult;
       }
@@ -414,7 +397,7 @@ export async function generatePreviewWithDetails(
 
     const result = await renderPreviewFromMetadata(metadata, finalOptions);
     if (shouldCache) {
-      setCachedPreview(url, finalOptions, result);
+      setCachedPreview(normalizedUrl, finalOptions, result);
     }
     return result;
   } catch (error) {
@@ -423,8 +406,8 @@ export async function generatePreviewWithDetails(
     }
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
-      `Failed to generate preview with details for ${url}: ${error instanceof Error ? error.message : String(error)}`,
-      error
+      'Failed to generate preview with details',
+      createSafeErrorDetails(error)
     );
   }
 }
@@ -443,7 +426,7 @@ export async function generatePreviewFromMetadataWithDetails(
     }
 
     const finalOptions = createFinalOptions(options);
-    const metadata = normalizeMetadataInput(metadataInput);
+    const metadata = normalizeMetadataForRendering(metadataInput, 'direct');
 
     const shouldCache = finalOptions.cache === true;
     const cacheKey = createMetadataPreviewCacheKey(metadata);
@@ -465,8 +448,8 @@ export async function generatePreviewFromMetadataWithDetails(
     }
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
-      `Failed to generate preview from metadata: ${error instanceof Error ? error.message : String(error)}`,
-      error
+      'Failed to generate preview from metadata',
+      createSafeErrorDetails(error)
     );
   }
 }

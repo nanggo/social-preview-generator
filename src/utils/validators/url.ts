@@ -1,4 +1,5 @@
 import { PreviewGeneratorError, ErrorType, SafeUrl } from '../../types';
+import net from 'node:net';
 import {
   ALLOWED_PROTOCOLS,
   ASCII_CONTROL_CHARS,
@@ -8,25 +9,48 @@ import {
   MAX_URL_LENGTH,
   SUSPICIOUS_URL_PARAMS,
 } from '../../constants/security';
-import { sanitizeControlChars } from './text';
+
+interface UrlValidationOptions {
+  httpsOnly?: boolean;
+}
+
+// URL parsers may discard some controls before validation. Check the caller's
+// original text first so an unsafe representation is never silently accepted.
+// eslint-disable-next-line no-control-regex
+const ALL_C0_C1_CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/u;
+
+export function validateRawUrlInput(url: unknown): string {
+  if (typeof url !== 'string' || url.trim().length === 0) {
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL must be a non-empty string');
+  }
+
+  if (ALL_C0_C1_CONTROL_CHARS.test(url)) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'URL contains forbidden control characters'
+    );
+  }
+
+  const trimmedUrl = url.trim();
+  if (trimmedUrl.length > MAX_URL_LENGTH) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `URL exceeds maximum length of ${MAX_URL_LENGTH} characters`
+    );
+  }
+
+  return trimmedUrl;
+}
 
 /** Resolve caller or page-provided URL text against a page URL and allow HTTP(S) only. */
 export function resolveHttpUrl(value: unknown, baseUrl: string): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const candidate = value.trim();
-  if (candidate.length === 0) {
-    return undefined;
-  }
-
   try {
+    const candidate = validateRawUrlInput(value);
     const resolved = new URL(candidate, baseUrl);
     if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
       return undefined;
     }
-    return resolved.toString();
+    return validateUrlInput(resolved.toString());
   } catch {
     return undefined;
   }
@@ -48,20 +72,8 @@ export function stripLeadingWww(hostname: string): string {
 /**
  * Comprehensive URL validation with security checks.
  */
-export function validateUrlInput(url: string): string {
-  if (!url || typeof url !== 'string') {
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL must be a non-empty string');
-  }
-
-  const sanitizedUrl = sanitizeControlChars(url.trim());
-
-  // Length check
-  if (sanitizedUrl.length > MAX_URL_LENGTH) {
-    throw new PreviewGeneratorError(
-      ErrorType.VALIDATION_ERROR,
-      `URL exceeds maximum length of ${MAX_URL_LENGTH} characters`
-    );
-  }
+export function validateUrlInput(url: string, options: UrlValidationOptions = {}): string {
+  const sanitizedUrl = validateRawUrlInput(url);
 
   // Security patterns check
   if (!isSafeUrlInput(sanitizedUrl)) {
@@ -83,23 +95,49 @@ export function validateUrlInput(url: string): string {
       );
     }
 
+    if (options.httpsOnly && protocol !== 'https:') {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        'HTTP URLs are not allowed when HTTPS-only mode is enabled'
+      );
+    }
+
+    if (urlObj.username.length > 0 || urlObj.password.length > 0) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        'URL userinfo credentials are not allowed'
+      );
+    }
+
     // Hostname validation - ensure hostname exists and is not empty
     if (!urlObj.hostname || urlObj.hostname.trim().length === 0) {
       throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL must have a valid hostname');
     }
 
     // Additional security: reject URLs with unusual characters in hostname
+    const hostname = urlObj.hostname.startsWith('[') && urlObj.hostname.endsWith(']')
+      ? urlObj.hostname.slice(1, -1)
+      : urlObj.hostname;
     const hostnamePattern = /^[a-zA-Z0-9.-]+$/;
-    if (!hostnamePattern.test(urlObj.hostname)) {
+    if (net.isIP(hostname) === 0 && !hostnamePattern.test(hostname)) {
       throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'URL hostname contains invalid characters');
     }
 
-    return urlObj.toString();
+    urlObj.hash = '';
+    const canonicalUrl = urlObj.toString();
+    if (canonicalUrl.length > MAX_URL_LENGTH) {
+      throw new PreviewGeneratorError(
+        ErrorType.VALIDATION_ERROR,
+        `Canonical URL exceeds maximum length of ${MAX_URL_LENGTH} characters`
+      );
+    }
+
+    return canonicalUrl;
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;
     }
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `Invalid URL format: ${url}`);
+    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, 'Invalid URL format');
   }
 }
 
