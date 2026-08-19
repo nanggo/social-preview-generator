@@ -2,8 +2,11 @@
 
 **English** | [한국어](https://github.com/nanggo/social-preview-generator/blob/master/docs/README.ko.md)
 
-Generate production-ready Open Graph and social preview images in server-side Node.js. Start from a
-public URL or render metadata you already have.
+Turn a public HTTP(S) URL into a secure, consistent social preview JPEG—no JSX or Next.js route
+required.
+
+`generatePreview(url)` fetches Open Graph and Twitter Card metadata, blocks private and reserved
+network targets, applies a built-in template, and returns a JPEG `Buffer`.
 
 [![npm version](https://img.shields.io/npm/v/@nanggo/social-preview.svg)](https://www.npmjs.com/package/@nanggo/social-preview)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,13 +14,23 @@ public URL or render metadata you already have.
 
 ## Highlights
 
-- Extract Open Graph and Twitter Card metadata from HTTP(S) URLs
-- Render supplied metadata without fetching the page itself
+- Convert a public URL to a JPEG `Buffer` in one call
+- Extract Open Graph and Twitter Card metadata automatically
+- Guard outbound fetches against private, loopback, reserved, and mixed-DNS targets
+- Run in server-side Node.js without React, JSX, a browser, or an image API route
+- Render supplied metadata directly when a URL fetch is unnecessary
 - Choose from `modern`, `classic`, `minimal`, and `article` templates
-- Generate JPEG images with configurable dimensions and quality; the default is 1200×630
 - Use CommonJS, ESM, or TypeScript
 - Render Korean text with server-side font fallbacks
-- Apply URL, SSRF, SVG, input-size, and memory safeguards before rendering
+
+## When this package fits
+
+| Good fit                                                                                      | Consider another tool when                                    |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Link directories, bookmark services, curation tools, and other products that start with a URL | You already have all data and want free-form React/JSX design |
+| CMS, static-site, or batch jobs that write preview files ahead of time                        | You need a browser or Edge runtime                            |
+| Node.js services that accept public URLs and need guarded network defaults                    | You need JavaScript-rendered pages from a headless browser    |
+| Workflows that need a `Buffer` or file instead of an HTTP image response                      | You want to build and maintain a custom image route           |
 
 ## Requirements
 
@@ -30,7 +43,7 @@ public URL or render metadata you already have.
 npm install @nanggo/social-preview
 ```
 
-## Quick start
+## URL to JPEG in one call
 
 ```javascript
 const { writeFile } = require('node:fs/promises');
@@ -53,7 +66,7 @@ ESM named imports are also supported:
 import { generatePreview } from '@nanggo/social-preview';
 ```
 
-## Generate from known metadata
+## Secondary: render known metadata
 
 Use `generatePreviewFromMetadata` when your publishing or build pipeline already knows the title,
 canonical URL, description, and optional image.

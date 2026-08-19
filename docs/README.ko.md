@@ -2,9 +2,11 @@
 
 [English](../README.md) | **한국어**
 
-서버용 Node.js 환경에서 바로 사용할 수 있는 Open Graph 및 소셜 미리보기 이미지를
-생성합니다. 공개 URL에서 메타데이터를 가져오거나, 이미 알고 있는 메타데이터를 직접
-렌더링할 수 있습니다.
+공개 HTTP(S) URL 하나를 안전하고 일관된 소셜 미리보기 JPEG로 변환합니다. JSX나 Next.js
+route가 필요하지 않습니다.
+
+`generatePreview(url)`가 Open Graph 및 Twitter Card 메타데이터를 가져오고 private 및
+reserved network target을 차단한 뒤, 내장 템플릿을 적용해 JPEG `Buffer`를 반환합니다.
 
 [![npm version](https://img.shields.io/npm/v/@nanggo/social-preview.svg)](https://www.npmjs.com/package/@nanggo/social-preview)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -12,13 +14,23 @@
 
 ## 주요 특징
 
-- HTTP(S) URL에서 Open Graph 및 Twitter Card 메타데이터 추출
-- 페이지 자체를 요청하지 않고 전달받은 메타데이터 렌더링
+- 공개 URL을 한 번의 호출로 JPEG `Buffer`로 변환
+- Open Graph 및 Twitter Card 메타데이터 자동 추출
+- private, loopback, reserved 및 mixed-DNS target으로 향하는 요청 차단
+- React, JSX, 브라우저 또는 이미지 API route 없이 서버용 Node.js에서 실행
+- URL 요청이 필요 없을 때 전달받은 메타데이터를 직접 렌더링
 - `modern`, `classic`, `minimal`, `article` 내장 템플릿 제공
-- 크기와 품질을 설정할 수 있는 JPEG 이미지 생성(기본 1200×630)
 - CommonJS, ESM, TypeScript 지원
 - 서버 글꼴 fallback을 사용한 한국어 텍스트 렌더링
-- 렌더링 전 URL, SSRF, SVG, 입력 크기 및 메모리 보호 적용
+
+## 이런 경우에 적합합니다
+
+| 적합한 경우                                                       | 다른 도구가 더 적합한 경우                                     |
+| ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| URL에서 시작하는 링크 디렉터리, 북마크, 큐레이션 서비스           | 데이터가 이미 있고 React/JSX로 자유롭게 디자인하려는 경우      |
+| 미리보기 파일을 미리 생성하는 CMS, 정적 사이트 및 batch 작업      | 브라우저 또는 Edge runtime이 필요한 경우                       |
+| 공개 URL을 입력받고 안전한 network 기본값이 필요한 Node.js 서비스 | headless browser로 JavaScript 렌더링 페이지를 읽어야 하는 경우 |
+| HTTP 이미지 응답 대신 `Buffer` 또는 파일이 필요한 작업            | 사용자 지정 이미지 route를 직접 만들고 운영하려는 경우         |
 
 ## 요구사항
 
@@ -31,7 +43,7 @@
 npm install @nanggo/social-preview
 ```
 
-## 빠른 시작
+## URL 하나로 JPEG 생성
 
 ```javascript
 const { writeFile } = require('node:fs/promises');
@@ -54,7 +66,7 @@ ESM named import도 지원합니다.
 import { generatePreview } from '@nanggo/social-preview';
 ```
 
-## 알고 있는 메타데이터로 생성
+## 보조 기능: 알고 있는 메타데이터로 생성
 
 게시 또는 빌드 파이프라인에서 제목, canonical URL, 설명과 선택적 이미지 정보를 이미 알고
 있다면 `generatePreviewFromMetadata`를 사용합니다.
