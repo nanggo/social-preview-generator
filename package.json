@@ -1,6 +1,6 @@
 {
   "name": "@nanggo/social-preview",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Generate beautiful social media preview images from any URL",
   "packageManager": "pnpm@10.11.0",
   "main": "dist/index.js",
