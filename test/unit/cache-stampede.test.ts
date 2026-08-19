@@ -82,7 +82,10 @@ describe('Cache Stampede Prevention', () => {
       // Wait a bit to let the first request start
       await new Promise(resolve => setTimeout(resolve, 10));
       expect(getInflightRequestStats().count).toBe(1);
-      expect(getInflightRequestStats().keys).toContain(`${testUrl}:{}`);
+      expect(getInflightRequestStats().keys).toEqual([
+        expect.stringMatching(/^req_[0-9a-f]{16}$/),
+      ]);
+      expect(JSON.stringify(getInflightRequestStats())).not.toContain(testUrl);
 
       // Wait for all requests to complete
       const results = await Promise.all(promises);
@@ -284,7 +287,7 @@ describe('Cache Stampede Prevention', () => {
 
       // The request should timeout after the configured timeout period (1s in test mode)
       await expect(stuckPromise).rejects.toThrow(
-        'In-flight request timeout after 1000ms for URL: https://stuck-server.com'
+        'In-flight request timeout after 1000ms (req_'
       );
 
       // After timeout, the in-flight requests should be cleaned up
@@ -320,6 +323,36 @@ describe('Cache Stampede Prevention', () => {
   });
 
   describe('Cache Key Determinism', () => {
+    it('coalesces canonical-equivalent URLs without exposing query secrets', async () => {
+      let resolveRequest!: () => void;
+      mockedAxios.get.mockImplementation(
+        () => new Promise(resolve => {
+          resolveRequest = () => resolve({
+            data: '<html><head><title>Test</title></head></html>',
+            headers: { 'content-type': 'text/html' },
+          });
+        })
+      );
+      mockedOgs.mockResolvedValue({
+        error: false,
+        result: { ogTitle: 'Test' },
+      } as any);
+
+      const first = extractMetadata('https://EXAMPLE.com:443/path?token=top-secret#one');
+      const second = extractMetadata('https://example.com/path?token=top-secret#two');
+      await vi.waitFor(() => {
+        expect(getInflightRequestStats().count).toBe(1);
+        expect(mockedAxios.get).toHaveBeenCalledOnce();
+      });
+
+      const serializedStats = JSON.stringify(getInflightRequestStats());
+      expect(serializedStats).not.toContain('example.com');
+      expect(serializedStats).not.toContain('top-secret');
+      resolveRequest();
+      await Promise.all([first, second]);
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+    });
+
     it('should generate identical cache keys for equivalent security options', async () => {
       // Mock successful metadata response
       mockedAxios.get.mockImplementation(async () => ({

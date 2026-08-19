@@ -243,6 +243,7 @@ export interface TypographyConfig {
   /** Title font settings */
   title: {
     fontSize: number;
+    /** CSS keyword or numeric string from "1" to "1000". */
     fontWeight?: string;
     lineHeight?: number;
     maxLines?: number;
@@ -250,6 +251,7 @@ export interface TypographyConfig {
   /** Description font settings */
   description?: {
     fontSize: number;
+    /** CSS keyword or numeric string from "1" to "1000". */
     fontWeight?: string;
     lineHeight?: number;
     maxLines?: number;
@@ -257,6 +259,7 @@ export interface TypographyConfig {
   /** Site name font settings */
   siteName?: {
     fontSize: number;
+    /** CSS keyword or numeric string from "1" to "1000". */
     fontWeight?: string;
   };
 }

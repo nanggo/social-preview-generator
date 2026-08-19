@@ -98,22 +98,50 @@ describe('Security Validation Tests', () => {
       });
     });
 
-    it('should sanitize URLs with control characters', () => {
-      const urlsWithControlChars = [
-        { input: 'https://example.com/\x00path', expected: 'https://example.com/path' },
-        { input: 'https://example.com/\x1fpath', expected: 'https://example.com/path' },  
-        // Note: \n, \r, \t are handled by URL constructor and may be normalized
+    it('rejects every C0/C1 control before URL parsing', () => {
+      const controls = [
+        ...Array.from({ length: 32 }, (_, index) => index),
+        ...Array.from({ length: 33 }, (_, index) => index + 127),
       ];
-
-      urlsWithControlChars.forEach(({ input, expected }) => {
-        const result = validateUrlInput(input);
-        expect(result).toBe(expected);
-      });
+      for (const codePoint of controls) {
+        expect(() =>
+          validateUrlInput(`https://example.com/a${String.fromCharCode(codePoint)}b`)
+        ).toThrow(PreviewGeneratorError);
+      }
     });
 
     it('should reject overly long URLs', () => {
       const longUrl = 'https://example.com/' + 'a'.repeat(2050);
       expect(() => validateUrlInput(longUrl)).toThrow(PreviewGeneratorError);
+    });
+
+    it('checks both raw and canonical URL length boundaries', () => {
+      const prefix = 'https://example.com/';
+      const exactLimit = prefix + 'a'.repeat(2048 - prefix.length);
+      expect(validateUrlInput(exactLimit)).toBe(exactLimit);
+      expect(() => validateUrlInput(`${exactLimit}a`)).toThrow(PreviewGeneratorError);
+      expect(() => validateUrlInput(`${prefix}${'é'.repeat(700)}`)).toThrow(
+        'Canonical URL exceeds maximum length'
+      );
+    });
+
+    it('rejects plain and percent-encoded userinfo', () => {
+      expect(() => validateUrlInput('https://user:secret@example.com/path')).toThrow(
+        'URL userinfo credentials are not allowed'
+      );
+      expect(() => validateUrlInput('https://%75ser:%73ecret@example.com/path')).toThrow(
+        'URL userinfo credentials are not allowed'
+      );
+    });
+
+    it('removes fragments and applies HTTPS-only mode only when enabled', () => {
+      expect(validateUrlInput('https://example.com/path#secret')).toBe(
+        'https://example.com/path'
+      );
+      expect(validateUrlInput('http://example.com/path')).toBe('http://example.com/path');
+      expect(() =>
+        validateUrlInput('http://example.com/path', { httpsOnly: true })
+      ).toThrow('HTTPS-only');
     });
 
     it('should accept valid URLs', () => {

@@ -322,6 +322,54 @@ try {
     );
   }
 
+  const customMetadata = {
+    title: 'Packed custom template smoke',
+    url: 'https://example.com/custom-template-smoke',
+    campaign: 'v0.5.0',
+  };
+  const customTemplate = {
+    name: 'packed-default-overlay',
+    layout: { padding: 24, imagePosition: 'none' },
+    typography: { title: { fontSize: 28, fontWeight: '700', maxLines: 2 } },
+  };
+  const defaultOverlayImage = await packageExports.generateImageWithTemplate(
+    customMetadata,
+    customTemplate,
+    { width: 320, height: 168 }
+  );
+  const callbackImage = await packageExports.generateImageWithTemplate(
+    customMetadata,
+    {
+      ...customTemplate,
+      name: 'packed-caller-overlay',
+      brand: { color: '#123456' },
+      overlayGenerator: (receivedMetadata, width, height, _options, receivedTemplate) => {
+        if (receivedMetadata.campaign !== 'v0.5.0') {
+          throw new Error('Packed package dropped a caller-owned metadata extension');
+        }
+        if (receivedTemplate.brand?.color !== '#123456') {
+          throw new Error('Packed package dropped a caller-owned template extension');
+        }
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${receivedTemplate.brand.color}"/></svg>`;
+      },
+    },
+    { width: 320, height: 168 }
+  );
+  for (const [description, rendered] of [
+    ['default custom overlay', defaultOverlayImage],
+    ['caller custom overlay', callbackImage],
+  ]) {
+    const renderedMetadata = await sharp(rendered).metadata();
+    if (
+      !Buffer.isBuffer(rendered) ||
+      renderedMetadata.format !== 'jpeg' ||
+      renderedMetadata.width !== 320 ||
+      renderedMetadata.height !== 168
+    ) {
+      throw new Error(`Packed package did not render the ${description} contract`);
+    }
+  }
+
   verifyTypeScriptConsumer();
 
   if (outputPath) {
@@ -330,7 +378,7 @@ try {
   }
 
   console.log(
-    'Packed package passed tarball, CJS/ESM import, runtime export, removed fallback, article 320x168 JPEG, and TypeScript consumer checks.'
+    'Packed package passed tarball, CJS/ESM import, runtime export, removed fallback, built-in/custom 320x168 JPEG, and TypeScript consumer checks.'
   );
   if (outputPath) {
     console.log(`Verified tarball written to ${outputPath}.`);

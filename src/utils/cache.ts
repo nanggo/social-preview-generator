@@ -27,41 +27,77 @@ interface CacheEntry<T> {
   value: T;
   timestamp: number;
   ttl: number;
+  weight: number;
+}
+
+interface CacheWeightOptions<T> {
+  maxWeight: number;
+  maxEntryWeight?: number;
+  sizeOf: (value: T) => number;
 }
 
 export class LRUCache<T> {
   private cache = new Map<string, CacheEntry<T>>();
   private maxSize: number;
   private defaultTTL: number;
+  private currentWeight = 0;
+  private readonly weightOptions?: CacheWeightOptions<T>;
 
-  constructor(maxSize: number = 100, defaultTTL: number = 5 * 60 * 1000) { // 5 minutes default
+  constructor(
+    maxSize: number = 100,
+    defaultTTL: number = 5 * 60 * 1000,
+    weightOptions?: CacheWeightOptions<T>
+  ) { // 5 minutes default
     this.maxSize = maxSize;
     this.defaultTTL = defaultTTL;
+    this.weightOptions = weightOptions;
   }
 
-  set(key: string, value: T, ttl?: number): void {
+  private removeEntry(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return false;
+    this.currentWeight = Math.max(0, this.currentWeight - entry.weight);
+    return this.cache.delete(key);
+  }
+
+  set(key: string, value: T, ttl?: number): boolean {
     const now = Date.now();
     const entryTTL = ttl ?? this.defaultTTL;
+    const weight = this.weightOptions?.sizeOf(value) ?? 0;
+    const maxEntryWeight = this.weightOptions?.maxEntryWeight ?? this.weightOptions?.maxWeight;
+    if (
+      !Number.isFinite(weight) ||
+      weight < 0 ||
+      (maxEntryWeight !== undefined && weight > maxEntryWeight) ||
+      (this.weightOptions && weight > this.weightOptions.maxWeight)
+    ) {
+      return false;
+    }
 
     // Remove existing entry if present (for LRU ordering)
     if (this.cache.has(key)) {
-      this.cache.delete(key);
+      this.removeEntry(key);
     }
 
-    // Remove oldest entries if cache is full
-    if (this.cache.size >= this.maxSize) {
+    // Remove oldest entries until both count and byte budgets can accept the entry.
+    while (
+      this.cache.size >= this.maxSize ||
+      (this.weightOptions && this.currentWeight + weight > this.weightOptions.maxWeight)
+    ) {
       const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
-      }
+      if (firstKey === undefined) break;
+      this.removeEntry(firstKey);
     }
 
     // Add new entry (will be most recently used)
     this.cache.set(key, {
       value,
       timestamp: now,
-      ttl: entryTTL
+      ttl: entryTTL,
+      weight,
     });
+    this.currentWeight += weight;
+    return true;
   }
 
   get(key: string): T | undefined {
@@ -75,7 +111,7 @@ export class LRUCache<T> {
     
     // Check if entry has expired
     if (now - entry.timestamp > entry.ttl) {
-      this.cache.delete(key);
+      this.removeEntry(key);
       return undefined;
     }
 
@@ -91,11 +127,12 @@ export class LRUCache<T> {
   }
 
   delete(key: string): boolean {
-    return this.cache.delete(key);
+    return this.removeEntry(key);
   }
 
   clear(): void {
     this.cache.clear();
+    this.currentWeight = 0;
   }
 
   size(): number {
@@ -109,7 +146,7 @@ export class LRUCache<T> {
 
     for (const [key, entry] of this.cache.entries()) {
       if (now - entry.timestamp > entry.ttl) {
-        this.cache.delete(key);
+        this.removeEntry(key);
         removedCount++;
       }
     }
@@ -118,11 +155,21 @@ export class LRUCache<T> {
   }
 
   // Get cache statistics
-  getStats(): { size: number; maxSize: number; defaultTTL: number } {
+  getStats(): {
+    size: number;
+    maxSize: number;
+    defaultTTL: number;
+    currentWeight: number;
+    maxWeight?: number;
+    maxEntryWeight?: number;
+  } {
     return {
       size: this.cache.size,
       maxSize: this.maxSize,
-      defaultTTL: this.defaultTTL
+      defaultTTL: this.defaultTTL,
+      currentWeight: this.currentWeight,
+      maxWeight: this.weightOptions?.maxWeight,
+      maxEntryWeight: this.weightOptions?.maxEntryWeight,
     };
   }
 }
@@ -131,7 +178,13 @@ export class LRUCache<T> {
 import { ExtractedMetadata, GeneratedPreview } from '../types';
 
 export const metadataCache = new LRUCache<ExtractedMetadata>(100, 5 * 60 * 1000); // 100 entries, 5 minutes TTL
-export const previewCache = new LRUCache<GeneratedPreview>(50, 5 * 60 * 1000); // 50 entries, 5 minutes TTL
+export const PREVIEW_CACHE_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
+export const PREVIEW_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+export const previewCache = new LRUCache<GeneratedPreview>(50, 5 * 60 * 1000, {
+  maxWeight: PREVIEW_CACHE_MAX_BYTES,
+  maxEntryWeight: PREVIEW_CACHE_MAX_ENTRY_BYTES,
+  sizeOf: preview => preview.buffer.byteLength,
+}); // 50 entries, 64 MiB retained buffers, 5 minutes TTL
 
 // Cache cleanup management
 let cleanupInterval: NodeJS.Timeout | null = null;

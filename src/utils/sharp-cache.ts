@@ -15,9 +15,10 @@
 
 import sharp, { type Metadata, type Sharp } from 'sharp';
 import crypto from 'crypto';
-import { SHARP_SECURITY_CONFIG } from '../constants/security';
+import { MAX_SVG_SIZE, SHARP_SECURITY_CONFIG } from '../constants/security';
 import { logger } from './logger';
 import { applySharpProcessingTimeout } from './sharp-timeout';
+import { ErrorType, PreviewGeneratorError } from '../types';
 
 // Generated SVGs declare their dimensions in CSS pixels. Sharp's default SVG
 // density preserves those dimensions, while the higher density used to inspect
@@ -32,13 +33,17 @@ interface CacheEntry<T> {
   createdAt: number;
   lastUsed: number;
   hits: number;
+  weight: number;
 }
 
-interface CacheOptions {
+interface CacheOptions<T> {
   maxSize?: number;
   maxAge?: number; // milliseconds - TTL for cache entries
   idleTimeout?: number; // milliseconds - idle timeout for LRU eviction
   cleanupInterval?: number; // milliseconds
+  maxWeight?: number;
+  maxEntryWeight?: number;
+  sizeOf?: (value: T) => number;
 }
 
 export interface CanvasOptions {
@@ -62,12 +67,19 @@ class SharpLRUCache<T> {
   private readonly maxSize: number;
   private readonly maxAge: number;
   private readonly idleTimeout: number;
+  private readonly maxWeight?: number;
+  private readonly maxEntryWeight?: number;
+  private readonly sizeOf?: (value: T) => number;
+  private currentWeight = 0;
   private cleanupInterval: NodeJS.Timeout;
 
-  constructor(options: CacheOptions = {}) {
+  constructor(options: CacheOptions<T> = {}) {
     this.maxSize = Math.max(1, Math.min(options.maxSize || 100, 1000));
     this.maxAge = Math.max(60000, Math.min(options.maxAge || 5 * 60 * 1000, 30 * 60 * 1000)); // 1min-30min
     this.idleTimeout = Math.max(30000, Math.min(options.idleTimeout || 2 * 60 * 1000, 10 * 60 * 1000)); // 30sec-10min
+    this.maxWeight = options.maxWeight;
+    this.maxEntryWeight = options.maxEntryWeight ?? options.maxWeight;
+    this.sizeOf = options.sizeOf;
     
     // Start cleanup interval
     this.cleanupInterval = setInterval(() => this.cleanup(), options.cleanupInterval || 60000);
@@ -82,7 +94,7 @@ class SharpLRUCache<T> {
     
     // Check both TTL (absolute) and idle timeout (relative to lastUsed)
     if (now - entry.createdAt > this.maxAge || now - entry.lastUsed > this.idleTimeout) {
-      this.cache.delete(key);
+      this.removeEntry(key);
       return undefined;
     }
 
@@ -97,18 +109,37 @@ class SharpLRUCache<T> {
     return entry.value;
   }
 
-  set(key: string, value: T): void {
+  private removeEntry(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return false;
+    this.currentWeight = Math.max(0, this.currentWeight - entry.weight);
+    return this.cache.delete(key);
+  }
+
+  set(key: string, value: T): boolean {
     const now = Date.now();
+    const weight = this.sizeOf?.(value) ?? 0;
+    if (
+      !Number.isFinite(weight) ||
+      weight < 0 ||
+      (this.maxEntryWeight !== undefined && weight > this.maxEntryWeight) ||
+      (this.maxWeight !== undefined && weight > this.maxWeight)
+    ) {
+      return false;
+    }
     
     // If updating existing key, delete it first to move to end
     if (this.cache.has(key)) {
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
-      // Remove least recently used (first entry) - O(1) operation
+      this.removeEntry(key);
+    }
+
+    while (
+      this.cache.size >= this.maxSize ||
+      (this.maxWeight !== undefined && this.currentWeight + weight > this.maxWeight)
+    ) {
       const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.delete(firstKey);
-      }
+      if (firstKey === undefined) break;
+      this.removeEntry(firstKey);
     }
 
     // Add to end (most recently used)
@@ -116,8 +147,11 @@ class SharpLRUCache<T> {
       value,
       createdAt: now,
       lastUsed: now,
-      hits: 0
+      hits: 0,
+      weight,
     });
+    this.currentWeight += weight;
+    return true;
   }
 
   private cleanup(): void {
@@ -138,7 +172,7 @@ class SharpLRUCache<T> {
     // Remove expired and idle entries
     const allKeysToRemove = [...expiredKeys, ...idleKeys];
     for (const key of allKeysToRemove) {
-      this.cache.delete(key);
+      this.removeEntry(key);
     }
 
     if (allKeysToRemove.length > 0) {
@@ -154,17 +188,22 @@ class SharpLRUCache<T> {
       totalHits: entries.reduce((sum, entry) => sum + entry.hits, 0),
       averageAge: entries.length > 0 
         ? entries.reduce((sum, entry) => sum + (Date.now() - entry.createdAt), 0) / entries.length
-        : 0
+        : 0,
+      currentWeight: this.currentWeight,
+      maxWeight: this.maxWeight,
+      maxEntryWeight: this.maxEntryWeight,
     };
   }
 
   clear(): void {
     this.cache.clear();
+    this.currentWeight = 0;
   }
 
   destroy(): void {
     clearInterval(this.cleanupInterval);
     this.cache.clear();
+    this.currentWeight = 0;
   }
 }
 
@@ -177,6 +216,9 @@ class SVGCache extends SharpLRUCache<Buffer> {
       maxSize: 200,
       maxAge: 10 * 60 * 1000, // 10 minutes absolute TTL
       idleTimeout: 3 * 60 * 1000, // 3 minutes idle timeout for SVG content
+      maxWeight: 16 * 1024 * 1024,
+      maxEntryWeight: MAX_SVG_SIZE,
+      sizeOf: buffer => buffer.byteLength,
     });
   }
 
@@ -281,6 +323,20 @@ export const canvasCache = new CanvasCache();
  * Cached SVG processing with automatic cache management
  */
 export async function createCachedSVG(svgContent: string): Promise<Sharp> {
+  if (typeof svgContent !== 'string') {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'Generated SVG must be a string'
+    );
+  }
+  const svgByteLength = Buffer.byteLength(svgContent, 'utf8');
+  if (svgByteLength > MAX_SVG_SIZE) {
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      `Generated SVG exceeds maximum size of ${MAX_SVG_SIZE} bytes`
+    );
+  }
+
   // Try to get from cache first
   let buffer = svgCache.getCachedSVG(svgContent);
   

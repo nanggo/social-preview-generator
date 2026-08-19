@@ -5,11 +5,15 @@
 
 import ogs from 'open-graph-scraper';
 import axios from 'axios';
+import crypto from 'node:crypto';
+import net from 'node:net';
 import { ExtractedMetadata, ErrorType, PreviewGeneratorError, SecurityOptions } from '../types';
 import {
   getDefaultFaviconUrl,
+  normalizeMetadataForRendering,
   resolveHttpUrl,
   stripLeadingWww,
+  validateRawUrlInput,
   validateUrlInput,
 } from '../utils/validators';
 import {
@@ -29,6 +33,8 @@ import {
   runControlledNetworkRequest,
 } from '../utils/network-request-control';
 import { createSecurityPolicyError } from '../utils/security-policy-error';
+import { createSafeErrorDetails, getSafeUrlOrigin } from '../utils/network-diagnostics';
+import { isPrivateOrReservedIP } from '../utils/ip-validation';
 
 // Allowed MIME types for images
 const BASE_ALLOWED_MIME_TYPES = new Set([
@@ -45,11 +51,10 @@ const BASE_ALLOWED_MIME_TYPES = new Set([
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 
 function getNetworkControlErrorMessage(error: unknown): string | undefined {
-  if (
-    error instanceof NetworkRequestAbortedError ||
-    error instanceof NetworkRequestDeadlineError ||
-    error instanceof NetworkRequestQueueFullError
-  ) {
+  if (error instanceof NetworkRequestAbortedError) {
+    return 'Network request aborted';
+  }
+  if (error instanceof NetworkRequestDeadlineError || error instanceof NetworkRequestQueueFullError) {
     return error.message;
   }
   return undefined;
@@ -97,7 +102,7 @@ function createRedirectValidator(
 ) {
   return (
     options: Record<string, unknown>,
-    _responseDetails: { headers: Record<string, string>; statusCode: number }
+    responseDetails: { headers: Record<string, string | string[]>; statusCode: number }
   ) => {
     if (typeof options.href !== 'string' || options.href.length === 0) {
       throw createSecurityPolicyError(
@@ -108,17 +113,26 @@ function createRedirectValidator(
     const redirectUrl = options.href;
     let validatedRedirectUrl: string;
     try {
-      validatedRedirectUrl = validateUrlInput(redirectUrl);
-    } catch (error) {
-      throw createSecurityPolicyError(
-        `${context} to unsafe URL blocked: ${redirectUrl}`,
-        error
-      );
-    }
+      const rawLocation = responseDetails.headers.location;
+      if (typeof rawLocation === 'string') {
+        validateRawUrlInput(rawLocation);
+      } else if (Array.isArray(rawLocation)) {
+        for (const location of rawLocation) validateRawUrlInput(location);
+      }
 
-    if (httpsOnly && new URL(validatedRedirectUrl).protocol !== 'https:') {
+      validatedRedirectUrl = validateUrlInput(redirectUrl, { httpsOnly });
+      const hostname = new URL(validatedRedirectUrl).hostname.replace(/^\[|\]$/g, '');
+      if (net.isIP(hostname) !== 0 && isPrivateOrReservedIP(hostname)) {
+        throw createSecurityPolicyError(`${context} to private or reserved IP blocked`);
+      }
+    } catch (error) {
+      const policyMessage =
+        error instanceof PreviewGeneratorError && error.message.includes('HTTPS-only')
+          ? `${context} blocked by HTTPS-only mode`
+          : `${context} to unsafe URL blocked`;
       throw createSecurityPolicyError(
-        `${context} blocked by HTTPS-only mode: ${validatedRedirectUrl}`
+        policyMessage,
+        error
       );
     }
 
@@ -154,10 +168,30 @@ const MAX_INFLIGHT_REQUESTS = 1000;
 // Timeout for in-flight requests to prevent stuck promises from blocking the map indefinitely
 const INFLIGHT_REQUEST_TIMEOUT = process.env.NODE_ENV === 'test' ? 1000 : 30000; // 1s for tests, 30s for production
 const inflightRequests = new Map<string, Promise<ExtractedMetadata>>();
+const requestKeySecret = crypto.randomBytes(32);
+
+function createMetadataRequestKey(url: string, securityOptions?: SecurityOptions): string {
+  const keyMaterial = JSON.stringify({
+    url,
+    security: {
+      allowSvg: securityOptions?.allowSvg === true,
+      httpsOnly: securityOptions?.httpsOnly === true,
+      maxRedirects: securityOptions?.maxRedirects ?? 3,
+      timeout: securityOptions?.timeout ?? 8000,
+    },
+  });
+
+  return crypto.createHmac('sha256', requestKeySecret).update(keyMaterial).digest('hex');
+}
+
+function createRequestId(key: string): string {
+  return `req_${key.slice(0, 16)}`;
+}
 
 /**
  * Get statistics about in-flight requests for monitoring/debugging
- * @returns Object containing in-flight request statistics
+ * Keys are opaque, process-local request IDs. They never contain caller URLs
+ * and are intentionally not stable across process restarts.
  */
 export function getInflightRequestStats(): { 
   count: number; 
@@ -167,7 +201,7 @@ export function getInflightRequestStats(): {
 } {
   return {
     count: inflightRequests.size,
-    keys: Array.from(inflightRequests.keys()),
+    keys: Array.from(inflightRequests.keys(), createRequestId),
     maxLimit: MAX_INFLIGHT_REQUESTS,
     utilizationPercent: Math.round((inflightRequests.size / MAX_INFLIGHT_REQUESTS) * 100)
   };
@@ -195,11 +229,9 @@ export const __test_inflightRequests = process.env.NODE_ENV === 'test' ? infligh
  */
 export async function extractMetadata(url: string, securityOptions?: SecurityOptions): Promise<ExtractedMetadata> {
   try {
-    // Create cache key based on URL and security options
-    // Sort object entries to ensure deterministic cache key generation
-    const options = securityOptions || {};
-    const sortedOptions = Object.fromEntries(Object.entries(options).sort());
-    const cacheKey = `${url}:${JSON.stringify(sortedOptions)}`;
+    const normalizedUrl = validateUrlBeforeNetwork(url, securityOptions);
+    const cacheKey = createMetadataRequestKey(normalizedUrl, securityOptions);
+    const requestId = createRequestId(cacheKey);
     
     // Check cache first
     const cachedMetadata = metadataCache.get(cacheKey);
@@ -225,7 +257,12 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
       // If no request is in-flight, create one and store it in the map.
       // This ensures that even if multiple requests arrive concurrently,
       // only one will create the promise.
-      const originalPromise = extractMetadataInternal(url, cacheKey, securityOptions, abortController.signal);
+      const originalPromise = extractMetadataInternal(
+        normalizedUrl,
+        cacheKey,
+        securityOptions,
+        abortController.signal
+      );
 
       let timedOut = false;
 
@@ -238,7 +275,7 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
           abortController.abort();
           reject(new PreviewGeneratorError(
             ErrorType.FETCH_ERROR,
-            `In-flight request timeout after ${INFLIGHT_REQUEST_TIMEOUT}ms for URL: ${url}`
+            `In-flight request timeout after ${INFLIGHT_REQUEST_TIMEOUT}ms (${requestId})`
           ));
         }, INFLIGHT_REQUEST_TIMEOUT);
       });
@@ -250,7 +287,8 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
         if (timedOut) {
           logger.warn('Original metadata promise rejected after timeout', {
             operation: 'metadata-extraction',
-            url,
+            origin: getSafeUrlOrigin(normalizedUrl),
+            requestId,
             error: error instanceof Error ? error : String(error),
           });
         }
@@ -276,7 +314,8 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
           // Silently handle cleanup errors to prevent unhandled promise rejections
           logger.warn('Error during in-flight request cleanup', {
             operation: 'metadata-extraction',
-            url,
+            origin: getSafeUrlOrigin(normalizedUrl),
+            requestId,
             error: cleanupError instanceof Error ? cleanupError : String(cleanupError),
           });
         }
@@ -294,8 +333,8 @@ export async function extractMetadata(url: string, securityOptions?: SecurityOpt
     }
     throw new PreviewGeneratorError(
       ErrorType.METADATA_ERROR,
-      `Failed to extract metadata from ${url}: ${error instanceof Error ? error.message : String(error)}`,
-      error
+      'Failed to extract metadata',
+      createSafeErrorDetails(error)
     );
   }
 }
@@ -329,26 +368,16 @@ async function extractMetadataInternal(
 /** Validate cheap URL syntax and policy before consuming a network permit. */
 function validateUrlBeforeNetwork(url: string, securityOptions?: SecurityOptions): string {
   try {
-    const urlObj = new URL(url);
-
-    // Ensure protocol is http or https
-    if (!['http:', 'https:'].includes(urlObj.protocol)) {
-      throw new Error('Invalid protocol. Only HTTP and HTTPS are supported.');
-    }
-
-    // Check HTTPS-only requirement
-    if (securityOptions?.httpsOnly && urlObj.protocol !== 'https:') {
-      throw createSecurityPolicyError(
-        'HTTP URLs are not allowed when HTTPS-only mode is enabled.'
-      );
-    }
-
-    return urlObj.toString();
+    return validateUrlInput(url, { httpsOnly: securityOptions?.httpsOnly === true });
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;
     }
-    throw new PreviewGeneratorError(ErrorType.VALIDATION_ERROR, `Invalid URL: ${url}`, error);
+    throw new PreviewGeneratorError(
+      ErrorType.VALIDATION_ERROR,
+      'Invalid URL',
+      createSafeErrorDetails(error)
+    );
   }
 }
 
@@ -364,22 +393,12 @@ async function validateUrlSecurity(
       if (securityValidation.failureKind === 'operational') {
         throw new PreviewGeneratorError(
           ErrorType.FETCH_ERROR,
-          `Failed to validate URL security: ${securityValidation.reason}`,
-          {
-            url: validatedUrl,
-            blockedIPs: securityValidation.blockedIPs,
-            allowedIPs: securityValidation.allowedIPs
-          }
+          'Failed to validate URL security'
         );
       }
 
       throw createSecurityPolicyError(
-        `URL blocked by security validation: ${securityValidation.reason}`,
-        {
-          url: validatedUrl,
-          blockedIPs: securityValidation.blockedIPs,
-          allowedIPs: securityValidation.allowedIPs
-        }
+        'URL blocked by security policy'
       );
     }
 
@@ -393,8 +412,8 @@ async function validateUrlSecurity(
     }
     throw new PreviewGeneratorError(
       ErrorType.VALIDATION_ERROR,
-      `Invalid URL: ${validatedUrl}`,
-      error
+      'Invalid URL',
+      createSafeErrorDetails(error)
     );
   }
 }
@@ -465,8 +484,8 @@ async function fetchOpenGraphData(
     const controlMessage = getNetworkControlErrorMessage(fetchError);
     throw new PreviewGeneratorError(
       ErrorType.FETCH_ERROR,
-      `Failed to fetch data from ${url}${controlMessage ? `: ${controlMessage}` : ''}`,
-      fetchError
+      `Failed to fetch data${controlMessage ? `: ${controlMessage}` : ''}`,
+      createSafeErrorDetails(fetchError)
     );
   }
 
@@ -483,8 +502,8 @@ async function fetchOpenGraphData(
   } catch (parseError) {
     throw new PreviewGeneratorError(
       ErrorType.FETCH_ERROR,
-      `Failed to parse metadata from ${url}`,
-      parseError
+      'Failed to parse metadata',
+      createSafeErrorDetails(parseError)
     );
   }
 }
@@ -540,7 +559,7 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
   // Extract locale
   const locale = firstCleanText(ogData.ogLocale, ogData.inLanguage) || 'en_US';
 
-  return {
+  return normalizeMetadataForRendering({
     title,
     description,
     image,
@@ -551,7 +570,7 @@ function parseMetadata(ogData: Record<string, unknown>, url: string): ExtractedM
     url,
     domain: urlObj.hostname,
     locale,
-  };
+  }, 'scraped');
 }
 
 function firstString(value: unknown): string | undefined {
@@ -675,10 +694,13 @@ export async function fetchImage(imageUrl: string, securityOptions?: SecurityOpt
       throw validationError;
     }
 
+    const controlMessage = abortSignal?.aborted
+      ? 'Network request aborted'
+      : getNetworkControlErrorMessage(error);
     throw new PreviewGeneratorError(
       ErrorType.IMAGE_ERROR,
-      `Failed to fetch image from ${imageUrl}: ${error instanceof Error ? error.message : String(error)}`,
-      error
+      `Failed to fetch image${controlMessage ? `: ${controlMessage}` : ''}`,
+      createSafeErrorDetails(error)
     );
   }
 }

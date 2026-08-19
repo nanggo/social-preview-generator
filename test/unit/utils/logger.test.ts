@@ -100,17 +100,18 @@ describe('Logger', () => {
       expect(mockConsole.warn).toHaveBeenCalledTimes(1);
       const logCall = mockConsole.warn.mock.calls[0][0];
       expect(logCall).toContain('operation=test-op');
-      expect(logCall).toContain('url=https://example.com');
+      expect(logCall).toContain('origin=https://example.com');
     });
 
-    it('should log error details when provided in context', () => {
+    it('should log only safe error metadata when provided in context', () => {
       const testError = new Error('Test error');
       logger.setLevel(LogLevel.ERROR);
       logger.error('test error message', { error: testError });
       
-      expect(mockConsole.error).toHaveBeenCalledTimes(2);
+      expect(mockConsole.error).toHaveBeenCalledTimes(1);
       expect(mockConsole.error.mock.calls[0][0]).toContain('test error message');
-      expect(mockConsole.error.mock.calls[1]).toEqual(['Error details:', testError]);
+      expect(mockConsole.error.mock.calls[0][0]).toContain('errorName=Error');
+      expect(mockConsole.error.mock.calls[0][0]).not.toContain('Test error');
     });
   });
 
@@ -125,10 +126,11 @@ describe('Logger', () => {
       
       logImageFetchError(url, error);
       
-      expect(mockConsole.warn).toHaveBeenCalledTimes(2);
+      expect(mockConsole.warn).toHaveBeenCalledTimes(1);
       expect(mockConsole.warn.mock.calls[0][0]).toContain('Failed to fetch image');
       expect(mockConsole.warn.mock.calls[0][0]).toContain('operation=image-fetch');
-      expect(mockConsole.warn.mock.calls[0][0]).toContain(url);
+      expect(mockConsole.warn.mock.calls[0][0]).toContain('origin=https://example.com');
+      expect(mockConsole.warn.mock.calls[0][0]).not.toContain('/image.jpg');
     });
 
     it('should log metadata extraction errors correctly', () => {
@@ -137,7 +139,7 @@ describe('Logger', () => {
       
       logMetadataExtractionError(url, error);
       
-      expect(mockConsole.warn).toHaveBeenCalledTimes(2);
+      expect(mockConsole.warn).toHaveBeenCalledTimes(1);
       expect(mockConsole.warn.mock.calls[0][0]).toContain('Failed to extract metadata');
       expect(mockConsole.warn.mock.calls[0][0]).toContain('operation=metadata-extraction');
       expect(mockConsole.warn.mock.calls[0][0]).toContain(url);
@@ -145,6 +147,21 @@ describe('Logger', () => {
   });
 
   describe('Edge cases', () => {
+    it('redacts userinfo, paths, queries, and raw error messages', () => {
+      logger.setLevel(LogLevel.ERROR);
+      const secret = 'never-log-this-secret';
+      logger.error('request failed', {
+        url: `https://user:${secret}@example.com/private?token=${secret}`,
+        error: Object.assign(new Error(`failed ${secret}`), { code: 'ECONNRESET' }),
+      });
+
+      const serialized = JSON.stringify(mockConsole.error.mock.calls);
+      expect(serialized).toContain('origin=https://example.com');
+      expect(serialized).toContain('errorCode=ECONNRESET');
+      expect(serialized).not.toContain(secret);
+      expect(serialized).not.toContain('/private');
+    });
+
     it('should handle messages without context', () => {
       logger.setLevel(LogLevel.INFO);
       logger.info('simple message');

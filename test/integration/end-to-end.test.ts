@@ -439,7 +439,7 @@ describe('End-to-End Integration Tests', () => {
           })
         ).rejects.toMatchObject({
           type: ErrorType.IMAGE_ERROR,
-          message: expect.stringContaining('timeout: 12% complete'),
+          message: 'Failed to generate image with template',
         });
         expect(overlayGenerator).toHaveBeenCalledTimes(1);
         expect(sharpInstance.toBuffer).toHaveBeenCalledTimes(2);
@@ -477,7 +477,7 @@ describe('End-to-End Integration Tests', () => {
           })
         ).rejects.toMatchObject({
           type: ErrorType.IMAGE_ERROR,
-          message: expect.stringContaining('Custom overlay failed'),
+          message: 'Failed to generate image with template',
         });
         expect(overlayGenerator).toHaveBeenCalledTimes(1);
       } finally {
@@ -516,7 +516,7 @@ describe('End-to-End Integration Tests', () => {
           })
         ).rejects.toMatchObject({
           type: ErrorType.IMAGE_ERROR,
-          message: expect.stringContaining('XML parse error'),
+          message: 'Failed to generate image with template',
         });
         expect(overlayGenerator).toHaveBeenCalledTimes(1);
       } finally {
@@ -818,20 +818,14 @@ describe('End-to-End Integration Tests', () => {
 
     it('should not expose metadata extraction cache objects when preview caching is disabled', async () => {
       const url = 'https://metadata-cache-isolation.example/post';
-      const cachedMetadata = {
-        title: 'Original Extracted Title',
-        description: 'Original extracted description.',
-        url,
-        domain: 'metadata-cache-isolation.example',
-      };
-      metadataCache.set(`${url}:${JSON.stringify({})}`, cachedMetadata);
 
       const first = await generatePreviewWithDetails(url, { cache: false });
+      expect(first.metadata.title).toBe('Test OG Title');
       first.metadata.title = 'mutated returned metadata';
 
       const second = await generatePreviewWithDetails(url, { cache: false });
-      expect(second.metadata.title).toBe('Original Extracted Title');
-      expect(cachedMetadata.title).toBe('Original Extracted Title');
+      expect(second.metadata.title).toBe('Test OG Title');
+      expect(mockedOgs).toHaveBeenCalledOnce();
     });
 
     it('should accept direct metadata text at the 10,000 character boundary', async () => {

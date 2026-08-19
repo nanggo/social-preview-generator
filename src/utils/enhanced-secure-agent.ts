@@ -72,6 +72,13 @@ function getDNSLookupAbortReason(signal: AbortSignal): unknown {
   return signal.reason ?? createDNSLookupError('DNS lookup aborted', 'ABORT_ERR');
 }
 
+function getSafeOperationalReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  if (message.startsWith('DNS lookup queue limit reached')) return message;
+  if (message.startsWith('DNS lookup timed out after')) return message;
+  return 'Security validation error';
+}
+
 function createDNSLookupReleasePermit(): ReleaseDNSLookupPermit {
   let released = false;
 
@@ -433,8 +440,8 @@ function validateIPAddresses(addresses: dns.LookupAddress[]): SecurityValidation
     blockedIPs,
     allowedIPs,
     failureKind: blockedIPs.length > 0 ? 'policy' : undefined,
-    reason: blockedIPs.length > 0 
-      ? `Blocked private or reserved IPs: ${blockedIPs.join(', ')}`
+    reason: blockedIPs.length > 0
+      ? 'Private or reserved network destination blocked'
       : undefined
   };
 }
@@ -553,6 +560,23 @@ function validateSocketIP(socket: net.Socket, hostname: string): boolean {
     return false;
   }
 
+  const literalFamily = net.isIP(hostname);
+  if (literalFamily !== 0) {
+    if (isPrivateOrReservedIP(hostname) || isPrivateOrReservedIP(actualIP)) {
+      return false;
+    }
+
+    if (literalFamily === 4 && actualIP === `::ffff:${hostname}`) {
+      return true;
+    }
+
+    const actualFamily = net.isIP(actualIP);
+    if (actualFamily !== literalFamily) return false;
+    const exactAddress = new net.BlockList();
+    exactAddress.addAddress(hostname, literalFamily === 4 ? 'ipv4' : 'ipv6');
+    return exactAddress.check(actualIP, actualFamily === 4 ? 'ipv4' : 'ipv6');
+  }
+
   // Get the cached IP addresses for this hostname
   const cachedIPs = dnsCache.getCachedIPs(hostname);
   if (!cachedIPs) {
@@ -585,6 +609,12 @@ function validateSocketIP(socket: net.Socket, hostname: string): boolean {
   }
 
   return true;
+}
+
+function assertSafeLiteralHostname(hostname: string): void {
+  if (net.isIP(hostname) !== 0 && isPrivateOrReservedIP(hostname)) {
+    throw createNetworkPolicyError('Connection blocked: private or reserved IP literal');
+  }
 }
 
 function getHostnameForValidation(options: unknown): string {
@@ -730,6 +760,7 @@ export function createEnhancedSecureHttpAgent(): http.Agent {
         : options;
 
     const hostname = getHostnameForValidation(normalizedOptions);
+    assertSafeLiteralHostname(hostname);
     const socket = originalCreateConnection.call(this, normalizedOptions, callback);
     if (!socket) {
       throw new Error(`Failed to create connection socket for ${hostname}`);
@@ -800,6 +831,7 @@ export function createEnhancedSecureHttpsAgent(): https.Agent {
         : options;
 
     const hostname = getHostnameForValidation(normalizedOptions);
+    assertSafeLiteralHostname(hostname);
     const socket = originalCreateConnection.call(this, normalizedOptions, callback);
     if (!socket) {
       throw new Error(`Failed to create TLS connection socket for ${hostname}`);
@@ -887,18 +919,18 @@ export async function validateRequestSecurity(
 ): Promise<SecurityValidationResult> {
   try {
     const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
+    const hostname = getHostnameForValidation({ hostname: urlObj.hostname });
+    const literalFamily = net.isIP(hostname);
 
-    // Perform DNS lookup and validation
-    const addresses = await dnsCache.lookup(hostname, abortSignal);
+    // IP literals do not need DNS and must retain their policy classification.
+    const addresses = literalFamily === 0
+      ? await dnsCache.lookup(hostname, abortSignal)
+      : [{ address: hostname, family: literalFamily as 4 | 6 }];
     const validation = validateIPAddresses(addresses);
 
     if (!validation.allowed) {
       logger.warn('Request blocked by security validation', {
-        url,
-        hostname,
-        reason: validation.reason,
-        blockedIPs: validation.blockedIPs
+        origin: urlObj.origin,
       });
     }
 
@@ -907,13 +939,13 @@ export async function validateRequestSecurity(
     if (abortSignal?.aborted) {
       throw abortSignal.reason ?? error;
     }
-    logger.error('Security validation failed', { url, error: error as Error });
+    logger.error('Security validation failed', { error });
     return {
       allowed: false,
       blockedIPs: [],
       allowedIPs: [],
       failureKind: 'operational',
-      reason: `Security validation error: ${(error as Error).message}`
+      reason: getSafeOperationalReason(error)
     };
   }
 }

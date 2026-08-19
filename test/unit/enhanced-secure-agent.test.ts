@@ -6,6 +6,7 @@ import { vi } from 'vitest';
  */
 
 import http from 'http';
+import https from 'https';
 import dns from 'dns';
 import net from 'net';
 import { 
@@ -236,6 +237,137 @@ describe('Enhanced Secure Agent', () => {
   });
 
   describe('TOCTOU Protection', () => {
+    it.each([
+      ['HTTP', () => createEnhancedSecureHttpAgent(), http.Agent.prototype],
+      ['HTTPS', () => createEnhancedSecureHttpsAgent(), https.Agent.prototype],
+    ] as const)('%s blocks private literals before creating a socket', (_label, createAgent, prototype) => {
+      mockIsPrivateOrReservedIP.mockImplementation(ip => ip === '127.0.0.1');
+      const createConnectionSpy = vi.spyOn(prototype, 'createConnection');
+      try {
+        const agent = createAgent();
+        expect(() => agent.createConnection({ host: '127.0.0.1', port: 443 })).toThrow(
+          'private or reserved IP literal'
+        );
+        expect(createConnectionSpy).not.toHaveBeenCalled();
+      } finally {
+        createConnectionSpy.mockRestore();
+      }
+    });
+
+    it('keeps private literal and mixed-DNS targets at zero TCP connections', async () => {
+      const server = net.createServer(socket => socket.destroy());
+      let connectionCount = 0;
+      server.on('connection', () => {
+        connectionCount += 1;
+      });
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => resolve());
+      });
+
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        throw new Error('Test server did not expose a TCP port');
+      }
+
+      const requestMustFailBeforeConnect = async (
+        client: typeof http | typeof https,
+        agent: http.Agent | https.Agent,
+        hostname: string
+      ): Promise<void> => {
+        await new Promise<void>((resolve, reject) => {
+          try {
+            const request = client.get(
+              {
+                hostname,
+                port: address.port,
+                agent,
+                rejectUnauthorized: false,
+              },
+              response => {
+                response.resume();
+                reject(new Error('Blocked target unexpectedly returned a response'));
+              }
+            );
+            request.once('error', () => resolve());
+            request.setTimeout(1_000, () => request.destroy(new Error('test timeout')));
+          } catch {
+            resolve();
+          }
+        });
+      };
+
+      let cleanupDNS = mockDNSLookup('mixed-http-preconnect.example', [
+        // Both answers route to the local test server. The classifier treats
+        // the first as allowed and the second as blocked, so a first-answer-only
+        // bug would create a real TCP connection and fail this test.
+        { address: '127.0.0.1', family: 4 },
+        { address: '127.0.0.1', family: 4 },
+      ]);
+      const httpAgent = createEnhancedSecureHttpAgent();
+      const httpsAgent = createEnhancedSecureHttpsAgent();
+      try {
+        await useProductionIPClassifier();
+        await requestMustFailBeforeConnect(http, httpAgent, '127.0.0.1');
+        await requestMustFailBeforeConnect(https, httpsAgent, '127.0.0.1');
+
+        let classificationCount = 0;
+        mockIsPrivateOrReservedIP.mockImplementation(addressValue => {
+          if (addressValue !== '127.0.0.1') return false;
+          classificationCount += 1;
+          return classificationCount % 2 === 0;
+        });
+        await requestMustFailBeforeConnect(http, httpAgent, 'mixed-http-preconnect.example');
+
+        cleanupDNS();
+        invalidateDNSCache('mixed-http-preconnect.example');
+        cleanupDNS = mockDNSLookup('mixed-https-preconnect.example', [
+          { address: '127.0.0.1', family: 4 },
+          { address: '127.0.0.1', family: 4 },
+        ]);
+        classificationCount = 0;
+        await requestMustFailBeforeConnect(https, httpsAgent, 'mixed-https-preconnect.example');
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(connectionCount).toBe(0);
+      } finally {
+        cleanupDNS();
+        httpAgent.destroy();
+        httpsAgent.destroy();
+        await new Promise<void>((resolve, reject) => {
+          server.close(error => error ? reject(error) : resolve());
+        });
+      }
+    });
+
+    it('continues to allow public IP literals', () => {
+      mockIsPrivateOrReservedIP.mockReturnValue(false);
+      let connectListener: (() => void) | undefined;
+      const destroy = vi.fn();
+      const mockSocket = {
+        remoteAddress: '8.8.8.8',
+        remotePort: 80,
+        destroyed: false,
+        destroy,
+        on: vi.fn((event: string, listener: () => void) => {
+          if (event === 'connect') connectListener = listener;
+        }),
+      } as unknown as net.Socket;
+      const createConnectionSpy = vi
+        .spyOn(http.Agent.prototype, 'createConnection')
+        .mockReturnValue(mockSocket);
+      try {
+        const agent = createEnhancedSecureHttpAgent();
+        expect(agent.createConnection({ host: '8.8.8.8', port: 80 })).toBe(mockSocket);
+        expect(createConnectionSpy).toHaveBeenCalledOnce();
+        connectListener?.();
+        expect(destroy).not.toHaveBeenCalled();
+      } finally {
+        createConnectionSpy.mockRestore();
+      }
+    });
+
     it('should validate that connected IP matches DNS resolution', async () => {
       const cleanup = mockDNSLookup('test.com', [
         { address: '1.2.3.4', family: 4 }
@@ -381,7 +513,8 @@ describe('Enhanced Secure Agent', () => {
       const result = await validateRequestSecurity('https://localhost/test');
       
       expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('Blocked private or reserved IPs');
+      expect(result.reason).toBe('Private or reserved network destination blocked');
+      expect(result.reason).not.toContain('::ffff:192.168.1.1');
 
       cleanup();
     });
@@ -471,6 +604,32 @@ describe('Enhanced Secure Agent', () => {
   });
 
   describe('Comprehensive Security Validation', () => {
+    it('classifies IP literals without sending them through DNS', async () => {
+      const lookupSpy = vi.spyOn(dns, 'lookup').mockImplementation(() => {
+        throw new Error('IP literals must not use DNS');
+      });
+
+      try {
+        await useProductionIPClassifier();
+
+        await expect(
+          validateRequestSecurity('https://[2606:4700:4700::1111]/dns-query')
+        ).resolves.toMatchObject({
+          allowed: true,
+          blockedIPs: [],
+          allowedIPs: ['2606:4700:4700::1111'],
+        });
+        await expect(validateRequestSecurity('http://[::1]/secret')).resolves.toMatchObject({
+          allowed: false,
+          blockedIPs: ['::1'],
+          failureKind: 'policy',
+        });
+        expect(lookupSpy).not.toHaveBeenCalled();
+      } finally {
+        lookupSpy.mockRestore();
+      }
+    });
+
     it('should block all private IPs when ANY resolved address is private', async () => {
       const cleanup = mockDNSLookup('mixed.com', [
         { address: '8.8.8.8', family: 4 },      // Safe public IP
@@ -1270,7 +1429,7 @@ describe('Enhanced Secure Agent', () => {
       const result = await validateRequestSecurity('http://ipv6-rebind.com/attack');
       
       expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('private or reserved IP');
+      expect(result.reason).toBe('Private or reserved network destination blocked');
       expect(result.blockedIPs).toContain('::ffff:192.168.1.1');
       
       cleanup();

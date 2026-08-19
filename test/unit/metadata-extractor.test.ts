@@ -75,17 +75,49 @@ describe('Metadata Extractor', () => {
     });
 
     it('should classify operational DNS validation failures as fetch errors', async () => {
+      const internalReason = 'Security validation error: getaddrinfo ENOTFOUND 10.0.0.9';
       mockedValidateRequestSecurity.mockResolvedValueOnce({
         allowed: false,
         blockedIPs: [],
         allowedIPs: [],
-        reason: 'Security validation error: getaddrinfo ENOTFOUND',
+        reason: internalReason,
         failureKind: 'operational',
       } as Awaited<ReturnType<typeof validateRequestSecurity>>);
 
-      await expect(extractMetadata('https://dns-failure.example/path')).rejects.toMatchObject({
+      const error = await extractMetadata('https://dns-failure.example/path').catch(
+        value => value as PreviewGeneratorError
+      );
+
+      expect(error).toMatchObject({
         type: ErrorType.FETCH_ERROR,
+        message: 'Failed to fetch data',
       });
+      expect(JSON.stringify({ message: error.message, details: error.details })).not.toContain(
+        internalReason
+      );
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
+    it('does not expose blocked DNS addresses through public errors', async () => {
+      mockedValidateRequestSecurity.mockResolvedValueOnce({
+        allowed: false,
+        blockedIPs: ['10.23.45.67'],
+        allowedIPs: ['203.0.113.8'],
+        reason: 'Blocked private or reserved IPs: 10.23.45.67',
+        failureKind: 'policy',
+      } as Awaited<ReturnType<typeof validateRequestSecurity>>);
+
+      const error = await extractMetadata('https://internal-alias.example/path').catch(
+        value => value as PreviewGeneratorError
+      );
+      const serialized = JSON.stringify({ message: error.message, details: error.details });
+
+      expect(error).toMatchObject({
+        type: ErrorType.VALIDATION_ERROR,
+        message: 'URL blocked by security policy',
+      });
+      expect(serialized).not.toContain('10.23.45.67');
+      expect(serialized).not.toContain('203.0.113.8');
       expect(mockedAxios.get).not.toHaveBeenCalled();
     });
 
@@ -104,6 +136,29 @@ describe('Metadata Extractor', () => {
       await expect(extractMetadata('https://redirect-origin.example/path')).rejects.toBe(
         policyError
       );
+    });
+
+    it('does not expose URL secrets through returned network errors or nested details', async () => {
+      const secret = 'never-expose-this-token';
+      mockedAxios.get.mockRejectedValueOnce(
+        Object.assign(new Error(`request failed for token=${secret}`), {
+          code: 'ECONNRESET',
+          config: { url: `https://example.com/private?token=${secret}` },
+        })
+      );
+
+      const error = await extractMetadata(
+        `https://example.com/private?token=${secret}`
+      ).catch(value => value as PreviewGeneratorError);
+      const serialized = JSON.stringify({
+        message: error.message,
+        stack: error.stack,
+        details: error.details,
+      });
+
+      expect(serialized).not.toContain(secret);
+      expect(serialized).not.toContain('/private');
+      expect(error.details).toMatchObject({ name: 'Error', code: 'ECONNRESET' });
     });
 
     it('should handle Twitter Card metadata', async () => {
@@ -201,6 +256,27 @@ describe('Metadata Extractor', () => {
         url: 'https://www.redirected.example:8443/articles/2026/story.html?ref=home',
         domain: 'www.redirected.example',
       });
+    });
+
+    it.each(['http:', 'https:'])('blocks %s private literal redirects before the next request', async protocol => {
+      mockedAxios.get.mockImplementationOnce(async (_url, config) => {
+        config?.beforeRedirect?.(
+          {
+            protocol,
+            hostname: '127.0.0.1',
+            path: '/',
+            href: `${protocol}//127.0.0.1/`,
+          },
+          { headers: { location: `${protocol}//127.0.0.1/` }, statusCode: 302 }
+        );
+        throw new Error('unreachable');
+      });
+
+      const origin = `https://${protocol === 'http:' ? 'http' : 'https'}-private-redirect-origin.example/start`;
+      await expect(extractMetadata(origin)).rejects.toMatchObject({
+        type: ErrorType.VALIDATION_ERROR,
+      });
+      expect(mockedOgs).not.toHaveBeenCalled();
     });
 
     it('should ignore non-string OG text and use the next valid value', async () => {
@@ -511,7 +587,7 @@ describe('Metadata Extractor', () => {
       const request = fetchImage(imageUrl, { timeout: 1000 }, caller.signal);
       const rejected = expect(request).rejects.toMatchObject({
         type: ErrorType.IMAGE_ERROR,
-        message: expect.stringContaining(callerReason.message),
+        message: expect.stringContaining('Network request aborted'),
       });
       await vi.advanceTimersByTimeAsync(0);
 

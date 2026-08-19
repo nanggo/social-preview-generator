@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { GeneratedPreview, PreviewOptions } from '../types';
-import { previewCache } from './cache';
+import { PREVIEW_CACHE_MAX_ENTRY_BYTES, previewCache } from './cache';
 
 function cloneGeneratedPreview(preview: GeneratedPreview): GeneratedPreview {
   return {
@@ -73,5 +73,7 @@ export function setCachedPreview(
 ): void {
   const key = createPreviewCacheKey(url, options);
   if (!key) return;
+  // Oversized previews still render successfully, but must not be cloned or retained.
+  if (preview.buffer.byteLength > PREVIEW_CACHE_MAX_ENTRY_BYTES) return;
   previewCache.set(key, cloneGeneratedPreview(preview), ttlMs);
 }
