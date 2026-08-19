@@ -83,6 +83,7 @@ export function normalizeMetadataForRendering(
   );
 
   return {
+    ...input,
     title: normalizeRequiredText(input.title, 'metadata.title'),
     description: normalizeOptionalText(input.description, 'metadata.description'),
     image,

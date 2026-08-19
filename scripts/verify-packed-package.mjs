@@ -325,6 +325,7 @@ try {
   const customMetadata = {
     title: 'Packed custom template smoke',
     url: 'https://example.com/custom-template-smoke',
+    campaign: 'v0.5.0',
   };
   const customTemplate = {
     name: 'packed-default-overlay',
@@ -342,7 +343,10 @@ try {
       ...customTemplate,
       name: 'packed-caller-overlay',
       brand: { color: '#123456' },
-      overlayGenerator: (_metadata, width, height, _options, receivedTemplate) => {
+      overlayGenerator: (receivedMetadata, width, height, _options, receivedTemplate) => {
+        if (receivedMetadata.campaign !== 'v0.5.0') {
+          throw new Error('Packed package dropped a caller-owned metadata extension');
+        }
         if (receivedTemplate.brand?.color !== '#123456') {
           throw new Error('Packed package dropped a caller-owned template extension');
         }

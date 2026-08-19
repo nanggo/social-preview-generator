@@ -59,6 +59,23 @@ describe('render input validation', () => {
     }
   );
 
+  it('preserves caller-owned metadata fields while replacing normalized fields', () => {
+    const extendedMetadata = {
+      ...metadata,
+      title: '  Safe\n title  ',
+      analytics: { campaign: 'release' },
+    } as ExtractedMetadata & { analytics: { campaign: string } };
+
+    const normalized = normalizeMetadataForRendering(
+      extendedMetadata,
+      'custom'
+    ) as typeof extendedMetadata;
+
+    expect(normalized.analytics).toEqual({ campaign: 'release' });
+    expect(normalized.title).toBe('Safe title');
+    expect(normalized).not.toBe(extendedMetadata);
+  });
+
   it('preserves an arbitrary caller overlay callback', () => {
     const callback = () => '<svg />';
     const validated = validateTemplateConfig({ ...template, overlayGenerator: callback });
