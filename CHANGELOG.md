@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.3
+
+### Security
+
+- Retain only validated image dimensions, format, and density in the image-analysis cache;
+  discard expanded XMP, EXIF, ICC, comments, and other embedded metadata after validation.
+- Do not cache images rejected by dimension or density validation, and preserve cache-hit
+  diagnostics for accepted images.
+
+### Fixes
+
+- Apply background `imageProcessing.contrast` and `imageProcessing.blur` options, including
+  consistent middle gray for 16-bit inputs and explicit zero-blur overrides.
+- Materialize contrast-adjusted backgrounds before SVG composition so text and logos retain
+  their original colours. Propagate native processing timeouts without retrying.
+- Reject blur radii between zero and 0.3 before fetching; supported values are zero or 0.3–100.
+- Document that the legacy `fonts` option is not applied by built-in or default overlays.
+
+### Examples
+
+- Keep queued Redis concurrency permits until handlers finish; handle promotion, timeout,
+  duplicate release, and promoted-permit expiry atomically.
+- Link examples to the current package, use native UUID generation and current width/height
+  options, and report actual generated dimensions and format.
+- Add a locked example dependency set with patched `qs`, HTTP regression tests, and actual
+  Redis Lua lifecycle tests in CI. Redis is opt-in and configured failures reject requests.
+
 ## 0.5.0
 
 ### Security
