@@ -116,6 +116,10 @@ class SharpLRUCache<T> {
     return this.cache.delete(key);
   }
 
+  protected containsValue(key: string, value: T): boolean {
+    return this.cache.get(key)?.value === value;
+  }
+
   set(key: string, value: T): boolean {
     const now = Date.now();
     const weight = this.sizeOf?.(value) ?? 0;
@@ -240,9 +244,22 @@ class SVGCache extends SharpLRUCache<Buffer> {
 }
 
 /**
- * Metadata Cache for image analysis
+ * Only the fixed-size fields consumed by image validation may survive a request.
+ * Sharp.Metadata can also contain decompressed profiles, comments and nested
+ * image buffers, even when the original download is very small.
  */
-class MetadataCache extends SharpLRUCache<Metadata> {
+export type ImageValidationMetadata = Readonly<Pick<Metadata, 'width' | 'height' | 'format' | 'density'>>;
+
+function validationMetadata(metadata: ImageValidationMetadata): ImageValidationMetadata {
+  return Object.freeze({
+    width: metadata.width,
+    height: metadata.height,
+    format: metadata.format,
+    density: metadata.density,
+  });
+}
+
+class MetadataCache extends SharpLRUCache<ImageValidationMetadata> {
   constructor() {
     super({
       maxSize: 500,
@@ -251,14 +268,16 @@ class MetadataCache extends SharpLRUCache<Metadata> {
     });
   }
 
-  getCachedMetadata(imageBuffer: Buffer): Metadata | undefined {
+  getCachedMetadata(imageBuffer: Buffer): ImageValidationMetadata | undefined {
     const key = this.generateBufferKey(imageBuffer);
     return this.get(key);
   }
 
-  cacheMetadata(imageBuffer: Buffer, metadata: Metadata): void {
+  cacheMetadata(imageBuffer: Buffer, metadata: ImageValidationMetadata): void {
     const key = this.generateBufferKey(imageBuffer);
-    this.set(key, metadata);
+    // Validation also runs on hits; preserve the original expiry and hit count.
+    if (this.containsValue(key, metadata)) return;
+    this.set(key, validationMetadata(metadata));
   }
 
   private generateBufferKey(buffer: Buffer): string {
@@ -353,17 +372,16 @@ export async function createCachedSVG(svgContent: string): Promise<Sharp> {
 }
 
 /**
- * Cached metadata extraction
+ * Read cached validation fields, or extract them without retaining full native
+ * metadata. The caller admits new entries only after validation succeeds.
  */
-export async function getCachedMetadata(imageBuffer: Buffer): Promise<Metadata> {
+export async function getCachedMetadata(imageBuffer: Buffer): Promise<ImageValidationMetadata> {
   // Try cache first
   let metadata = metadataCache.getCachedMetadata(imageBuffer);
   
   if (!metadata) {
-    // Cache miss - extract metadata and cache it
-    metadata = await sharp(imageBuffer, SHARP_SECURITY_CONFIG).metadata();
-    metadataCache.cacheMetadata(imageBuffer, metadata);
-    logger?.debug?.('Metadata cache miss - cached new metadata');
+    metadata = validationMetadata(await sharp(imageBuffer, SHARP_SECURITY_CONFIG).metadata());
+    logger?.debug?.('Metadata cache miss - extracted validation fields');
   } else {
     logger?.debug?.('Metadata cache hit');
   }

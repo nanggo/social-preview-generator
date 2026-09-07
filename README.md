@@ -190,6 +190,14 @@ main().catch((error) => {
 A custom `overlayGenerator` is trusted, synchronous caller code. Do not populate it from
 untrusted JSON. Its SVG result must be a string no larger than 1 MiB in UTF-8 bytes.
 
+For background images, `imageProcessing.blur` overrides `effects.blur.radius`: use `0` to
+disable blur, or a radius from `0.3` to `100`. `imageProcessing.contrast` ranges from `0`
+(flat middle gray) to `2`, with `1` preserving the original contrast.
+
+`fonts` is a legacy option retained for compatibility; built-in and default overlays do not
+apply it or load font files from `fonts[].path`. Install fonts on the server for the system
+font fallback, or supply a trusted `overlayGenerator` for custom typography.
+
 ### Advanced utilities
 
 | Export                           | Purpose                                                        |
@@ -277,6 +285,8 @@ main().catch((error) => {
 - Generated SVGs are limited to 1 MiB each and 16 MiB total retained SVG-cache bytes.
 - Generated previews larger than 16 MiB render normally but are not cached. The preview cache
   retains at most 64 MiB of image buffers.
+- The internal image-analysis cache retains only validated dimensions, format, and density;
+  embedded profiles and comments are not retained. This cache is separate from `cache: true`.
 - `getInflightRequestStats().keys` contains non-reversible, process-local request IDs rather than
   URLs. IDs change after a process restart.
 

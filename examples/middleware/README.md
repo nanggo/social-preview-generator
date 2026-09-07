@@ -1,112 +1,99 @@
 # Rate Limiting Middleware Examples
 
-This directory contains middleware implementations for rate limiting the Social Preview Generator to prevent DoS attacks.
+These examples support the current `@nanggo/social-preview` API on Node.js 22.13+ (22.x)
+or Node.js 24+. Authentication in the example server is deliberately mocked; replace it
+before exposing the server to other users.
 
-## Available Examples
+## Run from this repository
 
-- `express-rate-limit.js` - Express.js middleware with token bucket algorithm
-- `fastify-rate-limit.js` - Fastify plugin implementation  
-- `generic-rate-limit.js` - Framework-agnostic rate limiter
-- `redis-backed-rate-limit.js` - Redis-backed distributed rate limiting
+```sh
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm --dir examples install --frozen-lockfile
+pnpm --dir examples start
+```
 
-## Quick Start
+The examples package links to the repository root. Rebuild the root after editing `src/`.
+Memory limiting is the default. Set `REDIS_URL=redis://127.0.0.1:6379` to opt into Redis.
+Configured Redis failures reject requests rather than silently resetting quotas in memory.
 
-### Express.js
+```sh
+curl http://localhost:3000/api/preview \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com","options":{"width":1200,"height":630,"template":"modern"}}'
+```
+
+## Available implementations
+
+- `express-rate-limit.js`: token bucket and per-key concurrency control.
+- `generic-rate-limit.js`: framework-independent sliding-window and concurrency limiters.
+- `redis-backed-rate-limit.js`: Redis Lua quota and concurrency operations.
+
+## Express integration
 
 ```javascript
 const express = require('express');
 const { createRateLimiter } = require('./middleware/express-rate-limit');
-const { generatePreview } = require('social-preview-generator');
+const { generatePreviewWithDetails } = require('@nanggo/social-preview');
 
 const app = express();
-const rateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 100, // per IP
-  maxConcurrent: 5  // concurrent requests per IP
-});
-
-app.use('/api/preview', rateLimiter);
-
-app.post('/api/preview', async (req, res) => {
-  try {
-    const preview = await generatePreview(req.body.url, req.body.options);
-    res.json({ success: true, preview });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-```
-
-### Configuration Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `windowMs` | 900000 (15min) | Time window in milliseconds |
-| `maxRequests` | 100 | Maximum requests per IP per window |
-| `maxConcurrent` | 5 | Maximum concurrent requests per IP |
-| `costFunction` | `(options) => 1` | Calculate request cost based on options |
-| `skipSuccessfulRequests` | false | Don't count successful requests |
-| `skipFailedRequests` | false | Don't count failed requests |
-| `keyGenerator` | `(req) => req.ip` | Generate unique identifier for client |
-
-### Cost-Based Rate Limiting
-
-Different image generation operations have different computational costs:
-
-```javascript
-const costFunction = (options) => {
-  let cost = 1;
-  
-  // Higher cost for larger images
-  if (options.dimensions) {
-    const pixels = options.dimensions.width * options.dimensions.height;
-    cost += Math.floor(pixels / 100000); // +1 cost per 100k pixels
-  }
-  
-  // Higher cost for effects
-  if (options.effects?.blur) cost += 2;
-  if (options.effects?.brightness !== 1) cost += 1;
-  if (options.effects?.saturation !== 1) cost += 1;
-  
-  // Higher cost for custom templates
-  if (options.template === 'custom') cost += 3;
-  
-  return Math.min(cost, 10); // Cap at 10x cost
-};
-```
-
-## Advanced Features
-
-### Priority Queuing
-
-Premium users can bypass rate limits or get higher priority:
-
-```javascript
-const rateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  maxRequests: (req) => {
-    return req.user?.tier === 'premium' ? 1000 : 100;
-  },
-  priority: (req) => {
-    return req.user?.tier === 'premium' ? 1 : 0;
-  }
-});
-```
-
-### Monitoring and Alerts
-
-```javascript
-const rateLimiter = createRateLimiter({
+app.use(express.json());
+const { middleware, cleanup } = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   maxRequests: 100,
-  onLimitReached: (key, hits, resetTime) => {
-    console.warn(`Rate limit exceeded for ${key}: ${hits} hits`);
-    // Send to monitoring system
-    metrics.increment('rate_limit.exceeded', { key });
+  maxConcurrent: 5,
+  costFunction: (body) => {
+    const options = body.options ?? {};
+    const pixels = (options.width ?? 1200) * (options.height ?? 630);
+    return Math.min(10, 1 + Math.ceil(pixels / 1_000_000));
   },
-  onRequest: (key, hits, remaining) => {
-    // Track usage patterns
-    metrics.histogram('rate_limit.usage', hits, { key });
+});
+app.use('/api/preview', middleware);
+app.post('/api/preview', async (req, res) => {
+  try {
+    const preview = await generatePreviewWithDetails(req.body.url, req.body.options);
+    res.json({
+      buffer: preview.buffer.toString('base64'),
+      dimensions: preview.dimensions,
+      format: preview.format,
+    });
+  } catch (error) {
+    res.status(error.type === 'VALIDATION_ERROR' ? 400 : 500).json({ error: error.message });
   }
 });
+const server = app.listen(3000);
+process.once('SIGTERM', () => server.close(cleanup));
 ```
+
+`createRateLimiter` returns `{ middleware, cleanup }`; `createRedisRateLimiter` returns
+its middleware function. The Express cost callback receives the request body, while the
+Redis callback receives `{ body, query, headers, user, ip }`. Read public preview options
+from `body.options` in both cases. Width and height are top-level preview options, not
+`options.dimensions`. Query format or effects fields are not part of `PreviewOptions`.
+
+## Limits and lifecycle
+
+`maxRequests` and `maxConcurrent` accept numbers or request callbacks for tier-based limits.
+Keys default to the client IP; a real authentication layer can supply a stable user ID.
+There is no priority-queue option. Call the memory limiter's `cleanup` during shutdown and
+close the Redis connection separately.
+
+A queued Redis waiter owns its permit after successful admission, including when another
+request promoted it. Release the permit only after the handler completes. Timeout/error
+cleanup removes both queue membership and a concurrently promoted permit atomically.
+The Redis active-set lease defaults to 600 seconds; configure it above the maximum handler
+duration. These examples do not provide renewable per-request leases or a complete
+cancellation policy for disconnected HTTP clients.
+
+## Tests
+
+```sh
+pnpm --dir examples test
+REDIS_URL=redis://127.0.0.1:6379 pnpm --dir examples run test:redis
+```
+
+The first command checks the HTTP adapter without remote URL requests and deterministic
+waiter lifecycle cases. The second runs the actual Lua scripts against Redis, using a
+unique key prefix and deleting only that test namespace. `REDIS_SOCKET` may be used instead
+for a local Unix socket. The old console demonstration is available as `pnpm --dir examples
+run demo:limits`; it is not the regression suite.

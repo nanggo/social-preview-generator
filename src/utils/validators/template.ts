@@ -53,6 +53,14 @@ function optionalBoolean(value: unknown, fieldName: string): boolean | undefined
   return value;
 }
 
+function blurRadius(value: unknown, fieldName: string, required = false): number | undefined {
+  const radius = finiteNumber(value, fieldName, 0, 100, { required });
+  if (radius !== undefined && radius > 0 && radius < 0.3) {
+    invalid(`${fieldName} must be 0 (disabled) or from 0.3 to 100`);
+  }
+  return radius;
+}
+
 function safeFontWeight(value: unknown, fieldName: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'string') invalid(`${fieldName} must be a string`);
@@ -135,7 +143,7 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
       const rawBlur = asPlainObject(rawEffects.blur, 'template.effects.blur');
       blur = {
         ...rawBlur,
-        radius: finiteNumber(rawBlur.radius, 'template.effects.blur.radius', 0, 100, { required: true })!,
+        radius: blurRadius(rawBlur.radius, 'template.effects.blur.radius', true)!,
         areas: optionalEnum(rawBlur.areas, 'template.effects.blur.areas', ['background', 'overlay', 'all', 'none'] as const),
       };
     }
@@ -165,7 +173,7 @@ export function validateTemplateConfig(input: TemplateConfig): TemplateConfig {
     imageProcessing = {
       ...rawImage,
       brightness: finiteNumber(rawImage.brightness, 'template.imageProcessing.brightness', 0, 1),
-      blur: finiteNumber(rawImage.blur, 'template.imageProcessing.blur', 0, 100),
+      blur: blurRadius(rawImage.blur, 'template.imageProcessing.blur'),
       contrast: finiteNumber(rawImage.contrast, 'template.imageProcessing.contrast', 0, 2),
       saturation: finiteNumber(rawImage.saturation, 'template.imageProcessing.saturation', 0, 2),
       requiresTransparentCanvas: optionalBoolean(

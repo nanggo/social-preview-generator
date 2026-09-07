@@ -4,7 +4,7 @@
  */
 
 import type { Sharp } from 'sharp';
-import { secureResize, withSecureSharp } from '../utils/image-security';
+import { createSecureSharpInstance, secureResize, withSecureSharp } from '../utils/image-security';
 import {
   ExtractedMetadata,
   PreviewOptions,
@@ -136,9 +136,15 @@ async function processBackgroundImage(
       });
 
       // Apply template-specific blur if specified
-      const blurRadius = imageProcessing.blur || template.effects?.blur?.radius || 2;
+      const blurRadius = imageProcessing.blur ?? template.effects?.blur?.radius ?? 2;
       if (blurRadius > 0) {
         processedImage = processedImage.blur(blurRadius);
+      }
+
+      const contrast = imageProcessing.contrast ?? 1;
+      if (contrast !== 1) {
+        processedImage = processedImage.pipelineColourspace('srgb')
+          .linear(contrast, 128 * (1 - contrast));
       }
 
       // Apply template-specific brightness and saturation together for efficiency
@@ -161,7 +167,10 @@ async function processBackgroundImage(
         processedImage = processedImage.modulate(modulateOptions);
       }
 
-      return processedImage;
+      // Keep Sharp's post-composite linear operation off the later text overlay.
+      return contrast !== 1
+        ? createSecureSharpInstance(await processedImage.png().toBuffer())
+        : processedImage;
     });
   } catch (error) {
     throw new PreviewGeneratorError(

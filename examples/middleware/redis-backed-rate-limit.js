@@ -5,8 +5,7 @@
  * Uses Lua scripts for atomic operations to prevent race conditions.
  */
 
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 
 // Lua script for atomic sliding window rate limiting with race condition protection
 const slidingWindowScript = `
@@ -108,9 +107,14 @@ local expireSeconds = tonumber(ARGV[4])
 -- Get current active count
 local activeCount = redis.call('SCARD', activeKey)
 
-if activeCount < maxConcurrent then
+-- A release may have promoted this waiter already. Preserve its permit.
+if redis.call('SISMEMBER', activeKey, requestId) == 1 then
+    redis.call('ZREM', queueKey, requestId)
+    return {1, activeCount, redis.call('ZCARD', queueKey)}
+elseif activeCount < maxConcurrent then
     -- Can proceed immediately - add to active set
     redis.call('SADD', activeKey, requestId)
+    redis.call('ZREM', queueKey, requestId)
     redis.call('EXPIRE', activeKey, expireSeconds)
     
     -- Get accurate count after adding
@@ -134,7 +138,10 @@ local activeKey = KEYS[1]
 local queueKey = KEYS[2]
 local requestId = ARGV[1]
 local maxConcurrent = tonumber(ARGV[2])
+local expireSeconds = tonumber(ARGV[3])
 
+-- Also remove timed-out waiters atomically with any promoted active permit.
+redis.call('ZREM', queueKey, requestId)
 -- Remove from active set (idempotent operation)
 local removed = redis.call('SREM', activeKey, requestId)
 
@@ -150,6 +157,8 @@ if removed == 1 then
         
         if activeCount < maxConcurrent then
             redis.call('SADD', activeKey, nextId)
+            -- SREM can delete the last member and its key, losing the old TTL.
+            redis.call('EXPIRE', activeKey, expireSeconds)
             return {1, nextId}
         else
             -- Race condition: someone else filled the slot
@@ -188,7 +197,9 @@ class RedisRateLimiter {
     this.slidingWindowSHA = null;
     this.concurrencySHA = null;
     this.releaseSHA = null;
-    this._loadScripts();
+    this.scriptsReady = this._loadScripts();
+    // Retain the rejection for callers without an unhandled startup rejection.
+    this.scriptsReady.catch(() => {});
   }
 
   async _loadScripts() {
@@ -198,6 +209,7 @@ class RedisRateLimiter {
       this.releaseSHA = await this.redis.script('LOAD', releaseScript);
     } catch (error) {
       console.error('Failed to load Redis Lua scripts:', error);
+      throw error;
     }
   }
 
@@ -210,13 +222,14 @@ class RedisRateLimiter {
     const totalKey = `${this.options.keyPrefix}total:${key}`;
     const cost = this.options.costFunction(requestData);
     const now = Date.now();
-    const requestId = uuidv4();
+    const requestId = randomUUID();
 
     const maxRequests = typeof this.options.maxRequests === 'function'
       ? this.options.maxRequests(requestData)
       : this.options.maxRequests;
 
     try {
+      await this.scriptsReady;
       const result = await this.redis.evalsha(
         this.slidingWindowSHA,
         2,
@@ -253,7 +266,7 @@ class RedisRateLimiter {
   /**
    * Acquire concurrency slot
    */
-  async acquireConcurrencySlot(requestData, requestId = uuidv4()) {
+  async acquireConcurrencySlot(requestData, requestId = randomUUID()) {
     const key = this.options.keyGenerator(requestData);
     const activeKey = `${this.options.keyPrefix}active:${key}`;
     const queueKey = `${this.options.keyPrefix}queue:${key}`;
@@ -264,6 +277,7 @@ class RedisRateLimiter {
       : this.options.maxConcurrent;
 
     try {
+      await this.scriptsReady;
       const result = await this.redis.evalsha(
         this.concurrencySHA,
         2,
@@ -304,13 +318,15 @@ class RedisRateLimiter {
       : this.options.maxConcurrent;
 
     try {
+      await this.scriptsReady;
       const result = await this.redis.evalsha(
         this.releaseSHA,
         2,
         activeKey,
         queueKey,
         requestId,
-        maxConcurrent
+        maxConcurrent,
+        this.options.concurrencyExpireSeconds
       );
 
       const [promoted, nextRequestId] = result;
@@ -340,100 +356,36 @@ class RedisRateLimiter {
    * These approaches eliminate polling entirely and provide better scalability.
    */
   async waitForConcurrencySlot(requestData, timeout = 30000) {
-    const requestId = uuidv4();
+    const requestId = randomUUID();
     const startTime = Date.now();
-    let originalQueueTimestamp = null;
-    
-    // Try to acquire immediately
-    let slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
-    
-    if (slotStatus.allowed) {
-      return {
-        success: true,
-        requestId,
-        waitTime: 0
-      };
-    }
+    let transferred = false;
+    let currentDelay = Math.min(500, timeout / 20);
+    const maxDelay = Math.min(3000, timeout / 4);
 
-    // Store original queue timestamp for fairness during re-queuing
-    const key = this.options.keyGenerator(requestData);
-    const queueKey = `${this.options.keyPrefix}queue:${key}`;
-    originalQueueTimestamp = Date.now();
-    
-    // Calculate adaptive retry parameters based on queue position
-    const initialDelay = Math.min(500, timeout / 20); // Start with smaller delay
-    const maxDelay = Math.min(3000, timeout / 4); // Cap delay at 1/4 of timeout
-    let currentDelay = initialDelay;
-    let retryCount = 0;
-    
     try {
       while (Date.now() - startTime < timeout) {
-        await new Promise(resolve => setTimeout(resolve, currentDelay));
-        
-        // Check if we're still in queue (might have been processed by release event)
-        const queuePosition = await this.redis.zrank(queueKey, requestId);
-        if (queuePosition === null) {
-          // No longer in queue - try to acquire directly
-          slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
-          if (slotStatus.allowed) {
-            return {
-              success: true,
-              requestId,
-              waitTime: Date.now() - startTime
-            };
-          }
-          // If not acquired but not in queue, we were skipped due to race condition
-          // Re-add to queue with original timestamp to maintain fairness
-          if (originalQueueTimestamp) {
-            try {
-              await this.redis.zadd(queueKey, originalQueueTimestamp, requestId);
-              await this.redis.expire(queueKey, this.options.concurrencyExpireSeconds);
-            } catch (error) {
-              console.warn('Failed to re-queue request after race condition:', error);
-            }
-          }
-        } else {
-          // Still in queue - try to acquire again in case slot became available
-          slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
-          
-          if (slotStatus.allowed) {
-            return {
-              success: true,
-              requestId,
-              waitTime: Date.now() - startTime
-            };
-          }
+        // The Lua script recognizes promoted IDs and preserves the original
+        // queue score with ZADD NX, so no separate queue inspection is needed.
+        const slotStatus = await this.acquireConcurrencySlot(requestData, requestId);
+        if (slotStatus.allowed && Date.now() - startTime < timeout) {
+          transferred = true;
+          return { success: true, requestId, waitTime: Date.now() - startTime };
         }
-        
-        // Adaptive backoff: increase delay but cap it
+
+        const remaining = timeout - (Date.now() - startTime);
+        if (remaining <= 0) break;
+        await new Promise(resolve => setTimeout(resolve, Math.min(currentDelay, remaining)));
         currentDelay = Math.min(maxDelay, currentDelay * 1.5);
-        retryCount++;
-        
-        // Safety check to prevent infinite loops
-        if (retryCount > 50) {
-          break;
-        }
       }
+
+      throw new Error(`Timeout waiting for concurrency slot after ${timeout}ms`);
     } finally {
-      // Always cleanup queued request on exit (timeout or error)
-      await this.redis.zrem(queueKey, requestId);
-      
-      // Check if we were promoted to active set during timeout and clean up if needed
-      try {
-        const key = this.options.keyGenerator(requestData);
-        const activeKey = `${this.options.keyPrefix}active:${key}`;
-        const wasPromoted = await this.redis.sismember(activeKey, requestId);
-        
-        if (wasPromoted) {
-          // Release the slot if we were promoted but are timing out
-          await this.releaseConcurrencySlot(requestData, requestId);
-        }
-      } catch (cleanupError) {
-        console.warn('Failed to cleanup promoted slot during timeout:', cleanupError);
+      // Successful admission transfers ownership to the handler. On failure,
+      // remove either a queued ID or a concurrently promoted permit atomically.
+      if (!transferred) {
+        await this.releaseConcurrencySlot(requestData, requestId);
       }
     }
-    
-    throw new Error(`Timeout waiting for concurrency slot after ${timeout}ms (${retryCount} retries)`);
   }
 
   /**
