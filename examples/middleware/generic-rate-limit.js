@@ -5,8 +5,7 @@
  * Uses sliding window log with memory storage.
  */
 
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 
 class SlidingWindowRateLimiter {
   constructor(options = {}) {
@@ -214,7 +213,7 @@ class ConcurrentRequestLimiter {
     this.queues = new Map(); // key -> Array of pending promises
   }
 
-  async acquire(key, requestId = uuidv4(), timeout = 30000) {
+  async acquire(key, requestId = randomUUID(), timeout = 30000) {
     return new Promise((resolve, reject) => {
       // Initialize tracking for this key if needed
       if (!this.active.has(key)) {
@@ -359,10 +358,11 @@ class CombinedRateLimiter {
       costFunction: (requestData) => {
         // Default cost function for image generation
         let cost = 1;
-        const options = requestData.body || requestData.query || {};
+        const input = requestData.body || requestData.query || {};
+        const options = input.options ?? input;
         
-        if (options.dimensions) {
-          const pixels = options.dimensions.width * options.dimensions.height;
+        if (options.width !== undefined || options.height !== undefined) {
+          const pixels = (options.width ?? 1200) * (options.height ?? 630);
           cost += Math.floor(pixels / 100000); // +1 per 100k pixels
         }
         

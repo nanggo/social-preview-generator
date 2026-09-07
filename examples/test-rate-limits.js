@@ -83,11 +83,11 @@ function testCostCalculation() {
   
   const testCases = [
     { description: 'Basic request', options: {} },
-    { description: 'Large image', options: { dimensions: { width: 2000, height: 2000 } } },
+    { description: 'Large image', options: { width: 2000, height: 2000 } },
     { description: 'With blur effect', options: { effects: { blur: 5 } } },
     { description: 'Custom template', options: { template: 'custom' } },
     { description: 'Complex request', options: { 
-      dimensions: { width: 1600, height: 1200 }, 
+      width: 1600, height: 1200,
       effects: { blur: 3, brightness: 1.2 },
       template: 'custom',
       backgroundImage: true

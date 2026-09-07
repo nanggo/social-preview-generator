@@ -8,7 +8,7 @@ import { PreviewGeneratorError, ErrorType } from '../types';
 import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import * as os from 'os';
-import { getCachedMetadata } from './sharp-cache';
+import { getCachedMetadata, metadataCache } from './sharp-cache';
 import { logger } from './logger';
 import {
   MAX_INPUT_PIXELS,
@@ -175,6 +175,9 @@ export async function validateImageBuffer(
         `Image DPI too high: ${metadata.density}. Maximum allowed: ${MAX_DPI} DPI`
       );
     }
+
+    // Retain only accepted validation fields, never decompressed image profiles.
+    metadataCache.cacheMetadata(imageBuffer, metadata);
   } catch (error) {
     if (error instanceof PreviewGeneratorError) {
       throw error;

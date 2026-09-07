@@ -6,10 +6,11 @@ import {
 } from '../types';
 import { createTransparentCanvas } from '../utils/validators';
 import { logImageFetchError } from '../utils/logger';
-import { secureResize, withSecureSharp } from '../utils/image-security';
+import { createSecureSharpInstance, secureResize, withSecureSharp } from '../utils/image-security';
 import { fetchImage } from './metadata-extractor';
 import { createBlankCanvas } from './image-generator';
 import { isSecurityPolicyError } from '../utils/security-policy-error';
+import { isSharpProcessingTimeout } from '../utils/sharp-timeout';
 
 export interface ProcessedTemplateImage {
   baseImage: Sharp;
@@ -82,13 +83,20 @@ export async function processImageForTemplate(
       });
 
       // Apply template-specific effects in optimized pipeline
-      const blurRadius = template.effects?.blur?.radius ?? 0;
+      const blurRadius = template.imageProcessing?.blur ?? template.effects?.blur?.radius ?? 0;
       const brightnessValue = template.imageProcessing?.brightness ?? 1.0;
       const saturationValue = template.imageProcessing?.saturation;
+      const contrast = template.imageProcessing?.contrast ?? 1;
 
       // Apply blur first if needed
       if (blurRadius > 0) {
         processedImage = processedImage.blur(blurRadius);
+      }
+
+      if (contrast !== 1) {
+        // Use an 8-bit colour space so middle gray is consistent for 16-bit/CMYK inputs.
+        processedImage = processedImage.pipelineColourspace('srgb')
+          .linear(contrast, 128 * (1 - contrast));
       }
 
       // Apply brightness and saturation together for efficiency
@@ -106,11 +114,17 @@ export async function processImageForTemplate(
         processedImage = processedImage.modulate(modulateOptions);
       }
 
-      return processedImage;
+      // Sharp runs linear after composite regardless of method-call order.
+      // Finish the adjusted background first so later text/logo overlays retain
+      // their original colours. Each native pipeline keeps its timeout/limits.
+      return contrast !== 1
+        ? createSecureSharpInstance(await processedImage.png().toBuffer())
+        : processedImage;
     });
 
     return { baseImage, effectiveMetadata, usedBackgroundImage: true };
   } catch (processingError) {
+    if (isSharpProcessingTimeout(processingError)) throw processingError;
     logImageFetchError(
       effectiveMetadata.image ?? 'background image',
       processingError instanceof Error ? processingError : new Error(String(processingError))

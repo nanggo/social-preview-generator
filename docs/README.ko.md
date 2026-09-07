@@ -193,6 +193,14 @@ main().catch((error) => {
 신뢰할 수 없는 JSON에서 구성하지 마세요. 반환 SVG는 문자열이며 UTF-8 기준 1MiB 이하여야
 합니다.
 
+배경 이미지의 `imageProcessing.blur`는 `effects.blur.radius`보다 우선합니다.
+`0`은 흐림 비활성화이며, 활성화할 때는 `0.3`부터 `100`까지 사용합니다.
+`imageProcessing.contrast`는 `0`(단색 중간 회색)부터 `2`까지이며 `1`은 원래 대비입니다.
+
+`fonts`는 호환성을 위해 남겨 둔 옵션으로, 내장·기본 오버레이에는 적용되지 않으며
+`fonts[].path`의 파일도 읽지 않습니다. 서버에 글꼴을 설치해 시스템 대체 글꼴을 사용하거나,
+신뢰할 수 있는 `overlayGenerator`에서 타이포그래피를 구성하세요.
+
 ### 고급 유틸리티
 
 | Export                           | 용도                                                 |
@@ -279,6 +287,8 @@ main().catch((error) => {
 - 생성된 SVG는 항목당 1MiB, SVG 캐시에 보관되는 전체 크기는 16MiB로 제한합니다.
 - 16MiB를 넘는 미리보기는 정상적으로 렌더링하지만 캐시하지 않습니다. 미리보기 캐시는
   이미지 buffer를 최대 64MiB까지 보관합니다.
+- 내부 이미지 분석 캐시는 검증을 통과한 크기·포맷·밀도만 저장하며, 내장 프로필과
+  주석은 보관하지 않습니다. 이 캐시는 `cache: true`로 켜는 미리보기 캐시와 별개입니다.
 - `getInflightRequestStats().keys`에는 URL 대신 복원할 수 없는 process-local request ID가
   들어갑니다. ID는 process가 다시 시작되면 변경됩니다.
 

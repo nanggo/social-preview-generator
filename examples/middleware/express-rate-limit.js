@@ -12,8 +12,7 @@
  * - Memory-based storage (use redis-backed-rate-limit.js for distributed systems)
  */
 
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 
 class TokenBucket {
   constructor(capacity, refillRate, refillInterval = 1000) {
@@ -65,7 +64,7 @@ class ConcurrencyLimiter {
     this.queues = new Map(); // IP -> queue of pending requests
   }
 
-  async acquire(key, requestId = uuidv4()) {
+  async acquire(key, requestId = randomUUID()) {
     return new Promise((resolve, reject) => {
       const activeSet = this.active.get(key) || new Set();
       const currentActive = activeSet.size;
@@ -199,12 +198,13 @@ class ConcurrencyLimiter {
 /**
  * Calculate the computational cost of an image generation request
  */
-function defaultCostFunction(options = {}) {
+function defaultCostFunction(input = {}) {
+  const options = input.options ?? input;
   let cost = 1;
   
   // Higher cost for larger images
-  if (options.dimensions) {
-    const pixels = options.dimensions.width * options.dimensions.height;
+  if (options.width !== undefined || options.height !== undefined) {
+    const pixels = (options.width ?? 1200) * (options.height ?? 630);
     if (pixels > 1000000) cost += 3; // > 1MP
     else if (pixels > 500000) cost += 2; // > 0.5MP
     else if (pixels > 100000) cost += 1; // > 0.1MP
