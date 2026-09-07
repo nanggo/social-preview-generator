@@ -33,7 +33,10 @@ export interface PreviewOptions {
   cache?: boolean;
   /** Image quality (1-100) */
   quality?: number;
-  /** Custom font configurations */
+  /**
+   * @deprecated Reserved for compatibility; not applied by built-in or default
+   * overlays. Install fonts on the host or use a trusted overlayGenerator.
+   */
   fonts?: FontConfig[];
   /** Custom colors for the template */
   colors?: ColorConfig;
@@ -195,9 +198,9 @@ export interface TemplateConfig {
   imageProcessing?: {
     /** Brightness adjustment for background images (0.0 - 1.0, where 1.0 is original) */
     brightness?: number;
-    /** Blur radius for background images */
+    /** Background blur: 0 disables it, otherwise 0.3-100. Overrides effects.blur.radius. */
     blur?: number;
-    /** Contrast adjustment for background images (0.0 - 2.0, where 1.0 is original) */
+    /** Contrast around middle gray (0-2; 0 is flat gray, 1 is unchanged). */
     contrast?: number;
     /** Saturation adjustment for background images (0.0 - 2.0, where 1.0 is original) */
     saturation?: number;
@@ -277,6 +280,7 @@ export interface EffectsConfig {
   };
   /** Blur effect */
   blur?: {
+    /** 0 disables blur; otherwise 0.3-100. */
     radius: number;
     areas?: 'background' | 'overlay' | 'all' | 'none';
   };

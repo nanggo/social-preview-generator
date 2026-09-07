@@ -10,7 +10,7 @@
 
 const express = require('express');
 const Redis = require('ioredis');
-const { generatePreview } = require('social-preview-generator');
+const { generatePreviewWithDetails } = require('@nanggo/social-preview');
 
 // Import rate limiters
 const { createRateLimiter } = require('./middleware/express-rate-limit');
@@ -19,61 +19,47 @@ const { createRedisRateLimiter } = require('./middleware/redis-backed-rate-limit
 const app = express();
 app.use(express.json());
 
-// Initialize Redis (optional - falls back to memory-based limiting)
+// Memory limiting is the default. Set REDIS_URL or REDIS_HOST to opt in.
+// If configured Redis becomes unavailable, the Redis middleware fails closed.
 let redisClient = null;
-try {
-  redisClient = new Redis({
-    host: process.env.REDIS_HOST || 'localhost',
-    port: process.env.REDIS_PORT || 6379,
-    password: process.env.REDIS_PASSWORD,
-    db: 0,
-    maxRetriesPerRequest: 3,
-    retryDelayOnFailover: 100,
-    lazyConnect: true
+if (process.env.REDIS_URL || process.env.REDIS_HOST) {
+  const connectionOptions = {
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+    lazyConnect: true,
+  };
+  redisClient = process.env.REDIS_URL
+    ? new Redis(process.env.REDIS_URL, connectionOptions)
+    : new Redis({
+        ...connectionOptions,
+        host: process.env.REDIS_HOST,
+        port: Number(process.env.REDIS_PORT || 6379),
+        password: process.env.REDIS_PASSWORD,
+        db: 0,
+      });
+  redisClient.on('error', () => {
+    console.warn('Configured Redis is unavailable; preview requests will fail closed.');
   });
-  
-  redisClient.on('error', (err) => {
-    console.warn('Redis connection error, falling back to memory-based rate limiting:', err.message);
-    redisClient = null;
-  });
-} catch (error) {
-  console.warn('Redis not available, using memory-based rate limiting:', error.message);
 }
 
 /**
  * Cost calculation for different image generation operations
  */
 function calculateCost(options = {}) {
+  if (!options || typeof options !== 'object') return 1;
   let cost = 1;
-  
-  // Size-based cost
-  if (options.dimensions) {
-    const pixels = options.dimensions.width * options.dimensions.height;
-    if (pixels > 2000000) cost += 5; // > 2MP
-    else if (pixels > 1000000) cost += 3; // > 1MP
-    else if (pixels > 500000) cost += 2; // > 0.5MP
-    else if (pixels > 100000) cost += 1; // > 0.1MP
-  }
-  
-  // Template-based cost
-  if (options.template === 'custom') cost += 4;
-  else if (options.template === 'modern') cost += 2;
-  else if (options.template === 'classic') cost += 1;
-  
-  // Effect-based cost
-  if (options.effects) {
-    if (options.effects.blur > 0) cost += 3;
-    if (options.effects.brightness !== 1) cost += 1;
-    if (options.effects.saturation !== 1) cost += 1;
-  }
-  
-  // Background image processing
-  if (options.backgroundImage) cost += 3;
-  
-  // Quality settings
-  if (options.quality && options.quality > 80) cost += 1;
-  
-  return Math.min(cost, 15); // Cap at 15x base cost
+  const pixels = (options.width ?? 1200) * (options.height ?? 630);
+  if (pixels > 2000000) cost += 5;
+  else if (pixels > 1000000) cost += 3;
+  else if (pixels > 500000) cost += 2;
+  else if (pixels > 100000) cost += 1;
+
+  const template = options.template ?? 'modern';
+  if (template === 'modern') cost += 2;
+  else if (template === 'classic') cost += 1;
+  if ((options.quality ?? 90) > 80) cost += 1;
+
+  return Math.min(cost, 15);
 }
 
 /**
@@ -118,7 +104,7 @@ function createAppRateLimiter() {
       windowMs: 15 * 60 * 1000,
       maxRequests: (req) => getUserLimits(req).requests,
       maxConcurrent: (req) => getUserLimits(req).concurrent,
-      costFunction: (requestData) => calculateCost(requestData.body),
+      costFunction: (requestData) => calculateCost(requestData.body?.options),
       keyGenerator: (requestData) => {
         // Use user ID if authenticated, otherwise IP
         return requestData.user?.id || requestData.ip;
@@ -145,7 +131,7 @@ function createAppRateLimiter() {
       windowMs: 15 * 60 * 1000,
       maxRequests: (req) => getUserLimits(req).requests,
       maxConcurrent: (req) => getUserLimits(req).concurrent,
-      costFunction: (options) => calculateCost(options),
+      costFunction: (body) => calculateCost(body?.options),
       keyGenerator: (req) => req.user?.id || req.ip,
       onLimitReached: (key, bucket, concurrent) => {
         console.warn(`Rate limit exceeded for ${key}`, { bucket, concurrent });
@@ -201,10 +187,10 @@ app.post('/api/preview', async (req, res) => {
       });
     }
     
-    console.log(`Generating preview for ${url} (user: ${req.user?.id || req.ip}, tier: ${req.user?.tier || 'anonymous'})`);
+    console.log(`Generating preview (tier: ${req.user?.tier || 'anonymous'})`);
     
     // Generate preview
-    const result = await generatePreview(url, options);
+    const result = await generatePreviewWithDetails(url, options);
     
     const processingTime = Date.now() - startTime;
     
@@ -212,26 +198,26 @@ app.post('/api/preview', async (req, res) => {
       success: true,
       url,
       preview: {
-        buffer: result.toString('base64'),
+        buffer: result.buffer.toString('base64'),
         metadata: {
-          width: options.dimensions?.width || 1200,
-          height: options.dimensions?.height || 630,
-          format: options.format || 'jpeg',
-          quality: options.quality || 80
+          width: result.dimensions.width,
+          height: result.dimensions.height,
+          format: result.format,
+          quality: options.quality ?? 90
         }
       },
       processing_time_ms: processingTime,
       cost: calculateCost(options)
     });
     
-    console.log(`Preview generated in ${processingTime}ms for ${url}`);
+    console.log(`Preview generated in ${processingTime}ms`);
     
   } catch (error) {
     const processingTime = Date.now() - startTime;
     
     console.error('Preview generation failed:', error);
     
-    res.status(500).json({
+    res.status(error.type === 'VALIDATION_ERROR' ? 400 : 500).json({
       error: 'Preview generation failed',
       message: error.message,
       processing_time_ms: processingTime
@@ -297,7 +283,7 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    redis: redisClient ? 'connected' : 'not available',
+    redis: redisClient?.status === 'ready' ? 'connected' : redisClient ? 'unavailable' : 'not configured',
     rateLimiter: redisClient ? 'redis-backed' : 'memory-based'
   });
 });
@@ -319,45 +305,25 @@ app.use((error, req, res, next) => {
  */
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`Social Preview Generator server running on port ${PORT}`);
-  console.log(`Rate limiting: ${redisClient ? 'Redis-backed (distributed)' : 'Memory-based (single instance)'}`);
-  console.log('\\nEndpoints:');
-  console.log(`  POST /api/preview - Generate social preview`);
-  console.log(`  GET  /api/status  - Get rate limit status`);
-  console.log(`  GET  /health     - Health check`);
-  console.log('\\nExample usage:');
-  console.log(`  curl -X POST http://localhost:${PORT}/api/preview \\`);
-  console.log(`    -H "Content-Type: application/json" \\`);
-  console.log(`    -H "X-API-Key: premium-key-123" \\`);
-  console.log(`    -d '{"url": "https://example.com", "options": {"template": "modern"}}'`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  
-  // Cleanup rate limiter resources
+async function cleanup() {
   cleanupRateLimiter();
-  
-  if (redisClient) {
-    await redisClient.quit();
-  }
-  
-  process.exit(0);
-});
+  if (redisClient) await redisClient.quit();
+}
+app.locals.cleanup = cleanup;
+app.locals.calculateCost = calculateCost;
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully');
-  
-  // Cleanup rate limiter resources
-  cleanupRateLimiter();
-  
-  if (redisClient) {
-    await redisClient.quit();
-  }
-  
-  process.exit(0);
-});
+if (require.main === module) {
+  const server = app.listen(PORT, () => {
+    console.log(`Social Preview Generator listening on port ${server.address().port}`);
+    console.log(`Rate limiting: ${redisClient ? 'Redis-backed' : 'memory-based'}`);
+  });
+  const shutdown = () => {
+    server.close(async () => {
+      await cleanup();
+    });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+}
 
 module.exports = app;
