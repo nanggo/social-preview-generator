@@ -3,7 +3,7 @@
  * A metadata-first editorial preview with an optional mobile summary surface.
  */
 
-import { SYSTEM_FONT_STACK } from '../constants/fonts';
+import { SYSTEM_FONT_STACK, buildFontStack } from '../constants/fonts';
 import type { ExtractedMetadata, PreviewOptions, TemplateConfig } from '../types';
 import { escapeXml } from '../utils';
 import { validateColor } from '../utils/validators';
@@ -589,6 +589,7 @@ export function generateArticleOverlay(
   options: PreviewOptions = {},
   template: TemplateConfig = articleTemplate
 ): string {
+  const sansFontStack = buildFontStack(options.fonts, SYSTEM_FONT_STACK);
   const primaryColor = validateColor(
     options.colors?.primary || options.colors?.accent || DEFAULT_PRIMARY
   );
@@ -790,56 +791,56 @@ export function generateArticleOverlay(
   const svgStyle = createSvgStyleCdata(
     [
       '.article-title { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         titleFontSize +
         'px; font-weight: 800; fill: ' +
         textColor +
         '; letter-spacing: -0.035em; }',
       '.article-description { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         descriptionFontSize +
         'px; font-weight: 400; fill: ' +
         secondaryColor +
         '; letter-spacing: -0.012em; }',
       '.article-brand { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         brandFontSize +
         'px; font-weight: 700; fill: ' +
         textColor +
         '; letter-spacing: -0.01em; }',
       '.article-domain { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         brandDomainFontSize +
         'px; font-weight: 500; fill: ' +
         secondaryColor +
         '; }',
       '.article-panel-site { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         17 * panelScale +
         'px; font-weight: 700; fill: ' +
         secondaryColor +
         '; letter-spacing: -0.01em; }',
       '.article-panel-title { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         34 * panelScale +
         'px; font-weight: 800; fill: ' +
         textColor +
         '; letter-spacing: -0.03em; }',
       '.article-summary { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         22 * panelScale +
         'px; font-weight: 500; fill: ' +
         textColor +
         '; letter-spacing: -0.015em; }',
       '.article-panel-domain { font-family: ' +
-        SYSTEM_FONT_STACK +
+        sansFontStack +
         '; font-size: ' +
         17 * panelScale +
         'px; font-weight: 600; fill: ' +

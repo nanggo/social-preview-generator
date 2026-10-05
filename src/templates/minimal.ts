@@ -6,7 +6,7 @@
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, wrapText } from '../utils';
 import { validateColor } from '../utils/validators';
-import { SYSTEM_FONT_STACK } from '../constants/fonts';
+import { SYSTEM_FONT_STACK, buildFontStack } from '../constants/fonts';
 import { createSvgStyleCdata, layoutCenteredTitleDescription } from './shared';
 
 /**
@@ -73,6 +73,7 @@ export function generateMinimalOverlay(
   options: PreviewOptions = {},
   template: TemplateConfig = minimalTemplate
 ): string {
+  const sansFontStack = buildFontStack(options.fonts, SYSTEM_FONT_STACK);
   const padding = template.layout.padding;
   const textColor = validateColor(options.colors?.text || '#000000');
   const accentColor = validateColor(options.colors?.accent || '#000000');
@@ -124,7 +125,7 @@ export function generateMinimalOverlay(
       <defs>
         ${createSvgStyleCdata(`
           .minimal-title { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${titleFontSize}px; 
             font-weight: 300; 
             fill: ${textColor};
@@ -132,7 +133,7 @@ export function generateMinimalOverlay(
             line-height: ${titleLineHeight};
           }
           .minimal-description { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${descFontSize}px; 
             font-weight: 300; 
             fill: ${textColor};
@@ -141,7 +142,7 @@ export function generateMinimalOverlay(
             line-height: ${descLineHeight};
           }
           .minimal-sitename { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 500; 
             fill: ${accentColor};
@@ -150,7 +151,7 @@ export function generateMinimalOverlay(
             opacity: 0.6;
           }
           .minimal-domain {
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: 14px; 
             font-weight: 400; 
             fill: ${textColor};

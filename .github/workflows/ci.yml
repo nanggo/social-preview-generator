@@ -118,6 +118,45 @@ jobs:
       - name: Verify packed package
         run: pnpm run verify:package
 
+  fonts:
+    needs: action-pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['node:24-slim', 'node:24-alpine']
+        system-fonts: [none, dejavu]
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Latin-only system fonts
+        if: matrix.system-fonts == 'dejavu'
+        run: |
+          if command -v apk >/dev/null; then
+            apk add --no-cache fontconfig font-dejavu
+          else
+            apt-get update
+            apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core
+          fi
+
+      # pnpm/action-setup cannot install its standalone binary on Alpine (musl).
+      - name: Setup pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Verify font setup against a reference render
+        run: pnpm run verify:fonts
+
   examples:
     needs: action-pins
     runs-on: ubuntu-latest

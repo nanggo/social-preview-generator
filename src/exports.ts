@@ -4,9 +4,13 @@ export {
   ExtractedMetadata,
   GeneratedPreview,
   TemplateConfig,
+  FontConfig,
+  SetupFontsOptions,
   ErrorType,
   PreviewGeneratorError,
 } from './types';
+
+export { setupFonts } from './core/font-setup';
 
 export { startCacheCleanup, stopCacheCleanup, isCacheCleanupRunning } from './utils/cache';
 

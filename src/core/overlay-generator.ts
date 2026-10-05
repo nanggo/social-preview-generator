@@ -2,7 +2,9 @@ import { ExtractedMetadata, SanitizedOptions, TemplateConfig } from '../types';
 import { escapeXml, wrapText } from '../utils';
 import { validateColor } from '../utils/validators';
 import { createCachedSVG } from '../utils/sharp-cache';
-import { SYSTEM_FONT_STACK } from '../constants/fonts';
+import { isWellFormedSvg } from '../utils/image-security';
+import { beginFontAwareRender, hasFontAwareRenderStarted } from './font-setup';
+import { SYSTEM_FONT_STACK, buildFontStack } from '../constants/fonts';
 
 /**
  * Default overlay generator for templates that don't provide a custom overlayGenerator.
@@ -15,6 +17,7 @@ export async function generateDefaultOverlay(
   height: number,
   options: SanitizedOptions
 ): Promise<Buffer> {
+  const sansFontStack = buildFontStack(options.fonts, SYSTEM_FONT_STACK);
   const padding = template.layout.padding || 60;
   const textColor = validateColor(options.colors?.text || '#ffffff');
 
@@ -58,13 +61,13 @@ export async function generateDefaultOverlay(
       <defs>
         <style>
           .title { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${titleFontSize}px; 
             font-weight: ${template.typography.title.fontWeight || '700'}; 
             fill: ${textColor};
           }
           .description { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${descFontSize}px; 
             font-weight: ${template.typography.description?.fontWeight || '400'}; 
             fill: ${textColor};
@@ -101,8 +104,21 @@ export async function generateDefaultOverlay(
     </svg>
   `;
 
+  return renderOverlaySvg(overlaySvg, options);
+}
+
+/**
+ * Render overlay SVG to a buffer. This is where text rendering starts: until
+ * the first render in a process, malformed SVG is rejected in JavaScript
+ * first, so it does not commit the process to its current fonts.
+ */
+export async function renderOverlaySvg(overlaySvg: string, options: object): Promise<Buffer> {
   // Use cached SVG creation for better performance
-  const cachedSVG = await createCachedSVG(overlaySvg);
-  return cachedSVG.toBuffer();
+  const overlayImage = await createCachedSVG(overlaySvg);
+  if (!hasFontAwareRenderStarted() && !isWellFormedSvg(overlaySvg)) {
+    throw new Error('Overlay SVG is not well-formed');
+  }
+  beginFontAwareRender(options);
+  return overlayImage.toBuffer();
 }
 

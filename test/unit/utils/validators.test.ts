@@ -221,7 +221,6 @@ describe('Validators', () => {
         fonts: [
           {
             family: 'Inter',
-            weight: '700',
           },
         ],
       };
@@ -313,6 +312,46 @@ describe('Validators', () => {
         strategy: 'generate',
         text: 'fallback text',
       });
+    });
+
+    test('should keep only validated font family names', () => {
+      const sanitized = sanitizeOptions({
+        fonts: [{ family: '  Noto Sans KR  ', extra: true }, { family: '본고딕' }],
+      } as unknown as PreviewOptions);
+
+      expect(sanitized.fonts).toEqual([{ family: 'Noto Sans KR' }, { family: '본고딕' }]);
+      expect(sanitizeOptions({ fonts: [] }).fonts).toEqual([]);
+    });
+
+    test.each(['path', 'weight', 'style'])('should reject the removed font option %s', field => {
+      expect(() =>
+        sanitizeOptions({
+          fonts: [{ family: 'Inter', [field]: undefined }],
+        } as unknown as PreviewOptions)
+      ).toThrow(`Removed font option is not supported: fonts[0].${field}`);
+    });
+
+    test.each([
+      "Inter', serif; opacity: 0; font-family: 'x",
+      'Inter</style>',
+      'Inter"',
+      '',
+      '   ',
+      'a'.repeat(129),
+      '__spg_probe_family',
+      '__SPG_PROBE_family',
+      42,
+      undefined,
+    ])('should reject the unsafe font family %j', family => {
+      expect(() =>
+        sanitizeOptions({ fonts: [{ family }] } as unknown as PreviewOptions)
+      ).toThrow(PreviewGeneratorError);
+    });
+
+    test('should limit the number of font entries', () => {
+      expect(() =>
+        sanitizeOptions({ fonts: Array.from({ length: 17 }, () => ({ family: 'Inter' })) })
+      ).toThrow('at most 16');
     });
 
     test('should reject invalid font option shapes with validation errors', () => {

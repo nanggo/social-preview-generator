@@ -6,7 +6,7 @@
 import { TemplateConfig, PreviewOptions, ExtractedMetadata } from '../types';
 import { escapeXml, wrapText, adjustBrightness } from '../utils';
 import { validateColor } from '../utils/validators';
-import { SERIF_FONT_STACK, SYSTEM_FONT_STACK } from '../constants/fonts';
+import { SERIF_FONT_STACK, SYSTEM_FONT_STACK, buildFontStack } from '../constants/fonts';
 import { createSvgStyleCdata } from './shared';
 
 /**
@@ -73,6 +73,8 @@ export function generateClassicOverlay(
   options: PreviewOptions = {},
   template: TemplateConfig = classicTemplate
 ): string {
+  const serifFontStack = buildFontStack(options.fonts, SERIF_FONT_STACK);
+  const sansFontStack = buildFontStack(options.fonts, SYSTEM_FONT_STACK);
   const padding = template.layout.padding;
   const textColor = validateColor(options.colors?.text || '#1a1a1a');
   const accentColor = validateColor(options.colors?.accent || '#2c5aa0');
@@ -118,14 +120,14 @@ export function generateClassicOverlay(
       <defs>
         ${createSvgStyleCdata(`
           .classic-title { 
-            font-family: ${SERIF_FONT_STACK}; 
+            font-family: ${serifFontStack}; 
             font-size: ${titleFontSize}px; 
             font-weight: 700; 
             fill: ${textColor};
             line-height: ${titleLineHeight};
           }
           .classic-description { 
-            font-family: ${SERIF_FONT_STACK}; 
+            font-family: ${serifFontStack}; 
             font-size: ${descFontSize}px; 
             font-weight: 400; 
             fill: ${adjustBrightness(textColor, 20)};
@@ -133,7 +135,7 @@ export function generateClassicOverlay(
             line-height: ${descLineHeight};
           }
           .classic-sitename { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 600; 
             fill: ${accentColor};
@@ -141,7 +143,7 @@ export function generateClassicOverlay(
             letter-spacing: 0.1em;
           }
           .classic-domain {
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: 16px; 
             font-weight: 400; 
             fill: ${adjustBrightness(textColor, 40)};
@@ -264,7 +266,7 @@ export function generateClassicOverlay(
             x="${imageWidth / 2}" 
             y="${Math.min(imageWidth * 0.6, height - contentStartY - padding) / 2}" 
             text-anchor="middle" 
-            font-family="sans-serif" 
+            font-family="${buildFontStack(options.fonts, 'sans-serif')}" 
             font-size="14" 
             fill="${accentColor}" 
             opacity="0.4"

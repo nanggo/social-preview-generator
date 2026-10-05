@@ -24,7 +24,8 @@ import {
   validateUrlInput,
 } from './utils/validators';
 import { initializeSharpSecurity } from './utils/image-security';
-import { generateDefaultOverlay } from './core/overlay-generator';
+import { generateDefaultOverlay, renderOverlaySvg } from './core/overlay-generator';
+import { beginFontAwareRender, resolveRequestFonts } from './core/font-setup';
 import {
   prepareImageForTemplate,
   processImageForTemplate,
@@ -32,7 +33,6 @@ import {
   type ProcessedTemplateImage,
 } from './core/template-image-processing';
 import { getCachedPreview, setCachedPreview } from './utils/preview-cache';
-import { createCachedSVG } from './utils/sharp-cache';
 import { startCacheCleanup, isCacheCleanupRunning } from './utils/cache';
 import { withPreparedRenderSlot, withRenderSlot } from './utils/render-limiter';
 import { isSharpProcessingTimeout } from './utils/sharp-timeout';
@@ -140,9 +140,10 @@ export async function generateImageWithTemplate(
   template: TemplateConfig,
   options: PreviewOptions
 ): Promise<Buffer> {
-  const sanitizedOptions = sanitizeOptions(options);
+  const validatedOptions = sanitizeOptions(options);
   const normalizedMetadata = normalizeMetadataForRendering(metadata, 'custom');
   const validatedTemplate = validateTemplateConfig(template);
+  const sanitizedOptions = resolveRequestFonts(validatedOptions);
   const rendered = await generateImageWithSanitizedOptions(
     normalizedMetadata,
     validatedTemplate,
@@ -199,8 +200,7 @@ async function createOverlayBuffer(
     // Materialize custom SVG overlays before entering the background-image
     // retry path. Otherwise Sharp can defer an SVG parse error until the final
     // composite and incorrectly classify it as a failed background image.
-    const overlayImage = await createCachedSVG(overlaySvg);
-    return overlayImage.toBuffer();
+    return renderOverlaySvg(overlaySvg, sanitizedOptions);
   }
 
   return generateDefaultOverlay(effectiveMetadata, template, width, height, sanitizedOptions);
@@ -244,6 +244,10 @@ async function generateImageWithSanitizedOptions(
   ): Promise<RenderedImage> => {
     try {
       validateDimensions(width, height);
+      if (preparedImage.imageBuffer) {
+        // A background image can itself contain text (SVG).
+        beginFontAwareRender(sanitizedOptions);
+      }
 
       let processedImage = await processImageForTemplate(
         preparedImage,
@@ -331,10 +335,11 @@ export async function generatePreviewWithDetails(
       startCacheCleanup();
     }
 
-    const finalOptions = createFinalOptions(options);
+    const validatedOptions = createFinalOptions(options);
     const normalizedUrl = validateUrlInput(url, {
-      httpsOnly: finalOptions.security?.httpsOnly === true,
+      httpsOnly: validatedOptions.security?.httpsOnly === true,
     });
+    const finalOptions = resolveRequestFonts(validatedOptions);
 
     const shouldCache = finalOptions.cache === true;
     if (shouldCache) {
@@ -425,8 +430,9 @@ export async function generatePreviewFromMetadataWithDetails(
       startCacheCleanup();
     }
 
-    const finalOptions = createFinalOptions(options);
+    const validatedOptions = createFinalOptions(options);
     const metadata = normalizeMetadataForRendering(metadataInput, 'direct');
+    const finalOptions = resolveRequestFonts(validatedOptions);
 
     const shouldCache = finalOptions.cache === true;
     const cacheKey = createMetadataPreviewCacheKey(metadata);
