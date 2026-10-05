@@ -13,9 +13,11 @@ import {
   PreviewGeneratorError,
 } from '../types';
 import { escapeXml, wrapText } from '../utils';
-import { createCachedCanvas, createCachedSVG } from '../utils/sharp-cache';
-import { SYSTEM_FONT_STACK } from '../constants/fonts';
+import { createCachedCanvas } from '../utils/sharp-cache';
+import { SYSTEM_FONT_STACK, buildFontStack } from '../constants/fonts';
 import { fetchImage } from './metadata-extractor';
+import { beginFontAwareRender } from './font-setup';
+import { renderOverlaySvg } from './overlay-generator';
 import {
   createTransparentCanvas,
   normalizeMetadataForRendering,
@@ -55,6 +57,11 @@ export async function generateImage(
 
   const renderPreparedImage = async (imageBuffer?: Buffer): Promise<Buffer> => {
     try {
+      if (imageBuffer) {
+        // A background image can itself contain text (SVG).
+        beginFontAwareRender(options);
+      }
+
       // Create base image or use existing image
       let baseImage: Sharp;
 
@@ -213,6 +220,7 @@ async function generateTextOverlay(
   height: number,
   options: PreviewOptions
 ): Promise<Buffer> {
+  const sansFontStack = buildFontStack(options.fonts, SYSTEM_FONT_STACK);
   const padding = template.layout.padding || 60;
   const textColor = validateColor(options.colors?.text || '#ffffff');
 
@@ -261,14 +269,14 @@ async function generateTextOverlay(
       <defs>
         <style>
           .title { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${titleFontSize}px; 
             font-weight: 700; 
             fill: ${textColor};
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
           }
           .description { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${descFontSize}px; 
             font-weight: 400; 
             fill: ${textColor};
@@ -276,7 +284,7 @@ async function generateTextOverlay(
             filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
           }
           .siteName { 
-            font-family: ${SYSTEM_FONT_STACK}; 
+            font-family: ${sansFontStack}; 
             font-size: ${siteNameFontSize}px; 
             font-weight: 600; 
             fill: ${textColor};
@@ -330,9 +338,7 @@ async function generateTextOverlay(
     </svg>
   `;
 
-  // Use cached SVG creation for better performance
-  const cachedSVG = await createCachedSVG(overlaySvg);
-  return cachedSVG.toBuffer();
+  return renderOverlaySvg(overlaySvg, options);
 }
 
 /**

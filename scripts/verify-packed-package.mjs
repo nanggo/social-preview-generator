@@ -18,6 +18,7 @@ const EXPECTED_RUNTIME_EXPORTS = [
   'getCacheStats',
   'getInflightRequestStats',
   'isCacheCleanupRunning',
+  'setupFonts',
   'shutdownSharpCaches',
   'startCacheCleanup',
   'stopCacheCleanup',
@@ -144,6 +145,30 @@ async function verifyRemovedFallbackRuntimeInputs(packageExports) {
   }
 }
 
+async function verifyRemovedFontRuntimeInputs(packageExports) {
+  for (const field of ['path', 'weight', 'style']) {
+    let rejection;
+    try {
+      await packageExports.generatePreviewFromMetadata(
+        {
+          title: 'Removed font option runtime smoke',
+          url: 'https://example.com/removed-font-option-smoke',
+        },
+        { fonts: [{ family: 'Inter', [field]: undefined }] }
+      );
+    } catch (error) {
+      rejection = error;
+    }
+
+    if (
+      !(rejection instanceof packageExports.PreviewGeneratorError) ||
+      rejection.type !== packageExports.ErrorType.VALIDATION_ERROR
+    ) {
+      throw new Error(`Packed package accepted removed runtime input fonts[].${field}`);
+    }
+  }
+}
+
 function verifyEsmImport() {
   const esmCheck = `
     const packageExports = await import(${JSON.stringify(PACKAGE_NAME)});
@@ -174,10 +199,13 @@ function verifyTypeScriptConsumer() {
         generateImageWithTemplate,
         generatePreviewFromMetadata,
         generatePreviewWithDetails,
+        setupFonts,
         type ExtractedMetadata,
+        type FontConfig,
         type GeneratedPreview,
         type PreviewMetadataInput,
         type PreviewOptions,
+        type SetupFontsOptions,
         type TemplateConfig,
       } from '${PACKAGE_NAME}';
 
@@ -192,7 +220,16 @@ function verifyTypeScriptConsumer() {
         template: 'article',
         mobilePreview: true,
         colors: { primary: '#3182F6' },
+        fonts: [{ family: 'Inter' }],
       };
+      const setupOptions: SetupFontsOptions = { family: 'Brand Sans' };
+      const configuredFonts: Promise<FontConfig[]> = setupFonts(['Regular.otf'], setupOptions);
+      // @ts-expect-error fonts[].path was removed in 0.6.0
+      const removedFontPath: PreviewOptions = { fonts: [{ family: 'Inter', path: 'Inter.ttf' }] };
+      // @ts-expect-error fonts[].weight was removed in 0.6.0
+      const removedFontWeight: PreviewOptions = { fonts: [{ family: 'Inter', weight: '700' }] };
+      // @ts-expect-error fonts[].style was removed in 0.6.0
+      const removedFontStyle: PreviewOptions = { fonts: [{ family: 'Inter', style: 'italic' }] };
       // @ts-expect-error fallback.strategy custom was removed in 0.3.0
       const removedCustomStrategy: PreviewOptions = { fallback: { strategy: 'custom' } };
       // @ts-expect-error fallback.image was removed in 0.3.0
@@ -218,6 +255,10 @@ function verifyTypeScriptConsumer() {
       void detailed;
       void custom;
       void typedError;
+      void configuredFonts.catch(() => undefined);
+      void removedFontPath;
+      void removedFontWeight;
+      void removedFontStyle;
       void removedCustomStrategy;
       void removedFallbackImage;
       void removedFallbackCategory;
@@ -294,6 +335,7 @@ try {
   verifyRuntimeExports(packageExports);
   verifyEsmImport();
   await verifyRemovedFallbackRuntimeInputs(packageExports);
+  await verifyRemovedFontRuntimeInputs(packageExports);
 
   const image = await packageExports.generatePreviewFromMetadata(
     {
@@ -378,7 +420,7 @@ try {
   }
 
   console.log(
-    'Packed package passed tarball, CJS/ESM import, runtime export, removed fallback, built-in/custom 320x168 JPEG, and TypeScript consumer checks.'
+    'Packed package passed tarball, CJS/ESM import, runtime export, removed fallback and font options, built-in/custom 320x168 JPEG, and TypeScript consumer checks.'
   );
   if (outputPath) {
     console.log(`Verified tarball written to ${outputPath}.`);

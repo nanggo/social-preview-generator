@@ -197,9 +197,70 @@ main().catch((error) => {
 `0`은 흐림 비활성화이며, 활성화할 때는 `0.3`부터 `100`까지 사용합니다.
 `imageProcessing.contrast`는 `0`(단색 중간 회색)부터 `2`까지이며 `1`은 원래 대비입니다.
 
-`fonts`는 호환성을 위해 남겨 둔 옵션으로, 내장·기본 오버레이에는 적용되지 않으며
-`fonts[].path`의 파일도 읽지 않습니다. 서버에 글꼴을 설치해 시스템 대체 글꼴을 사용하거나,
-신뢰할 수 있는 `overlayGenerator`에서 타이포그래피를 구성하세요.
+### 글꼴
+
+텍스트는 프로세스가 사용할 수 있는 글꼴로 그려집니다. 해당 언어의 글꼴이 없는 서버(예: slim
+Docker 이미지나 서버리스 함수에서의 한글)에서는 글자가 빈 상자로 렌더링됩니다. 해결 방법은
+두 가지입니다.
+
+1. **호스트에 글꼴을 설치합니다.** 다른 작업은 필요 없습니다. Debian 예:
+   `apt-get install -y fonts-noto-cjk`.
+2. **글꼴 파일을 배포에 포함하고 시작 시 `setupFonts`로 등록합니다.** 시스템 글꼴을 설치할 수
+   없거나 특정 서체를 쓰고 싶을 때 사용합니다.
+
+```typescript
+import { generatePreviewFromMetadata, setupFonts } from '@nanggo/social-preview';
+
+// 프로세스 시작 시 한 번, 미리보기를 생성하기 전에 호출합니다.
+await setupFonts(['./fonts/Pretendard-Regular.otf', './fonts/Pretendard-Bold.otf']);
+
+// 이후 미리보기는 등록한 서체를 기본으로 사용합니다.
+const image = await generatePreviewFromMetadata({ title: '한글 제목', url: 'https://example.com' });
+```
+
+| Export                        | 반환                    | 용도                                              |
+| ----------------------------- | ----------------------- | ------------------------------------------------- |
+| `setupFonts(files, options?)` | `Promise<FontConfig[]>` | 프로세스의 모든 미리보기에 쓸 TTF/OTF 파일을 등록 |
+
+`setupFonts` 사용 규칙:
+
+- 메인 스레드에서 한 번 호출하고, 미리보기를 생성하거나 같은 프로세스에서 `sharp`로 다른
+  텍스트를 렌더링하기 전에 `await`합니다. 늦게 호출하면 깨진 이미지를 만드는 대신 호출이
+  거부되며, 프로세스를 재시작해야 합니다. 같은 파일로 다시 호출하는 것은 허용되고, 다른
+  파일은 거부됩니다.
+- **한 서체**의 개별 **TTF 또는 OTF** 파일을 전달합니다. 보통 Regular와 Bold, 또는 가변 글꼴
+  하나입니다. 제목은 굵게 그려지므로, 글꼴 설정이 없는 호스트에서는 Bold 파일이 없으면 굵게
+  렌더링되지 않습니다. 글꼴 모음(TTC/OTC)과 웹 글꼴(WOFF/WOFF2)은 거부됩니다.
+- 파일들은 하나의 family 이름으로 등록됩니다. `{ family: '이름' }`을 주지 않으면
+  `Social Preview Font`입니다. 글꼴 파일 내부에 저장된 이름은 알 필요가 없습니다.
+  호스트에 설치된 글꼴과 겹치지 않는 이름을 고르세요. 설치된 family와 이름이 같으면
+  미리보기가 전달한 파일 대신 설치된 글꼴로 그려질 수 있습니다.
+- 글꼴 파일은 **Linux**에서 적용됩니다. 다른 플랫폼에서는 입력만 검증하고 경고를 남긴 뒤
+  호스트 글꼴을 그대로 사용하므로, 시작 코드에 플랫폼 분기가 필요 없습니다. 운영 환경의
+  타이포그래피는 Linux에서 확인하세요.
+- 등록 검증에는 기본 라틴 문자 또는 한글 음절을 사용하므로, 서체에 둘 중 하나는 있어야 합니다.
+- 파일은 형식만 검사합니다. 정상 파일 옆의 손상된 파일은 조용히 제외될 수 있으며, 글리프
+  범위와 굵기 구성은 호출자의 책임입니다.
+- 등록은 프로세스 전체에 적용되고 `FONTCONFIG_FILE`을 통해 자식 프로세스에 상속됩니다. 워커
+  스레드는 `setupFonts`가 끝난 뒤에 시작하고, 반환된 `fonts` 값을 워커의 미리보기에
+  전달하세요. 워커는 설정이 진행 중이거나 실패했는지 알 수 없으며, 워커가 너무 일찍
+  렌더링하면 `setupFonts`가 실패합니다. 기존 fontconfig 설정은 유지되며
+  `FONTCONFIG_SYSROOT`는 지원하지 않습니다.
+- 설정 시 시스템 임시 디렉터리에 작은 설정 디렉터리를 만들고, 프로세스(및 이를 상속한 자식
+  프로세스)가 실행되는 동안 유지합니다. 실행 중에는 삭제하지 마세요. 자식 프로세스가 직접
+  `setupFonts`를 호출하면 자신이 등록한 파일만 사용합니다.
+- 프로세스당 하나의 `sharp` 런타임만 지원합니다. 별도로 설치된 두 번째 `sharp`로 렌더링하는
+  텍스트에는 이 설정과 검증이 적용되지 않습니다.
+
+미리보기 옵션 `fonts`는 family 이름만 선택합니다. 예를 들어 호스트에 설치된 글꼴을
+`fonts: [{ family: 'Inter' }]`로 지정합니다. 이 이름은 템플릿의 내장 글꼴 스택 앞에 놓이며,
+해당 호출에서는 `setupFonts`로 등록한 family를 대체합니다. 글꼴 파일을 읽지 않으므로 요청
+입력으로 받아도 안전합니다. `fonts[].path`, `fonts[].weight`, `fonts[].style`은 제거되었고
+전달하면 거부됩니다.
+
+온라인 글꼴을 쓰려면 빌드 시 TTF/OTF 파일을 내려받아 그 경로를 `setupFonts`에 전달하세요.
+fontconfig를 직접 관리하려면 `setupFonts`를 호출하는 대신 프로세스 시작 전에
+`FONTCONFIG_FILE` 또는 `FONTCONFIG_PATH`를 설정하세요.
 
 ### 고급 유틸리티
 
@@ -228,6 +289,7 @@ interface PreviewOptions {
     strategy?: 'auto' | 'generate';
     text?: string;
   };
+  fonts?: { family: string }[]; // family 이름만 지정; 글꼴 항목 참고
   colors?: {
     primary?: string;
     secondary?: string;

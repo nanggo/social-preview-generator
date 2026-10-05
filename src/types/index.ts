@@ -34,8 +34,9 @@ export interface PreviewOptions {
   /** Image quality (1-100) */
   quality?: number;
   /**
-   * @deprecated Reserved for compatibility; not applied by built-in or default
-   * overlays. Install fonts on the host or use a trusted overlayGenerator.
+   * Font families to try before the template's built-in font stack. Defaults to
+   * the family registered by setupFonts(), when it was called. Font files are
+   * never loaded from these options.
    */
   fonts?: FontConfig[];
   /** Custom colors for the template */
@@ -143,25 +144,16 @@ export interface ExtractedMetadata {
  * Font configuration
  */
 export interface FontConfig {
-  /** Font family name */
+  /** Font family name: a host-installed family or the one registered by setupFonts() */
   family: string;
-  /** Path to font file */
-  path?: string;
-  /** Font weight */
-  weight?:
-    | 'normal'
-    | 'bold'
-    | '100'
-    | '200'
-    | '300'
-    | '400'
-    | '500'
-    | '600'
-    | '700'
-    | '800'
-    | '900';
-  /** Font style */
-  style?: 'normal' | 'italic';
+}
+
+/**
+ * Options for setupFonts()
+ */
+export interface SetupFontsOptions {
+  /** Family name to register the supplied font files under (default: "Social Preview Font") */
+  family?: string;
 }
 
 /**

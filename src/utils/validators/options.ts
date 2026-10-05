@@ -6,6 +6,7 @@ import {
 } from '../../constants/security';
 import { validateColor } from './color';
 import { validateDimension, validateDimensions } from './dimensions';
+import { sanitizeFontConfigs } from './fonts';
 import { validateTextInput } from './text';
 
 const MIN_REQUEST_TIMEOUT_MS = 1;
@@ -100,23 +101,7 @@ export function sanitizeOptions(options: PreviewOptions): SanitizedOptions {
     sanitized.security = knownSecurity as PreviewOptions['security'];
   }
   if (options.fonts !== undefined) {
-    if (!Array.isArray(options.fonts)) {
-      throw new PreviewGeneratorError(
-        ErrorType.VALIDATION_ERROR,
-        `Fonts option must be an array, got: ${typeof options.fonts}`
-      );
-    }
-
-    sanitized.fonts = options.fonts.map((font, index) => {
-      if (!font || typeof font !== 'object' || Array.isArray(font)) {
-        throw new PreviewGeneratorError(
-          ErrorType.VALIDATION_ERROR,
-          `Font configuration at index ${index} must be an object`
-        );
-      }
-
-      return { ...font };
-    });
+    sanitized.fonts = sanitizeFontConfigs(options.fonts);
   }
 
   // Validate colors if present - ALL color properties must be validated

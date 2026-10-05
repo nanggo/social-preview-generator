@@ -433,6 +433,19 @@ export function sanitizeSvgContent(svgContent: string): string {
 }
 
 /**
+ * Check that generated SVG is well-formed XML without invoking the native
+ * renderer (which would initialize fonts as a side effect).
+ */
+export function isWellFormedSvg(svgContent: string): boolean {
+  try {
+    new JSDOM(svgContent, { contentType: 'image/svg+xml' }).window.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Create a secure Sharp instance with safety checks
  */
 export function createSecureSharpInstance(imageBuffer: Buffer): Sharp {

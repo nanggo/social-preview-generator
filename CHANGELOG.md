@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0
+
+### Breaking changes
+
+- `FontConfig` is now `{ family: string }`. The `fonts[].path`, `fonts[].weight`, and
+  `fonts[].style` options, which were never applied, are removed from the types and rejected
+  at runtime. Register font files with `setupFonts` instead.
+- `fonts[].family` is validated: letters, digits, spaces, `.`, `_`, and `-`, up to 128
+  characters, at most 16 entries.
+
+### Features
+
+- Add `setupFonts(files, options?)` to register caller-supplied TTF/OTF files once at process
+  startup, so text renders on Linux hosts without fonts for the language (for example Korean
+  on slim Docker images). The files are registered under one family that later previews use
+  by default. No fonts are bundled.
+- Reject a `setupFonts` call made after text rendering has started, or one that cannot be
+  verified, instead of producing images with missing glyphs.
+- Apply the `fonts` option: its family names are placed before the built-in font stack in
+  every template, the default overlay, and the fallback image. It selects names only and
+  never loads font files.
+- On platforms other than Linux, `setupFonts` validates its input, logs a warning, and leaves
+  host font resolution in place.
+
+### Tests
+
+- Add a Linux CI job that checks font setup on Debian and Alpine, with and without system
+  fonts, against an independent reference render.
+
 ## 0.5.3
 
 ### Security

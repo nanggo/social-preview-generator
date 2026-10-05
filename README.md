@@ -194,9 +194,72 @@ For background images, `imageProcessing.blur` overrides `effects.blur.radius`: u
 disable blur, or a radius from `0.3` to `100`. `imageProcessing.contrast` ranges from `0`
 (flat middle gray) to `2`, with `1` preserving the original contrast.
 
-`fonts` is a legacy option retained for compatibility; built-in and default overlays do not
-apply it or load font files from `fonts[].path`. Install fonts on the server for the system
-font fallback, or supply a trusted `overlayGenerator` for custom typography.
+### Fonts
+
+Text is drawn with the fonts available to the process. On a server without fonts for your
+language (for example Korean on a slim Docker image or a serverless function), that text
+renders as empty boxes. There are two ways to fix it:
+
+1. **Install fonts on the host.** Nothing else is needed. For example, on Debian:
+   `apt-get install -y fonts-noto-cjk`.
+2. **Ship your own font files and register them at startup** with `setupFonts`. Use this when
+   you cannot install system fonts, or when you want a specific typeface.
+
+```typescript
+import { generatePreviewFromMetadata, setupFonts } from '@nanggo/social-preview';
+
+// Once, at process startup, before generating any preview.
+await setupFonts(['./fonts/Pretendard-Regular.otf', './fonts/Pretendard-Bold.otf']);
+
+// Previews now use the registered typeface by default.
+const image = await generatePreviewFromMetadata({ title: '한글 제목', url: 'https://example.com' });
+```
+
+| Export                        | Returns                 | Purpose                                              |
+| ----------------------------- | ----------------------- | ---------------------------------------------------- |
+| `setupFonts(files, options?)` | `Promise<FontConfig[]>` | Register TTF/OTF files for all previews in a process |
+
+Rules for `setupFonts`:
+
+- Call it once, from the main thread, and `await` it before any preview is generated and
+  before any other text is rendered through `sharp` in the same process. A late call is
+  rejected instead of producing broken images; restart the process to recover. Calling it
+  again with the same files is allowed; different files are rejected.
+- Supply standalone **TTF or OTF** files of **one typeface**: typically Regular and Bold, or a
+  single variable font. Titles are bold, so without a bold face they are not rendered bold on
+  hosts that have no font configuration. Font collections (TTC/OTC) and web fonts (WOFF/WOFF2)
+  are rejected.
+- The files are registered under one family name, `Social Preview Font` unless you pass
+  `{ family: 'Your Name' }`. You do not need to know the names stored inside the font files.
+  Choose a name that no installed font uses: if it matches an installed family, previews may
+  be drawn with the installed font instead of your files.
+- Font files are applied on **Linux**. On other platforms the call validates its input, logs a
+  warning, and previews keep using the host's fonts, so startup code needs no platform check.
+  Verify production typography on Linux.
+- Setup verifies the registration with a basic Latin letter or a Hangul syllable, so the
+  typeface must contain at least one of them.
+- Files are only screened by format. A damaged file next to a valid one may be skipped
+  silently, and glyph coverage and available weights are the caller's responsibility.
+- The registration is process-wide and is inherited by child processes through
+  `FONTCONFIG_FILE`. Start worker threads only after `setupFonts` resolves and pass the
+  returned `fonts` value to previews rendered in them: a worker cannot see that setup is
+  pending or failed, and a preview it renders too early makes `setupFonts` fail. Existing
+  fontconfig settings are kept; `FONTCONFIG_SYSROOT` is not supported.
+- Setup writes a small configuration directory under the system temporary directory and keeps
+  it for the life of the process (and of child processes that inherit it). Do not delete it
+  while they run. A child process that calls `setupFonts` itself uses only its own files.
+- One `sharp` runtime per process is supported. Text rendered through a second, independent
+  copy of `sharp` is not covered by the setup or its verification.
+
+The `fonts` preview option only selects family names, for example `fonts: [{ family: 'Inter' }]`
+for a font installed on the host. It is placed before the template's built-in font stack and
+replaces the family registered by `setupFonts` for that call. It never loads font files, so it
+is safe to accept from request input. `fonts[].path`, `fonts[].weight`, and `fonts[].style`
+were removed and are rejected.
+
+To use an online font, download its TTF/OTF files at build time and pass those paths to
+`setupFonts`. If you prefer to manage fontconfig yourself, set `FONTCONFIG_FILE` or
+`FONTCONFIG_PATH` before starting the process instead of calling `setupFonts`.
 
 ### Advanced utilities
 
@@ -225,6 +288,7 @@ interface PreviewOptions {
     strategy?: 'auto' | 'generate';
     text?: string;
   };
+  fonts?: { family: string }[]; // family names only; see Fonts
   colors?: {
     primary?: string;
     secondary?: string;

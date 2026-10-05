@@ -1,6 +1,6 @@
 {
   "name": "@nanggo/social-preview",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "Turn public URLs into secure social preview JPEGs with Node.js",
   "packageManager": "pnpm@10.11.0",
   "main": "dist/index.js",
@@ -19,6 +19,7 @@
     "format": "prettier --write 'src/**/*.ts'",
     "verify:actions": "node scripts/verify-action-pins.mjs",
     "verify:dependencies": "node scripts/verify-security-dependency-versions.mjs",
+    "verify:fonts": "node scripts/verify-linux-fonts.mjs",
     "verify:package": "node scripts/verify-packed-package.mjs",
     "verify:release": "node scripts/verify-release-contract.mjs",
     "prepublishOnly": "pnpm run build && pnpm test"
