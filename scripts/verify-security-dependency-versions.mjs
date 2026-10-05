@@ -27,7 +27,7 @@ function resolvedVersions(packageName) {
 
 const requirements = [
   ['dompurify', '3.4.13'],
-  ['undici', '7.29.0'],
+  ['undici', '7.29.1'],
 ];
 
 for (const [packageName, minimum] of requirements) {

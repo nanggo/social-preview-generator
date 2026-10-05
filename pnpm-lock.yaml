@@ -11,7 +11,7 @@ overrides:
   nanoid@<3.3.18: 3.3.18
   picomatch@>=4.0.0 <4.0.4: 4.0.5
   postcss@<=8.5.17: 8.5.18
-  undici@>=7.0.0 <7.29.0: 7.29.0
+  undici@>=7.0.0 <7.29.1: 7.29.1
 
 importers:
 
@@ -1522,8 +1522,8 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@7.29.0:
-    resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
+  undici@7.29.1:
+    resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
 
   uri-js@4.4.1:
@@ -2323,7 +2323,7 @@ snapshots:
       parse5: 7.3.0
       parse5-htmlparser2-tree-adapter: 7.1.0
       parse5-parser-stream: 7.1.2
-      undici: 7.29.0
+      undici: 7.29.1
       whatwg-mimetype: 4.0.0
 
   combined-stream@1.0.8:
@@ -2707,7 +2707,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.2
-      undici: 7.29.0
+      undici: 7.29.1
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -2829,7 +2829,7 @@ snapshots:
       chardet: 2.2.0
       cheerio: 1.2.0
       iconv-lite: 0.7.3
-      undici: 7.29.0
+      undici: 7.29.1
 
   optionator@0.9.4:
     dependencies:
@@ -3033,7 +3033,7 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  undici@7.29.0: {}
+  undici@7.29.1: {}
 
   uri-js@4.4.1:
     dependencies:
