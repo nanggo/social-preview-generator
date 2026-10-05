@@ -21,8 +21,9 @@ export const DEFAULT_SETUP_FONT_FAMILY = 'Social Preview Font';
 const MAX_FONT_FILES = 64;
 const BASE_RECORD_FILE = 'base.json';
 const FONT_SIGNATURES: Record<string, string> = {
-  '00010000': 'sfnt',
-  '4f54544f': 'sfnt',
+  '00010000': 'sfnt', // TrueType
+  '74727565': 'sfnt', // TrueType ("true", Apple)
+  '4f54544f': 'sfnt', // OpenType/CFF ("OTTO")
   '74746366': 'collection',
 };
 

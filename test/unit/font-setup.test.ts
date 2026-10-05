@@ -215,6 +215,7 @@ describe('setupFonts', () => {
     bold = join(directory, 'Bold.TTF');
     writeFileSync(regular, Buffer.concat([Buffer.from('OTTO'), Buffer.alloc(32)]));
     writeFileSync(bold, Buffer.concat([Buffer.from('00010000', 'hex'), Buffer.alloc(32)]));
+    writeFileSync(join(directory, 'Apple.ttf'), Buffer.concat([Buffer.from('true'), Buffer.alloc(32)]));
     writeFileSync(join(directory, 'Collection.ttc'), Buffer.from('ttcf0000'));
     writeFileSync(join(directory, 'Disguised.otf'), Buffer.from('ttcf0000'));
     writeFileSync(join(directory, 'Web.woff2'), Buffer.from('wOF20000'));
@@ -263,6 +264,12 @@ describe('setupFonts', () => {
     expect(concurrent).toEqual([{ family: '미리보기 서체' }]);
     expect(repeated).toEqual([{ family: '미리보기 서체' }]);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should accept the Apple TrueType signature', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    await expect(setupFonts([join(directory, 'Apple.ttf')])).resolves.toHaveLength(1);
   });
 
   it('should treat an omitted family and the default family as the same request', async () => {
