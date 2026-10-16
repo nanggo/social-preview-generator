@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1
+
+### Security
+
+- Require `dompurify` `^3.4.16` so installs cannot resolve 3.4.13–3.4.15, which
+  GHSA-p98j-92pf-mc4p covers.
+
 ## 0.6.0
 
 ### Breaking changes
