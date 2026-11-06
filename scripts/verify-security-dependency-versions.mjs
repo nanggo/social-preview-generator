@@ -26,9 +26,9 @@ function resolvedVersions(packageName) {
 }
 
 const requirements = [
-  ['dompurify', '3.4.16'],
-  ['follow-redirects', '1.16.1'],
-  ['undici', '7.29.1'],
+  ['dompurify', '3.4.17'],
+  ['follow-redirects', '1.16.2'],
+  ['undici', '7.30.1'],
 ];
 
 for (const [packageName, minimum] of requirements) {
